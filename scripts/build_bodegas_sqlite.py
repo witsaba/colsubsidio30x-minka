@@ -250,12 +250,32 @@ def stored_source_sha(out_path: Path) -> str | None:
         return None
 
 
+def run_check(db_path: Path, current_sha: str) -> int:
+    if not db_path.exists():
+        print(f"_meta row not found in {db_path}", file=sys.stderr)
+        return EXIT_CHECK_NO_META
+    try:
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as con:
+            row = con.execute("SELECT source_sha256 FROM _meta LIMIT 1").fetchone()
+    except sqlite3.Error:
+        row = None
+    if not row:
+        print(f"_meta row not found in {db_path}", file=sys.stderr)
+        return EXIT_CHECK_NO_META
+    stored_sha = row[0]
+    if stored_sha != current_sha:
+        print(f"drift: stored={stored_sha} current={current_sha}", file=sys.stderr)
+        return EXIT_CHECK_DRIFT
+    return EXIT_OK
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="build_bodegas_sqlite")
     parser.add_argument("--xlsx", type=Path, default=Path("docs/sources/bodegas-y-stock.xlsx"))
     parser.add_argument("--out", type=Path, default=Path("data/bodegas-y-stock.sqlite"))
-    parser.add_argument("--dry-run", action="store_true", help="parse and count without writing")
-    parser.add_argument("--check", action="store_true", help="reserved for T4")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true", help="parse and count without writing")
+    mode.add_argument("--check", action="store_true", help="compare source hash with database metadata")
     parser.add_argument("--built-at", help="override provenance timestamp for deterministic builds")
     return parser.parse_args(argv)
 
@@ -263,8 +283,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     if args.check:
-        print("ERROR: --check is not implemented yet", file=sys.stderr)
-        return EXIT_BAD_SOURCE
+        if not args.xlsx.is_file():
+            print(f"ERROR: xlsx not found: {args.xlsx}", file=sys.stderr)
+            return EXIT_BAD_SOURCE
+        return run_check(args.out, compute_sha256(args.xlsx))
     try:
         frames = load_xlsx(args.xlsx)
     except FileNotFoundError:

@@ -14,7 +14,7 @@ All threat-matrix rows in design §15 are N/A; no RED-test tasks or test framewo
 
 ## Phase 3: CLI integration
 
-- [ ] **T4 — Implement `--check`.** Modify `scripts/build_bodegas_sqlite.py` with `run_check` and mutually exclusive CLI wiring; modify `Makefile` with `check-sqlite`; delete none. Satisfies REQ-BLD-6/7/9; design §3.7, §5, §10, §11. **Verify:** fresh `make check-sqlite` exits 0; alter/revert the xlsx and confirm exit 1; delete the DB (or its `_meta` row) and confirm exit 2 per the `--check` exit-code matrix (0 fresh / 1 drift / 2 no-meta) — the spec and design do NOT define an exit 3 case for `--check`; rebuild. **Rollback:** `git checkout <T3-commit> -- scripts/build_bodegas_sqlite.py Makefile`.
+- [x] **T4 — Implement `--check`.** Modify `scripts/build_bodegas_sqlite.py` with `run_check` and mutually exclusive CLI wiring; modify `Makefile` with `check-sqlite`; delete none. Satisfies REQ-BLD-6/7/9; design §3.7, §5, §10, §11. **Verify:** fresh `make check-sqlite` exits 0; alter/revert the xlsx and confirm exit 1; delete the DB (or its `_meta` row) and confirm exit 2 per the `--check` exit-code matrix (0 fresh / 1 drift / 2 no-meta) — the spec and design do NOT define an exit 3 case for `--check`; rebuild. **Rollback:** `git checkout <T3-commit> -- scripts/build_bodegas_sqlite.py Makefile`.
 
 ## Phase 4: Documentation and release audit
 

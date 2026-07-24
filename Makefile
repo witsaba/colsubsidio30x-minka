@@ -2,8 +2,12 @@ PY   ?= uv run python
 XLSX ?= docs/sources/bodegas-y-stock.xlsx
 OUT  ?= data/bodegas-y-stock.sqlite
 
-.PHONY: build-sqlite
+.PHONY: build-sqlite check-sqlite
 
 build-sqlite:
 	uv sync
-	@echo "SQLite builder will be added in T2."
+	$(PY) scripts/build_bodegas_sqlite.py --xlsx $(XLSX) --out $(OUT)
+
+check-sqlite:
+	uv sync
+	$(PY) scripts/build_bodegas_sqlite.py --check --xlsx $(XLSX) --out $(OUT)
