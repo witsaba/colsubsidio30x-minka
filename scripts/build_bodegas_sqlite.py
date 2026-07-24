@@ -4,8 +4,11 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import hashlib
+import json
 import re
+import sqlite3
 import sys
 import unicodedata
 from pathlib import Path
@@ -178,12 +181,82 @@ def find_pii_sheet(frames: dict[str, pd.DataFrame]) -> str | None:
     return None
 
 
+def _sql_type(column: str) -> str:
+    return "INTEGER" if column == "cantidad" else "REAL" if column == "sd" else "TEXT"
+
+
+def build_database(
+    out_path: Path,
+    frames: dict[str, pd.DataFrame],
+    source_sha256: str,
+    built_at: str,
+) -> None:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    if out_path.exists():
+        out_path.unlink()
+    with sqlite3.connect(out_path) as con:
+        con.execute("PRAGMA foreign_keys = OFF")
+        con.execute("BEGIN")
+        for table_name in sorted(frames):
+            frame = frames[table_name]
+            columns = []
+            for column in frame.columns:
+                nullable = " NOT NULL" if table_name == "bodegas_disponibles" and column == "bodegas" else ""
+                columns.append(f'"{column}" {_sql_type(column)}{nullable}')
+            con.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+            con.execute(f'CREATE TABLE "{table_name}" ({", ".join(columns)})')
+            placeholders = ", ".join("?" for _ in frame.columns)
+            column_sql = ", ".join(f'"{column}"' for column in frame.columns)
+            rows = [
+                tuple(None if pd.isna(value) else value for value in row)
+                for row in frame.itertuples(index=False, name=None)
+            ]
+            con.executemany(
+                f'INSERT INTO "{table_name}" ({column_sql}) VALUES ({placeholders})',
+                rows,
+            )
+            prefix = "bd" if table_name == "bodegas_disponibles" else table_name
+            if table_name == "bodegas_disponibles":
+                con.execute(f'CREATE INDEX "ix_{prefix}_bodegas" ON "{table_name}" (bodegas)')
+            else:
+                con.execute(f'CREATE INDEX "ix_{prefix}_nr_articulo" ON "{table_name}" (nr_articulo)')
+                con.execute(f'CREATE INDEX "ix_{prefix}_sd" ON "{table_name}" (sd)')
+        con.execute("DROP TABLE IF EXISTS _meta")
+        con.execute(
+            "CREATE TABLE _meta (source_sha256 TEXT NOT NULL, built_at TEXT NOT NULL, "
+            "row_counts_json TEXT NOT NULL, script_version TEXT NOT NULL)"
+        )
+        row_counts = {table: len(frame) for table, frame in sorted(frames.items())}
+        con.execute(
+            "INSERT OR REPLACE INTO _meta "
+            "(source_sha256, built_at, row_counts_json, script_version) VALUES (?, ?, ?, ?)",
+            (
+                source_sha256,
+                built_at,
+                json.dumps(row_counts, sort_keys=True, separators=(",", ":")),
+                SCRIPT_VERSION,
+            ),
+        )
+
+
+def stored_source_sha(out_path: Path) -> str | None:
+    if not out_path.exists():
+        return None
+    try:
+        with sqlite3.connect(f"file:{out_path}?mode=ro", uri=True) as con:
+            row = con.execute("SELECT source_sha256 FROM _meta LIMIT 1").fetchone()
+            return row[0] if row else None
+    except sqlite3.Error:
+        return None
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="build_bodegas_sqlite")
     parser.add_argument("--xlsx", type=Path, default=Path("docs/sources/bodegas-y-stock.xlsx"))
     parser.add_argument("--out", type=Path, default=Path("data/bodegas-y-stock.sqlite"))
     parser.add_argument("--dry-run", action="store_true", help="parse and count without writing")
     parser.add_argument("--check", action="store_true", help="reserved for T4")
+    parser.add_argument("--built-at", help="override provenance timestamp for deterministic builds")
     return parser.parse_args(argv)
 
 
@@ -210,8 +283,21 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Σ={sum(len(frame) for frame in frames.values())}")
     if args.dry_run:
         return EXIT_OK
-    print("ERROR: database writing is not implemented yet", file=sys.stderr)
-    return EXIT_SQLITE_ERROR
+    current_sha = compute_sha256(args.xlsx)
+    previous_sha = stored_source_sha(args.out)
+    if previous_sha and previous_sha != current_sha:
+        print(f"warning: source drifted from {previous_sha} to {current_sha}", file=sys.stderr)
+    try:
+        build_database(
+            args.out,
+            frames,
+            current_sha,
+            args.built_at or datetime.now(timezone.utc).isoformat(),
+        )
+    except sqlite3.Error as exc:
+        print(f"ERROR: sqlite3: {exc}", file=sys.stderr)
+        return EXIT_SQLITE_ERROR
+    return EXIT_OK
 
 
 if __name__ == "__main__":
