@@ -29,6 +29,10 @@ Colsubsidio gave about the process are carried forward, in §11.
 Companion document: [`docs/prd-seed.md`](prd-seed.md) — the traceable extraction of the 23 Jul meeting,
 with transcript timestamps. Use it to settle any dispute about what was actually agreed.
 
+**Diagrams:** [`docs/diagrams/`](diagrams/) — reproduced in §6.1. They are vendored as received and
+have **not** been reconciled with the meeting. [`docs/diagrams/README.md`](diagrams/README.md) records
+the full match, including three points where the end-to-end flow diagram contradicts a decided item.
+
 ---
 
 ## 0. Provenance conventions
@@ -193,6 +197,34 @@ separation of interaction, not of data.
    auditor receives a report with full traceability.
 8. **Close** — export in Oracle format (Import Count Sequences style) + reconciliation report + audit
    trail.
+
+#### Figure 1 — Two-app architecture
+
+![Two-app architecture: operator mobile app and auditor web platform over a shared backend, feeding the client ERP](diagrams/02-two-apps-architecture.png)
+
+*Source: [`docs/diagrams/02-two-apps-architecture.html`](diagrams/02-two-apps-architecture.html).*
+Faithful to the meeting on flow. Two labels are ahead of what was decided: the web role is the
+**auditor** — "supervisor" is the unresolved third role (§13 Q1) — and Supabase was recorded in the
+meeting as a technical signal, explicitly *not* an architectural decision. §6.2 currently lists it as
+a `[MEETING]` decision; that attribution needs correcting.
+
+#### Figure 2 — End-to-end capture flow
+
+![End-to-end flow: warehouse selection, push-to-talk capture, speech-to-text, three-model parsing, validation, anomaly handling, save, audit and export](diagrams/01-end-to-end-flow.png)
+
+*Source: [`docs/diagrams/01-end-to-end-flow.html`](diagrams/01-end-to-end-flow.html).*
+
+> **This figure does not yet match the agreed flow.** It reproduces the Discovery flow reviewed at
+> the start of the meeting, before two of its steps were corrected. Three contradictions, detailed in
+> [`docs/diagrams/README.md`](diagrams/README.md):
+>
+> 1. Step ① has the operator selecting a **warehouse**; the operator selects an **audit plan** (00:54:48).
+> 2. Step ⑤ is labelled **real-time** validation; validation is **asynchronous** (01:27:49).
+> 3. The anomaly gate sits **before** saving; the record is created **first**, then the trigger fires (01:29:26).
+>
+> The numbered list above, not the figure, is the agreed flow. Eight further decided elements are
+> missing from the figure — chief among them the **preventive block** before the next recording, and
+> the **reprocess** loop when the three models disagree.
 
 ### 6.2 Agreed technical decisions
 
