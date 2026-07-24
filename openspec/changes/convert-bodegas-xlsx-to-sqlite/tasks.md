@@ -18,7 +18,7 @@ All threat-matrix rows in design §15 are N/A; no RED-test tasks or test framewo
 
 ## Phase 4: Documentation and release audit
 
-- [ ] **T5 — Document and polish the single-PR deliverable.** Add `data/README.md` with regeneration, schema, duplicate-row/PII notes, and sample queries; modify `Makefile` with final `build-sqlite`, `check-sqlite`, `clean-sqlite`; modify `docs/sources/README.md` by exactly two lines; delete none. Satisfies REQ-BLD-1/4/5 and REQ-DB-1/3; design §2, §11, §13, §14. **Verify:** `make clean-sqlite && make build-sqlite && make check-sqlite`; audit implementation paths with `git grep -nE 'requirements\.txt|xlrd|xlsx2csv|wb\.properties|core_properties' -- scripts pyproject.toml Makefile` (no matches), and inspect `uv.lock`/deps. **Rollback:** `git rm data/README.md; git checkout <T4-commit> -- Makefile docs/sources/README.md`.
+- [x] **T5 — Document and polish the single-PR deliverable.** Add `data/README.md` with regeneration, schema, duplicate-row/PII notes, and sample queries; modify `Makefile` with final `build-sqlite`, `check-sqlite`, `clean-sqlite`; modify `docs/sources/README.md` by exactly two lines; delete none. Satisfies REQ-BLD-1/4/5 and REQ-DB-1/3; design §2, §11, §13, §14. **Verify:** `make clean-sqlite && make build-sqlite && make check-sqlite`; audit implementation paths with `git grep -nE 'requirements\.txt|xlrd|xlsx2csv|wb\.properties|core_properties' -- scripts pyproject.toml Makefile` (no matches), and inspect `uv.lock`/deps. **Rollback:** `git rm data/README.md; git checkout <T4-commit> -- Makefile docs/sources/README.md`.
 
 ## Review Workload Forecast
 

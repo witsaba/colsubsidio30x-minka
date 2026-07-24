@@ -36,6 +36,8 @@ record; the two share RF/RNF/CU/QA identifiers so they can be read side by side.
 balances, ~18% of items without a unique code, ~23% with decimals) come from the Spanish draft's
 analysis and **have not been recomputed in this repository** — no spreadsheet tooling was available.
 See `../prd.md` §13.17.
+See the derived queryable mirror at [`../../data/bodegas-y-stock.sqlite`](../../data/bodegas-y-stock.sqlite).
+See [`../../data/README.md`](../../data/README.md) for regeneration, schema, and query examples.
 
 **`discovery-consolidado.xlsx`** and **`doble-diamante-problema-solucion.docx`** — research artefacts
 referenced in the meeting as the origin of the proposed flow and the double-diamond framing. Vendored
