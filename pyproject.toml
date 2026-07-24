@@ -1,0 +1,12 @@
+[project]
+name = "colsubsidio30x-minka"
+version = "0.1.0"
+description = "Local SQLite mirror of the Minka inventory workbook."
+requires-python = ">=3.11"
+dependencies = [
+  "pandas>=2",
+  "openpyxl>=3",
+]
+
+[tool.uv]
+package = false
