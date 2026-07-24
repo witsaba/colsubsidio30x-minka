@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Detailed Flow — Smart Voice Inventory Capture</title>
+<style>
+  :root{
+    --bg:#0f1620; --panel:#16202c; --ink:#e8eef5; --muted:#93a4b7;
+    --line:#2c3b4d; --accent:#12b981; --accent2:#3b82f6; --warn:#f59e0b;
+    --op:#1f6feb; --ai:#8b5cf6; --db:#0ea5a4; --sup:#f97316;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:radial-gradient(1200px 700px at 20% -10%,#1b2735,#0f1620);
+    color:var(--ink);font-family:'Segoe UI',system-ui,Arial,sans-serif;padding:28px;}
+  h1{font-size:22px;margin:0 0 2px;letter-spacing:.2px;}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:18px;}
+  .board{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px 10px 8px;
+    box-shadow:0 18px 50px rgba(0,0,0,.35);overflow-x:auto;}
+  svg{display:block;margin:0 auto;max-width:100%;height:auto;}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin:14px 4px 2px;font-size:12px;color:var(--muted);}
+  .legend span{display:inline-flex;align-items:center;gap:7px;}
+  .dot{width:12px;height:12px;border-radius:3px;display:inline-block;}
+  .foot{color:var(--muted);font-size:11px;margin-top:12px;text-align:right;}
+</style>
+</head>
+<body>
+  <h1>Smart Voice Inventory Capture — End-to-End Flow</h1>
+  <div class="sub">From physical count in the warehouse to clean, ERP-ready data · Colsubsidio Hospitality Challenge</div>
+
+  <div class="board">
+  <svg viewBox="0 0 1180 900" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial, sans-serif">
+    <defs>
+      <marker id="arw" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#7f93a8"/>
+      </marker>
+      <marker id="arwW" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#f59e0b"/>
+      </marker>
+      <marker id="arwG" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#12b981"/>
+      </marker>
+      <linearGradient id="opG" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#1f6feb"/><stop offset="1" stop-color="#154a9e"/></linearGradient>
+      <linearGradient id="aiG" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#8b5cf6"/><stop offset="1" stop-color="#6d34d4"/></linearGradient>
+      <linearGradient id="dbG" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#0ea5a4"/><stop offset="1" stop-color="#0a7f7e"/></linearGradient>
+      <linearGradient id="supG" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#f97316"/><stop offset="1" stop-color="#c85a0e"/></linearGradient>
+      <style>
+        .lbl{fill:#eef3f8;font-size:14px;font-weight:600;}
+        .desc{fill:#cdd8e4;font-size:11.5px;}
+        .tag{fill:#93a4b7;font-size:10.5px;letter-spacing:.6px;}
+        .edge{stroke:#7f93a8;stroke-width:2;fill:none;}
+        .edgeW{stroke:#f59e0b;stroke-width:2;fill:none;stroke-dasharray:6 4;}
+        .edgeG{stroke:#12b981;stroke-width:2;fill:none;}
+        .card{rx:12;}
+      </style>
+    </defs>
+
+    <!-- ============ STEP 1 ============ -->
+    <g>
+      <rect x="40" y="30" width="300" height="88" rx="12" fill="url(#opG)" stroke="#3b82f6"/>
+      <text x="60" y="55" class="tag">① OPERATOR · MOBILE APP</text>
+      <text x="60" y="78" class="lbl">Select warehouse (bodega)</text>
+      <text x="60" y="98" class="desc">App loads that warehouse's product catalog</text>
+      <text x="60" y="113" class="desc">&amp; historical stock from the database</text>
+    </g>
+
+    <!-- STEP 2 -->
+    <g>
+      <rect x="440" y="30" width="300" height="88" rx="12" fill="url(#opG)" stroke="#3b82f6"/>
+      <text x="460" y="55" class="tag">② VOICE CAPTURE · PUSH-TO-TALK</text>
+      <text x="460" y="78" class="lbl">Hold button &amp; speak the count</text>
+      <text x="460" y="98" class="desc">e.g. "five kilos of flour", "nine boxes"</text>
+      <text x="460" y="113" class="desc">Push-to-talk = reliable, no live streaming</text>
+    </g>
+
+    <!-- STEP 3 -->
+    <g>
+      <rect x="840" y="30" width="300" height="88" rx="12" fill="url(#aiG)" stroke="#a78bfa"/>
+      <text x="860" y="55" class="tag">③ SPEECH-TO-TEXT</text>
+      <text x="860" y="78" class="lbl">Audio transcribed to text</text>
+      <text x="860" y="98" class="desc">Audio processed, not stored →</text>
+      <text x="860" y="113" class="desc">no voice-privacy risk</text>
+    </g>
+
+    <!-- arrows row 1 -->
+    <line x1="340" y1="74" x2="440" y2="74" class="edge" marker-end="url(#arw)"/>
+    <line x1="740" y1="74" x2="840" y2="74" class="edge" marker-end="url(#arw)"/>
+    <!-- down from step3 -->
+    <path d="M990 118 L990 160" class="edge" marker-end="url(#arw)"/>
+
+    <!-- ============ STEP 4 : 3-model consensus ============ -->
+    <g>
+      <rect x="770" y="160" width="370" height="150" rx="12" fill="url(#aiG)" stroke="#a78bfa"/>
+      <text x="792" y="185" class="tag">④ AI PARSING · 3-MODEL CROSS-VALIDATION</text>
+      <text x="792" y="208" class="lbl">Extract product · quantity · unit</text>
+      <text x="792" y="228" class="desc">Three AI models run in parallel and must</text>
+      <text x="792" y="244" class="desc">agree (consensus) to reduce errors &amp;</text>
+      <text x="792" y="260" class="desc">disambiguate units (grams vs kilos).</text>
+      <!-- 3 model chips -->
+      <rect x="792" y="272" width="100" height="26" rx="7" fill="#2b1e52" stroke="#a78bfa"/>
+      <text x="842" y="289" text-anchor="middle" class="desc">Model A</text>
+      <rect x="906" y="272" width="100" height="26" rx="7" fill="#2b1e52" stroke="#a78bfa"/>
+      <text x="956" y="289" text-anchor="middle" class="desc">Model B</text>
+      <rect x="1020" y="272" width="100" height="26" rx="7" fill="#2b1e52" stroke="#a78bfa"/>
+      <text x="1070" y="289" text-anchor="middle" class="desc">Model C</text>
+    </g>
+
+    <!-- ============ STEP 5 : validation vs catalog ============ -->
+    <g>
+      <rect x="770" y="360" width="370" height="120" rx="12" fill="url(#dbG)" stroke="#2dd4bf"/>
+      <text x="792" y="385" class="tag">⑤ REAL-TIME VALIDATION vs CATALOG</text>
+      <text x="792" y="408" class="lbl">Match against catalog + stock history</text>
+      <text x="792" y="428" class="desc">Confirms the product exists in that bodega</text>
+      <text x="792" y="444" class="desc">and compares the amount to the usual</text>
+      <text x="792" y="460" class="desc">pattern to flag outliers (9 vs 90).</text>
+    </g>
+    <path d="M955 310 L955 360" class="edge" marker-end="url(#arw)"/>
+
+    <!-- ============ DECISION : anomaly? ============ -->
+    <g>
+      <polygon points="955,510 1075,575 955,640 835,575" fill="#3a2a12" stroke="#f59e0b" stroke-width="2"/>
+      <text x="955" y="568" text-anchor="middle" class="lbl" fill="#fde3b3">Anomaly</text>
+      <text x="955" y="588" text-anchor="middle" class="desc" fill="#fde3b3">detected?</text>
+    </g>
+    <path d="M955 480 L955 510" class="edge" marker-end="url(#arw)"/>
+
+    <!-- YES branch : alert -->
+    <g>
+      <rect x="600" y="520" width="200" height="110" rx="12" fill="#3a2a12" stroke="#f59e0b"/>
+      <text x="618" y="544" class="tag" fill="#fde3b3">⚠ ASYNC ALERT</text>
+      <text x="618" y="566" class="lbl" fill="#fde3b3">Ask before saving</text>
+      <text x="618" y="586" class="desc" fill="#f6d19a">"Are you sure it's 90</text>
+      <text x="618" y="602" class="desc" fill="#f6d19a">and not 9 boxes?"</text>
+      <text x="618" y="620" class="desc" fill="#f6d19a">Flow keeps moving; alert resolved async.</text>
+    </g>
+    <path d="M835 575 L800 575" class="edgeW" marker-end="url(#arwW)"/>
+    <text x="812" y="566" class="tag" fill="#f59e0b">YES</text>
+
+    <!-- ============ STEP 6 : confirm ============ -->
+    <g>
+      <rect x="360" y="360" width="330" height="120" rx="12" fill="url(#opG)" stroke="#3b82f6"/>
+      <text x="380" y="385" class="tag">⑥ OPERATOR CONFIRMATION</text>
+      <text x="380" y="408" class="lbl">Read-back shown on screen</text>
+      <text x="380" y="428" class="desc">"Flour · 5 kg · Bodega 2 — correct?"</text>
+      <text x="380" y="444" class="desc">Operator confirms the parsed result</text>
+      <text x="380" y="460" class="desc">before it is committed.</text>
+    </g>
+    <!-- NO branch from decision to confirm -->
+    <path d="M835 575 C 560 575, 525 575, 525 480" class="edgeG" marker-end="url(#arwG)"/>
+    <text x="560" y="600" class="tag" fill="#12b981">NO / RESOLVED → confirm</text>
+
+    <!-- ============ STEP 7 : save record ============ -->
+    <g>
+      <rect x="360" y="520" width="220" height="110" rx="12" fill="url(#dbG)" stroke="#2dd4bf"/>
+      <text x="380" y="544" class="tag">⑦ SAVE RECORD</text>
+      <text x="380" y="566" class="lbl">Count committed to DB</text>
+      <text x="380" y="586" class="desc">Clean row: product, qty, unit,</text>
+      <text x="380" y="602" class="desc">warehouse, timestamp, operator.</text>
+    </g>
+    <path d="M525 480 L525 520" class="edge" marker-end="url(#arw)"/>
+
+    <!-- correction loop -->
+    <g>
+      <rect x="70" y="520" width="240" height="110" rx="12" fill="#1a2430" stroke="#3b82f6" stroke-dasharray="5 4"/>
+      <text x="90" y="544" class="tag">↺ CORRECTION = DELETE &amp; RE-RECORD</text>
+      <text x="90" y="566" class="lbl">No manual edits</text>
+      <text x="90" y="586" class="desc">Wrong entry is deleted and re-spoken,</text>
+      <text x="90" y="602" class="desc">avoiding AI "hallucinated" edits.</text>
+    </g>
+    <path d="M360 575 L310 575" class="edge" marker-end="url(#arw)"/>
+    <path d="M190 520 C 190 500, 300 500, 360 470" class="edge" marker-end="url(#arw)" opacity=".6"/>
+
+    <!-- repeat note -->
+    <text x="470" y="662" class="desc" fill="#93a4b7">↻ Repeat reference by reference · warehouse by warehouse</text>
+
+    <!-- ============ STEP 8 : DB ============ -->
+    <g>
+      <rect x="360" y="700" width="230" height="120" rx="12" fill="url(#dbG)" stroke="#2dd4bf"/>
+      <text x="380" y="726" class="tag">⑧ CENTRAL DATABASE</text>
+      <text x="380" y="750" class="lbl">Supabase</text>
+      <text x="380" y="770" class="desc">Catalog + stock history (imported</text>
+      <text x="380" y="786" class="desc">from Excel) + all captured counts.</text>
+      <text x="380" y="806" class="desc">Single source of truth.</text>
+    </g>
+    <path d="M470 630 L470 700" class="edge" marker-end="url(#arw)"/>
+
+    <!-- ============ STEP 9 : supervisor ============ -->
+    <g>
+      <rect x="660" y="700" width="230" height="120" rx="12" fill="url(#supG)" stroke="#fdba74"/>
+      <text x="680" y="726" class="tag">⑨ SUPERVISOR · WEB</text>
+      <text x="680" y="750" class="lbl">Review &amp; audit</text>
+      <text x="680" y="770" class="desc">Counted vs system, resolve alerts,</text>
+      <text x="680" y="786" class="desc">see where discrepancies repeat.</text>
+    </g>
+    <path d="M590 760 L660 760" class="edge" marker-end="url(#arw)"/>
+
+    <!-- ============ STEP 10 : export ============ -->
+    <g>
+      <rect x="960" y="700" width="180" height="120" rx="12" fill="#14351f" stroke="#12b981"/>
+      <text x="980" y="726" class="tag" fill="#a7f3cf">⑩ EXPORT</text>
+      <text x="980" y="750" class="lbl" fill="#d1fae5">Clean file → ERP</text>
+      <text x="980" y="770" class="desc" fill="#bff0d6">Downloadable Excel</text>
+      <text x="980" y="786" class="desc" fill="#bff0d6">compatible with the</text>
+      <text x="980" y="802" class="desc" fill="#bff0d6">client's main system.</text>
+    </g>
+    <path d="M890 760 L960 760" class="edgeG" marker-end="url(#arwG)"/>
+
+    <!-- alert back to supervisor -->
+    <path d="M700 630 C 730 670, 760 680, 770 700" class="edgeW" marker-end="url(#arwW)" opacity=".8"/>
+  </svg>
+  </div>
+
+  <div class="legend">
+    <span><span class="dot" style="background:#1f6feb"></span>Operator (mobile)</span>
+    <span><span class="dot" style="background:#8b5cf6"></span>AI voice &amp; parsing</span>
+    <span><span class="dot" style="background:#0ea5a4"></span>Database / validation</span>
+    <span><span class="dot" style="background:#f97316"></span>Supervisor (web)</span>
+    <span><span class="dot" style="background:#f59e0b"></span>Anomaly / async alert</span>
+    <span><span class="dot" style="background:#12b981"></span>Clean data to ERP</span>
+  </div>
+  <div class="foot">Colsubsidio · Reto Hotelería — Captura inteligente de inventarios</div>
+
+  <button id="dlPng" style="position:fixed;right:22px;bottom:22px;z-index:99;
+    background:#12b981;color:#04150d;border:none;border-radius:10px;padding:12px 18px;
+    font:600 14px 'Segoe UI',Arial;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.4);">⬇ Download PNG</button>
+  <script>
+  document.getElementById('dlPng').addEventListener('click', function(){
+    var svg = document.querySelector('.board svg');
+    var scale = 2;
+    var vb = svg.viewBox.baseVal;
+    var w = vb.width, h = vb.height;
+    var clone = svg.cloneNode(true);
+    clone.setAttribute('width', w); clone.setAttribute('height', h);
+    var data = new XMLSerializer().serializeToString(clone);
+    var svg64 = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(data)));
+    var img = new Image();
+    img.onload = function(){
+      var c = document.createElement('canvas');
+      c.width = w*scale; c.height = h*scale;
+      var ctx = c.getContext('2d');
+      ctx.fillStyle = '#0f1620'; ctx.fillRect(0,0,c.width,c.height);
+      ctx.scale(scale,scale);
+      ctx.drawImage(img,0,0);
+      var a = document.createElement('a');
+      a.download = '01_detailed_flow.png';
+      a.href = c.toDataURL('image/png');
+      a.click();
+    };
+    img.src = svg64;
+  });
+  </script>
+</body>
+</html>

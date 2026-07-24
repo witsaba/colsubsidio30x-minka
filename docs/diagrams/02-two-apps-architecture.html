@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Two Applications — Operator & Supervisor</title>
+<style>
+  :root{
+    --bg:#0f1620; --panel:#16202c; --ink:#e8eef5; --muted:#93a4b7; --line:#2c3b4d;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:radial-gradient(1200px 700px at 80% -10%,#1b2735,#0f1620);
+    color:var(--ink);font-family:'Segoe UI',system-ui,Arial,sans-serif;padding:28px;}
+  h1{font-size:22px;margin:0 0 2px;}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:18px;}
+  .board{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px 10px 8px;
+    box-shadow:0 18px 50px rgba(0,0,0,.35);overflow-x:auto;}
+  svg{display:block;margin:0 auto;max-width:100%;height:auto;}
+  .foot{color:var(--muted);font-size:11px;margin-top:12px;text-align:right;}
+</style>
+</head>
+<body>
+  <h1>Two Applications, One Backend</h1>
+  <div class="sub">Operator mobile app for capture · Supervisor web platform for audit · shared AI + database core</div>
+
+  <div class="board">
+  <svg viewBox="0 0 1180 760" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="a2" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#8fa3b8"/></marker>
+      <linearGradient id="opB" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#173a6b"/><stop offset="1" stop-color="#0f2748"/></linearGradient>
+      <linearGradient id="supB" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#5a2f10" /><stop offset="1" stop-color="#3d2009"/></linearGradient>
+      <linearGradient id="coreB" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#2a1c4a"/><stop offset="1" stop-color="#123a39"/></linearGradient>
+      <style>
+        .h{fill:#eef3f8;font-weight:700;}
+        .k{fill:#dde7f1;font-size:13px;font-weight:600;}
+        .d{fill:#b8c6d5;font-size:11.5px;}
+        .tag{fill:#93a4b7;font-size:10.5px;letter-spacing:.8px;}
+        .edge{stroke:#8fa3b8;stroke-width:2;fill:none;}
+        .feat{fill:#0f2237;stroke:#2f4a6b;}
+        .featS{fill:#3a2410;stroke:#7a4a1e;}
+      </style>
+    </defs>
+
+    <!-- ===================== OPERATOR APP (mobile) ===================== -->
+    <g>
+      <rect x="40" y="30" width="360" height="470" rx="18" fill="url(#opB)" stroke="#3b82f6" stroke-width="1.6"/>
+      <circle cx="78" cy="70" r="16" fill="#1f6feb"/>
+      <text x="78" y="75" text-anchor="middle" font-size="16" fill="#fff">📱</text>
+      <text x="106" y="63" class="tag">FIELD · MOBILE APP</text>
+      <text x="106" y="85" class="h" font-size="19">Operator</text>
+      <text x="60" y="112" class="d">The person counting in each warehouse.</text>
+
+      <!-- phone mock -->
+      <rect x="70" y="132" width="300" height="60" rx="10" class="feat"/>
+      <text x="88" y="156" class="k">🎙 Push-to-talk voice capture</text>
+      <text x="88" y="177" class="d">Hold, speak the count — hands stay on the product.</text>
+
+      <rect x="70" y="200" width="300" height="56" rx="10" class="feat"/>
+      <text x="88" y="223" class="k">🏬 Warehouse selection</text>
+      <text x="88" y="243" class="d">Loads that bodega's catalog &amp; stock.</text>
+
+      <rect x="70" y="264" width="300" height="56" rx="10" class="feat"/>
+      <text x="88" y="287" class="k">✅ On-screen read-back &amp; confirm</text>
+      <text x="88" y="307" class="d">"Flour · 5 kg — correct?" before saving.</text>
+
+      <rect x="70" y="328" width="300" height="56" rx="10" class="feat"/>
+      <text x="88" y="351" class="k">⚠ Anomaly prompts</text>
+      <text x="88" y="371" class="d">Asks when a number breaks the usual pattern.</text>
+
+      <rect x="70" y="392" width="300" height="56" rx="10" class="feat"/>
+      <text x="88" y="415" class="k">↺ Delete &amp; re-record to fix</text>
+      <text x="88" y="435" class="d">No manual typing, no hallucinated edits.</text>
+
+      <text x="70" y="475" class="tag">GOAL · Fast, clean capture at the shelf</text>
+    </g>
+
+    <!-- ===================== SHARED CORE ===================== -->
+    <g>
+      <rect x="440" y="120" width="300" height="300" rx="18" fill="url(#coreB)" stroke="#5b6bb0" stroke-width="1.6"/>
+      <text x="590" y="150" text-anchor="middle" class="tag">SHARED BACKEND CORE</text>
+
+      <rect x="466" y="168" width="248" height="70" rx="10" fill="#1c1440" stroke="#8b5cf6"/>
+      <text x="482" y="192" class="k">🧠 AI Voice Service</text>
+      <text x="482" y="212" class="d">Speech-to-text +</text>
+      <text x="482" y="228" class="d">3-model consensus parsing.</text>
+
+      <rect x="466" y="250" width="248" height="70" rx="10" fill="#0c322f" stroke="#2dd4bf"/>
+      <text x="482" y="274" class="k">🗄 Supabase Database</text>
+      <text x="482" y="294" class="d">Catalog, stock history &amp;</text>
+      <text x="482" y="310" class="d">all captured counts.</text>
+
+      <rect x="466" y="332" width="248" height="66" rx="10" fill="#122a1c" stroke="#12b981"/>
+      <text x="482" y="356" class="k">🔎 Validation &amp; anomaly engine</text>
+      <text x="482" y="376" class="d">Real-time checks vs catalog</text>
+      <text x="482" y="392" class="d">&amp; historical patterns.</text>
+    </g>
+
+    <!-- ===================== SUPERVISOR APP (web) ===================== -->
+    <g>
+      <rect x="780" y="30" width="360" height="470" rx="18" fill="url(#supB)" stroke="#f97316" stroke-width="1.6"/>
+      <circle cx="818" cy="70" r="16" fill="#f97316"/>
+      <text x="818" y="75" text-anchor="middle" font-size="15" fill="#fff">🖥</text>
+      <text x="846" y="63" class="tag">OFFICE · WEB PLATFORM</text>
+      <text x="846" y="85" class="h" font-size="19">Supervisor / Auditor</text>
+      <text x="800" y="112" class="d">Sets up data and audits the results.</text>
+
+      <rect x="810" y="132" width="300" height="56" rx="10" class="featS"/>
+      <text x="828" y="155" class="k">📥 Excel import</text>
+      <text x="828" y="175" class="d">Load catalog &amp; stock into the database.</text>
+
+      <rect x="810" y="196" width="300" height="56" rx="10" class="featS"/>
+      <text x="828" y="219" class="k">👥 User management</text>
+      <text x="828" y="239" class="d">Create operators, assign warehouses.</text>
+
+      <rect x="810" y="260" width="300" height="56" rx="10" class="featS"/>
+      <text x="828" y="283" class="k">📊 Review: counted vs system</text>
+      <text x="828" y="303" class="d">Side-by-side of physical vs expected.</text>
+
+      <rect x="810" y="324" width="300" height="56" rx="10" class="featS"/>
+      <text x="828" y="347" class="k">🔔 Alert &amp; anomaly dashboard</text>
+      <text x="828" y="367" class="d">Resolve flags raised during capture.</text>
+
+      <rect x="810" y="388" width="300" height="56" rx="10" class="featS"/>
+      <text x="828" y="411" class="k">📤 Discrepancy reports → ERP export</text>
+      <text x="828" y="431" class="d">Where differences repeat; clean file out.</text>
+
+      <text x="810" y="475" class="tag">GOAL · Trustworthy data ready for the ERP</text>
+    </g>
+
+    <!-- ===================== CONNECTIONS ===================== -->
+    <!-- operator <-> core -->
+    <line x1="400" y1="250" x2="440" y2="250" class="edge" marker-end="url(#a2)"/>
+    <line x1="440" y1="300" x2="400" y2="300" class="edge" marker-end="url(#a2)"/>
+    <text x="418" y="238" text-anchor="middle" class="tag" fill="#8fb4ff">capture</text>
+    <text x="420" y="322" text-anchor="middle" class="tag" fill="#8fb4ff">validate</text>
+
+    <!-- supervisor <-> core -->
+    <line x1="780" y1="250" x2="740" y2="250" class="edge" marker-end="url(#a2)"/>
+    <line x1="740" y1="300" x2="780" y2="300" class="edge" marker-end="url(#a2)"/>
+    <text x="762" y="238" text-anchor="middle" class="tag" fill="#ffc078">import</text>
+    <text x="762" y="322" text-anchor="middle" class="tag" fill="#ffc078">audit</text>
+
+    <!-- ERP box -->
+    <g>
+      <rect x="470" y="640" width="240" height="80" rx="12" fill="#14351f" stroke="#12b981"/>
+      <text x="590" y="668" text-anchor="middle" class="k" fill="#d1fae5">🏢 Client ERP (existing)</text>
+      <text x="590" y="690" text-anchor="middle" class="d" fill="#bff0d6">Receives the clean, validated file.</text>
+      <text x="590" y="708" text-anchor="middle" class="d" fill="#8fdcb0">This project feeds it — does not replace it.</text>
+    </g>
+    <path d="M590 420 L590 640" class="edge" marker-end="url(#a2)" stroke-dasharray="7 5"/>
+    <text x="606" y="540" class="tag" fill="#12b981">clean export</text>
+  </svg>
+  </div>
+  <div class="foot">Colsubsidio · Reto Hotelería — Captura inteligente de inventarios</div>
+
+  <button id="dlPng" style="position:fixed;right:22px;bottom:22px;z-index:99;
+    background:#12b981;color:#04150d;border:none;border-radius:10px;padding:12px 18px;
+    font:600 14px 'Segoe UI',Arial;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.4);">⬇ Download PNG</button>
+  <script>
+  document.getElementById('dlPng').addEventListener('click', function(){
+    var svg = document.querySelector('.board svg');
+    var scale = 2;
+    var vb = svg.viewBox.baseVal;
+    var w = vb.width, h = vb.height;
+    var clone = svg.cloneNode(true);
+    clone.setAttribute('width', w); clone.setAttribute('height', h);
+    var data = new XMLSerializer().serializeToString(clone);
+    var svg64 = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(data)));
+    var img = new Image();
+    img.onload = function(){
+      var c = document.createElement('canvas');
+      c.width = w*scale; c.height = h*scale;
+      var ctx = c.getContext('2d');
+      ctx.fillStyle = '#0f1620'; ctx.fillRect(0,0,c.width,c.height);
+      ctx.scale(scale,scale);
+      ctx.drawImage(img,0,0);
+      var a = document.createElement('a');
+      a.download = '02_two_apps_architecture.png';
+      a.href = c.toDataURL('image/png');
+      a.click();
+    };
+    img.src = svg64;
+  });
+  </script>
+</body>
+</html>
