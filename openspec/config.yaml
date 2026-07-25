@@ -14,10 +14,13 @@ context: |
     pandas/openpyxl for the spreadsheet build step.
   Architecture: `scripts/` builds `data/bodegas-y-stock.sqlite`;
     `services/matcher` is an installable package (`src/matcher/`) served as
-    `matcher.main:app` on port 8002; `services/stt` serves port 8001; each
-    service is containerized with its own docker compose.
+    `matcher.main:app` on port 8002; `services/stt` serves port 8001. Both are
+    deployed from the single root `docker-compose.yml` with a single root
+    `.env` (template `.env.example`, filled in by `scripts/setup-env.sh`);
+    `docs/deployment.md` carries the checklist for adding a service.
   Testing: pytest. Root `uv run pytest` collects `services/matcher/tests`
-    (unit, api via FastAPI TestClient, eval accuracy gate). The STT suite runs
+    (unit, api via FastAPI TestClient, eval accuracy gate) and
+    `tests/deployment` (daemon-free Compose contracts). The STT suite runs
     separately: `cd services/stt && uv run pytest` (pytest-asyncio + respx).
   Style: src layout, `from __future__ import annotations`, type hints on public
     functions, frozen dataclasses for value objects, pure functions kept free of I/O;
@@ -33,6 +36,7 @@ testing:
     unit: uv run pytest services/matcher/tests/unit
     integration: uv run pytest services/matcher/tests/api
     e2e: uv run pytest services/matcher/tests/eval
+    deployment: uv run pytest tests/deployment
   coverage:
     available: false
     command: null
@@ -60,7 +64,7 @@ rules:
     test_command: uv run pytest
   verify:
     test_command: uv run pytest
-    build_command: docker compose -f services/matcher/docker-compose.yml build
+    build_command: docker compose build
     coverage_threshold: 0
   archive:
     - Warn before merging destructive deltas.
