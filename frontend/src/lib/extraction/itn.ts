@@ -115,6 +115,54 @@ export function isCardinalWord(word: string): boolean {
   return CARDINAL_WORDS.has(word) || /^\d+$/.test(word);
 }
 
+const SMALL_WORDS = [
+  'cero', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho',
+  'nueve', 'diez', 'once', 'doce', 'trece', 'catorce', 'quince', 'dieciséis',
+  'diecisiete', 'dieciocho', 'diecinueve', 'veinte', 'veintiuno', 'veintidós',
+  'veintitrés', 'veinticuatro', 'veinticinco', 'veintiséis', 'veintisiete',
+  'veintiocho', 'veintinueve',
+] as const;
+
+const TENS_WORDS = [
+  '', '', '', 'treinta', 'cuarenta', 'cincuenta', 'sesenta', 'setenta',
+  'ochenta', 'noventa',
+] as const;
+
+const HUNDREDS_WORDS = [
+  '', 'ciento', 'doscientos', 'trescientos', 'cuatrocientos', 'quinientos',
+  'seiscientos', 'setecientos', 'ochocientos', 'novecientos',
+] as const;
+
+function belowThousandToCardinal(value: number): string {
+  if (value < 30) return SMALL_WORDS[value]!;
+  if (value < 100) {
+    const tens = TENS_WORDS[Math.floor(value / 10)]!;
+    const rest = value % 10;
+    return rest === 0 ? tens : `${tens} y ${SMALL_WORDS[rest]!}`;
+  }
+  if (value === 100) return 'cien';
+  const hundreds = HUNDREDS_WORDS[Math.floor(value / 100)]!;
+  const rest = value % 100;
+  return rest === 0 ? hundreds : `${hundreds} ${belowThousandToCardinal(rest)}`;
+}
+
+/**
+ * The inverse of `cardinalToNumber`, in masculine form: 900 -> "novecientos".
+ *
+ * Used by the UI copy that quotes what the operator said ("Escuché
+ * «novecientos» y lo escribí 900"). Returns `null` outside 0..999_999 or for a
+ * non-integer, so callers never render a half-built phrase.
+ */
+export function numberToCardinal(value: number): string | null {
+  if (!Number.isInteger(value) || value < 0 || value > 999_999) return null;
+  if (value < 1000) return belowThousandToCardinal(value);
+
+  const thousands = Math.floor(value / 1000);
+  const rest = value % 1000;
+  const prefix = thousands === 1 ? 'mil' : `${belowThousandToCardinal(thousands)} mil`;
+  return rest === 0 ? prefix : `${prefix} ${belowThousandToCardinal(rest)}`;
+}
+
 /**
  * Convert a spoken Spanish cardinal to a number.
  *

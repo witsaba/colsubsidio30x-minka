@@ -92,7 +92,7 @@ Parallel groups: **P-A** = T4→T5→T6 (extraction/units chain) · **P-B** = T7
   GREEN: `src/lib/session/reducer.ts`.
   Requirements: REQ-OCF-1, REQ-OCF-3, REQ-OCF-4, REQ-OCF-5, REQ-OCF-9. Deps: T3.
 
-- [ ] **T8 — `FixtureAnomalyEngine` (Module 4 seam, two rules only).**
+- [x] **T8 — `FixtureAnomalyEngine` (Module 4 seam, two rules only).**
   RED: `tests/anomaly/fixture-engine.test.ts` — `900 gramos` (mass) vs `unidad_display:'litros'` (volume) → `{kind:'unidad'}`; `305 unidades` of gaseosa vs learned range 20–40 → `{kind:'cantidad'}`; **all three script-1 items return `null`** (no false positive: containers are `count`, compatible with everything).
   GREEN: `src/lib/anomaly/fixtureEngine.ts`, `src/fixtures/anomalyRules.ts` (aceite de oliva 2–8 L, gaseosa 20–40 und, lechuga 1,5–6 kg, arroz 3–12 kg, pechuga 12–40 und).
   Requirements: REQ-OCF-5, D11. Deps: T5.
