@@ -1,0 +1,77 @@
+---
+/**
+ * Operator shell — `/conteo` (design §4, §5).
+ *
+ * Phone-first: the design frame is 390x844 and the prototype ships no media
+ * queries at all. This layout needs none either — a fluid single column capped
+ * at --operator-max-width simply centers itself on anything wider, so there is
+ * exactly one layout to reason about on a phone, a tablet and a projector.
+ *
+ * Islands (CountSession, MicRecorder) mount into the default slot; this shell
+ * stays static .astro with zero client JS.
+ */
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+}
+
+const { title } = Astro.props;
+---
+
+<!doctype html>
+<html lang="es-CO">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#0067b1" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{title}</title>
+
+    {/*
+      D12: the design loads all three families from the Google Fonts CDN in a
+      single call, and we keep it. Tradeoff: zero setup cost, but the demo
+      inherits a third-party network dependency. The system-ui / ui-monospace
+      fallbacks in tokens.css keep the app legible if the CDN is unreachable;
+      only the Material Symbols ligature icons degrade to their text label.
+      Self-hosting the three families is the documented follow-up.
+    */}
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,300,0,0&display=swap"
+    />
+  </head>
+
+  <body>
+    <a class="skip-link" href="#contenido">Ir al contenido</a>
+
+    <div class="app">
+      <main id="contenido" class="app__main">
+        <slot />
+      </main>
+    </div>
+  </body>
+</html>
+
+<style>
+  .app {
+    max-width: var(--operator-max-width);
+    margin-inline: auto;
+    min-height: 100dvh;
+    background: var(--app-bg);
+  }
+
+  .app__main {
+    display: flex;
+    flex-direction: column;
+    min-height: 100dvh;
+  }
+
+  /* The operator never sees a scrollbar (design contract §1: width 0). */
+  .app__main::-webkit-scrollbar {
+    width: 0;
+  }
+</style>

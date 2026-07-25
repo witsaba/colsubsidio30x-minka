@@ -1,0 +1,222 @@
+/*
+ * Global stylesheet — T14 (design §4).
+ *
+ * Reset + the recurring type roles from design contract §1 + the accessibility
+ * floor the prototypes lack entirely (visible focus ring, dialog base,
+ * screen-reader-only utility). Every value resolves through tokens.css.
+ */
+
+@import './tokens.css';
+
+/* ------------------------------------------------------------------ reset */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--page);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: 0;
+  background: none;
+}
+
+button[disabled] {
+  cursor: not-allowed;
+}
+
+a {
+  color: var(--brand-blue);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--brand-blue-link-hover);
+}
+
+ul,
+ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+/* -------------------------------------------------------------- type roles */
+
+.h1 {
+  font-size: var(--fs-h1);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.h2 {
+  font-size: var(--fs-h2);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.h3 {
+  font-size: var(--fs-h3);
+  font-weight: 800;
+}
+
+.eyebrow {
+  font-size: var(--fs-eyebrow);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint-2);
+}
+
+/*
+ * Quantities MUST use tabular figures: counted amounts are compared column to
+ * column in the record list and the auditor table, and proportional digits
+ * make a 305 look like a 30,5 at a glance. This is a requirement, not styling.
+ */
+.qty {
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  font-size: var(--fs-qty);
+  letter-spacing: -0.02em;
+}
+
+.mono-meta {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  color: var(--text-faint-3);
+}
+
+/* Material Symbols Rounded renders as ligature text, not SVG (contract §1). */
+.icon {
+  font-family: var(--font-icon);
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* ------------------------------------------------------------ a11y floor */
+
+/*
+ * The prototypes carry zero aria-* and no focus styling whatsoever. Keyboard
+ * operability starts here so the island components inherit it for free.
+ */
+:focus-visible {
+  outline: 2px solid var(--brand-blue);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  top: var(--sp-2);
+  left: var(--sp-2);
+  z-index: 100;
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--surface);
+  border-radius: var(--r-btn);
+  transform: translateY(-200%);
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
+/* --------------------------------------------------------- dialog surface */
+
+/*
+ * Base for every overlay: bottom sheets on the operator, centred modals on the
+ * auditor. Islands add their own chrome; the scrim, stacking and motion live
+ * here so no component reinvents them.
+ */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--scrim);
+}
+
+[role='dialog'] {
+  position: relative;
+  z-index: 50;
+  background: var(--surface);
+  color: var(--text);
+}
+
+[role='dialog'].sheet {
+  border-radius: var(--r-sheet);
+  animation: vrise 0.22s ease both;
+}
+
+[role='dialog'].modal {
+  width: 480px;
+  max-width: calc(100vw - var(--sp-6) * 2);
+  border-radius: var(--r-modal);
+  animation: trise 0.2s ease both;
+}

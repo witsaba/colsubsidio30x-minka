@@ -21,3 +21,4 @@ scripts/
 .codegraph/
 .atl/
 services/matcher/tests/
+frontend/

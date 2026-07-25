@@ -30,7 +30,19 @@ from .compose_text import (
 
 #: Ports already taken. A new service colliding with one of these would make
 #: `docker compose up` fail at bind time, long after review.
-RESERVED_PORTS = {"8001": "stt", "8002": "matcher"}
+RESERVED_PORTS = {
+    "8001": "stt",
+    "8002": "matcher",
+    "8003": "product_identification",
+    # Not the next sequential port on purpose: 4321 is Astro's own default and
+    # is already written into frontend/README.md, the frontend's tests and the
+    # manual verification steps. Renumbering it would silently break all three.
+    "4321": "frontend",
+}
+
+#: Every service the root file is expected to define. Spelled out rather than
+#: read back from the file, so *forgetting* to add one here is what fails.
+EXPECTED_SERVICES = {"stt", "matcher", "product_identification", "frontend"}
 
 #: A value that looks like a real credential rather than a placeholder: a long
 #: unbroken run of key-ish characters.
@@ -82,7 +94,7 @@ class TestSoleSurface:
         assert leftovers == [], leftovers
 
     def test_the_root_file_defines_every_service(self, compose: str) -> None:
-        assert set(service_blocks(compose)) == {"stt", "matcher"}
+        assert set(service_blocks(compose)) == EXPECTED_SERVICES
 
     def test_the_project_name_is_pinned(self, compose: str) -> None:
         """Otherwise Compose names the project after the directory, and the
@@ -161,6 +173,28 @@ class TestPerServiceContract:
     def test_the_stt_builds_from_its_own_directory(self, compose: str) -> None:
         stt = service_blocks(compose)["stt"]
         assert re.search(r"^\s+context:\s+\./services/stt\s*$", stt, re.MULTILINE)
+
+    def test_the_frontend_builds_from_its_own_directory(self, compose: str) -> None:
+        frontend = service_blocks(compose)["frontend"]
+        assert re.search(r"^\s+context:\s+\./frontend\s*$", frontend, re.MULTILINE)
+
+    def test_the_frontend_reaches_the_services_by_their_compose_names(
+        self, compose: str
+    ) -> None:
+        """frontend/.env.example points at `localhost` because it documents
+        `npm run dev` on the host. Inside Compose `localhost` is the frontend's
+        own container, so the upstream bases must be the service names on the
+        default project network — a container-internal fact, fixed here rather
+        than asked of the operator (the CATALOGUE_DB precedent)."""
+        frontend = service_blocks(compose)["frontend"]
+        assert "STT_BASE_URL: http://stt:8001" in frontend
+        assert "MATCHER_BASE_URL: http://matcher:8002" in frontend
+
+    def test_the_frontend_binds_every_interface(self, compose: str) -> None:
+        """The Node adapter defaults to 127.0.0.1, which no published port can
+        reach from outside the container."""
+        frontend = service_blocks(compose)["frontend"]
+        assert "HOST: 0.0.0.0" in frontend
 
 
 class TestNoCrossServiceOrdering:

@@ -1,0 +1,172 @@
+/*
+ * Design token layer — T14 (design §4, design contract §1).
+ *
+ * The source prototypes contain no CSS variables, no utility framework and no
+ * media queries: every value is a literal inline style. This file is therefore
+ * authored from scratch and is the SINGLE source of truth for colour, type,
+ * shape, elevation and motion. Components consume `var(--*)` and never
+ * hardcode a hex.
+ *
+ * Brand colours are verified against the official Colsubsidio palette:
+ *   #0067b1 Pantone 2196 C · #ffd000 Pantone 109 C · #575756 Cool Gray 11 C.
+ *
+ * There is deliberately NO red in this design. Destructive and blocking
+ * actions reuse the anomaly orange ramp (--warn*). Do not add one.
+ */
+
+:root {
+  /* ---------------------------------------------------------------- brand */
+  --brand-blue: #0067b1;
+  --brand-blue-hover: #00588f;
+  --brand-blue-link-hover: #00507f;
+  --brand-blue-deep: #00517f;
+  --brand-yellow: #ffd000;
+  --brand-yellow-hover: #f0c500;
+  --yellow-live: #ffb800;
+
+  /* Short aliases used by the tasks artifact and by component authors. */
+  --primary: var(--brand-blue);
+  --accent: var(--brand-yellow);
+
+  /* ------------------------------------------------------------- surfaces */
+  --page-bg: #f2f2ef;
+  --page: var(--page-bg);
+  --app-bg: #fbfbf9;
+  --app-bg-auditor: #f7f7f4;
+  --surface: #ffffff;
+  --surface-alt: #f4f4f0;
+  --surface-pale-blue: #f4f8fc;
+  --surface-pale-blue-2: #f0f6fb;
+  --surface-pale-blue-3: #f6fafd;
+  --surface-pale-blue-4: #f7f9fb;
+  --surface-input: #fafaf7;
+
+  /* ------------------------------------------------------------ text ramp */
+  --text: #2f2f2e;
+  --text-secondary: #4a4a46;
+  --text-muted: #575756;
+  --text-soft: #66665f;
+  --text-soft-2: #77776f;
+  --text-soft-3: #88887f;
+  --text-faint: #8a8a86;
+  --text-faint-2: #9a9a94;
+  --text-faint-3: #a2a29b;
+  --text-on-blue: #dceaf6;
+  --text-on-blue-2: #a8d2ee;
+  --text-on-blue-3: #bcdcf2;
+
+  /* --------------------------------------------------------------- borders */
+  --border: #e6e6e0;
+  --border-2: #ebebe4;
+  --border-3: #e0e0d8;
+  --border-4: #dcdcd4;
+  --border-5: #e9e9e2;
+  --border-6: #ecece5;
+  --border-7: #f2f2ec;
+  /* Original casing kept from the prototype (contract §1). */
+  --divider-on-blue: #ececE5;
+
+  /* ------------------------------------------------- warn (anomaly orange) */
+  --warn: #d9631a;
+  --warn-hover: #bf5413;
+  --warn-bg: #fdf1e7;
+  --warn-bg-2: #fffaf5;
+  --warn-border: #f2d3b4;
+  --warn-border-2: #e8b98d;
+  --warn-border-3: #f0d5bb;
+  --warn-text: #8a4a12;
+  --warn-text-2: #c07a3c;
+
+  /* ------------------------------------------------------ ok / info / dark */
+  --ok: #2f6b3a;
+  --ok-bg: #eef6ef;
+  --info-bg: #e9f2f9;
+  --neutral-badge-bg: #f4f4ef;
+  --dark: #575756;
+  --dark-hover: #3f3f3e;
+  --device-frame: #1b1b1a;
+
+  /* ------------------------------------------------------ scrim / disabled */
+  --scrim: rgba(24, 24, 22, .44);
+  --disabled-bg: #d5d5cd;
+  --disabled-bg-2: #c9c9c1;
+  --disabled-bg-3: #ecece5;
+  --disabled-fg: #8f8f89;
+  --disabled-fg-2: #a2a29b;
+
+  /* ------------------------------------------------------------ typography */
+  --font-ui: Manrope, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-icon: 'Material Symbols Rounded';
+
+  --fs-h1: 27px;
+  --fs-h2: 23px;
+  --fs-h3: 15px;
+  --fs-body: 14px;
+  --fs-eyebrow: 11px;
+  --fs-qty: 22px;
+  --fs-mono-meta: 11px;
+
+  /* ---------------------------------------------------------------- shape */
+  --r-pill: 99px;
+  --r-btn: 14px;
+  --r-input: 16px;
+  --r-card: 16px;
+  --r-card-lg: 20px;
+  --r-modal: 24px;
+  --r-sheet: 28px 28px 42px 42px;
+  --r-screen: 42px;
+  --r-screen-tablet: 22px;
+
+  /* ------------------------------------------------------------ elevation */
+  --shadow-row: 0 1px 2px rgba(30, 30, 28, 0.04);
+  --shadow-mic: 0 12px 24px -8px rgba(0, 103, 177, 0.5);
+  --shadow-device: 0 30px 60px -24px rgba(20, 20, 19, 0.55),
+    0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+
+  /* ------------------------------------------------------ control heights */
+  --h-primary: 54px;
+  --h-secondary: 48px;
+  --h-auditor-primary: 50px;
+  --h-auditor-secondary: 46px;
+  --h-header-btn: 46px;
+
+  /* --------------------------------------------------------------- spacing */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+
+  /* -------------------------------------------------------------- layout */
+  --operator-max-width: 430px;
+  --auditor-rail: 94px;
+  --auditor-warehouses: 286px;
+  --auditor-detail: 352px;
+}
+
+/* ---------------------------------------------------------------------------
+ * Motion — the five keyframes are copied VERBATIM from design contract §1.
+ * ------------------------------------------------------------------------ */
+
+@keyframes vpulse{0%{transform:scale(1);opacity:.55;}70%{transform:scale(1.55);opacity:0;}100%{transform:scale(1.55);opacity:0;}}
+@keyframes vbar{0%,100%{transform:scaleY(.22);}50%{transform:scaleY(1);}}
+@keyframes vdot{0%,100%{opacity:.25;}50%{opacity:1;}}
+@keyframes vrise{from{transform:translateY(14px);opacity:0;}to{transform:translateY(0);opacity:1;}}
+@keyframes trise{from{transform:translateY(10px);opacity:0;}to{transform:translateY(0);opacity:1;}}
+
+/*
+ * The design ships no reduced-motion handling at all, and its animations are
+ * prominent (an infinite 88px pulse ring behind the mic, a 13-bar waveform).
+ * This block is an authored accessibility addition, not a port.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
