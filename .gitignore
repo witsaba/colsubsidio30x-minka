@@ -13,3 +13,12 @@ __pycache__/
 # Local tool state
 .codegraph/
 .atl/
+
+# Environment and Credentials (Local preservation, ignored by Git)
+.env
+.env.*
+!.env.example
+gen-lang-client-*.json
+*-key.json
+service-account*.json
+

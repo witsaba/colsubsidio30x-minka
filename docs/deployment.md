@@ -49,6 +49,7 @@ template default.
 | Service | Port | Build context | Notes |
 |---|---|---|---|
 | `stt` | 8001 | `./services/stt` | Speech to text. Needs the API key of the vendor named by `STT_VENDOR`, and will not boot without it. |
+| `product_identification` | 8003 | `.` (repository root) | Product identification and voice inventory extraction using Vertex AI & Gemini dual-model consensus. |
 | `matcher` | 8002 | `.` (repository root) | Product matching. Mounts `./data:/data:ro`, so `data/bodegas-y-stock.sqlite` must exist — build it with `make build-sqlite`. |
 
 The services are deliberately independent: no `depends_on`, no custom network,
