@@ -9,3 +9,8 @@ __pycache__/
 # Local tool state
 .codegraph/
 .atl/
+
+# Frontend (Astro)
+frontend/node_modules/
+frontend/dist/
+frontend/.astro/
