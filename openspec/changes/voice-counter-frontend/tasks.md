@@ -156,7 +156,7 @@ Parallel groups: **P-A** = T4→T5→T6 (extraction/units chain) · **P-B** = T7
   GREEN: `src/components/operator/AnomalySheet.tsx`, `SearchSheet.tsx`.
   Requirements: REQ-OCF-5, REQ-OCF-6, D8. Deps: T7, T9, T14.
 
-- [ ] **T20 — `CountSession` island wiring + done screen + `/conteo` route. ⭐ DEMOABLE MILESTONE**
+- [x] **T20 — `CountSession` island wiring + done screen + `/conteo` route. ⭐ DEMOABLE MILESTONE**
   RED: `tests/components/count-session.test.tsx` — with a stubbed pipeline, the full happy path runs consent → plans → count → record → confirm → 3 records appended → «Terminar conteo» → `screen==='done'`; a `PIPELINE_FAILED` maps to the authored Spanish error banner with retry; an anomaly outcome opens the anomaly overlay and blocks the mic.
   GREEN: `src/components/operator/CountSession.tsx` (owns `useReducer`, fires the real `getUserMedia` at consent, runs `runPipeline`, advances the queue), `DoneScreen.tsx`, `src/pages/conteo.astro` (`prerender=true`, `<CountSession client:load />`).
   Requirements: REQ-OCF-1, REQ-OCF-12, REQ-VC-7, D3, D4. Deps: T13, T16, T17, T18, T19.

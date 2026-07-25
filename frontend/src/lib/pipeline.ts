@@ -47,6 +47,23 @@ export interface PipelineDeps {
   extraction: ExtractionAdapter;
   match: MatchFn;
   anomalies: AnomalyEngine;
+  /**
+   * OPTIONAL progressive-reveal hook, called the instant STT returns and before
+   * anything is done with the transcript (T20 addition).
+   *
+   * `PIPELINE_TRANSCRIPT` was a producerless event: `runPipeline` resolved the
+   * entire chain before returning, so the S4 processing sheet showed «Escuché»
+   * with no text until resolution. The real STT worst case is
+   * `STT_TOTAL_DEADLINE_S = 45`, so that is up to 45 s of blank sheet where the
+   * design shows what the operator just said.
+   *
+   * It stays OPTIONAL on purpose: every existing caller and every existing test
+   * builds `PipelineDeps` without it and is unaffected. It is deliberately NOT
+   * called for garbage audio — there is nothing honest to reveal — but it IS
+   * called before `nothing_extracted`, because in that case STT heard something
+   * real and only the extraction found no quantity.
+   */
+  onTranscript?: (raw: string) => void;
 }
 
 /**
@@ -107,6 +124,10 @@ export async function runPipeline(
   if (stt.is_garbage) throw new UiError('garbage', stt.request_id);
 
   const transcript = stt.raw_transcript;
+  // Progressive reveal: hand the transcript over BEFORE extraction, so the S4
+  // sheet fills in while the rest of the chain is still running.
+  deps.onTranscript?.(transcript);
+
   const items = deps.extraction.extract(transcript);
   if (items.length === 0) throw new UiError('nothing_extracted', stt.request_id);
 
