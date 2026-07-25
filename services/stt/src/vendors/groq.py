@@ -42,7 +42,9 @@ async def transcribe(
             "language": settings.stt_language,
             "response_format": RESPONSE_FORMAT,
         },
-        headers={"Authorization": f"Bearer {settings.active_api_key}"},
+        # This adapter's own key, never `active_api_key`: on failover it is the
+        # vendor that is not active (REQ-VND-7).
+        headers={"Authorization": f"Bearer {settings.api_key_for('groq')}"},
         timeout=settings.stt_vendor_timeout_s,
     )
 

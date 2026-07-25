@@ -127,6 +127,9 @@ env -u DEEPGRAM_API_KEY STT_VENDOR=groq GROQ_API_KEY=... \
 | `STT_MIN_SPEECH_MS` | `300` | `is_garbage` negligible-speech trigger |
 | `STT_MAX_UPLOAD_BYTES` | `1048576` | Upload cap; see the note below |
 | `STT_VENDOR_TIMEOUT_S` | `30` | Vendor call timeout |
+| `STT_RETRY_ATTEMPTS` | `2` | Total attempts against the primary vendor, initial call included. `1` disables retry; `0` fails startup |
+| `STT_RETRY_BACKOFF_S` | `0.5` | Base wait between primary attempts; doubles each time (0.5s, 1s, …) |
+| `STT_FALLBACK_ENABLED` | `true` | Automatic failover to the other vendor. Needs that vendor's key to be set |
 | `LOG_LEVEL` | `INFO` | Standard logging level |
 | `DEEPGRAM_BASE_URL` | `https://api.deepgram.com` | Override for testing |
 | `GROQ_BASE_URL` | `https://api.groq.com` | Override for testing |
@@ -153,6 +156,27 @@ push-to-talk clip.
 Groq's confidence is an **uncalibrated proxy**. It exists so the `is_garbage`
 confidence trigger keeps working on the fallback vendor; it is not comparable to
 Deepgram's number and must not be presented as one.
+
+### Retry and failover
+
+A vendor hiccup should not cost the speaker a dictation, so the primary vendor
+gets `STT_RETRY_ATTEMPTS` tries with an exponential backoff, and then — if
+`STT_FALLBACK_ENABLED` is on and the other vendor's key is configured — the
+other vendor gets exactly one.
+
+Only failures a retry could plausibly fix are eligible: timeouts, connection
+errors, and HTTP 429/500/502/503/504. A 400, 401 or 403, audio the vendor
+rejects, or a 2xx body we cannot parse fails on the first attempt — asking
+again returns the same answer and the speaker pays for the wait.
+
+`stt_vendor` in the response and `vendor` in the request log always name the
+vendor that **actually served** the request, not the configured one. When both
+vendors fail, the caller gets the primary's failure class.
+
+Failover needs the fallback vendor's key to be present; a missing one is still
+tolerated at boot, so the feature switches itself off rather than blocking
+startup. `docker-compose.yml` passes both keys through without requiring
+either, which is what makes a Groq-only deployment possible.
 
 Calls go through `httpx` only — no vendor SDK is a dependency, which is what
 makes the swap a function swap.

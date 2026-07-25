@@ -69,3 +69,43 @@ Configuration SHALL be loaded via pydantic-settings at startup. A missing API ke
 - GIVEN `STT_VENDOR=deepgram`, `DEEPGRAM_API_KEY` set, `GROQ_API_KEY` unset
 - WHEN the application starts
 - THEN startup succeeds and `/health` returns `200`
+
+### Requirement: REQ-VND-6 Bounded retry with backoff on transient vendor failures
+
+The service SHALL retry the selected vendor up to `STT_RETRY_ATTEMPTS` times in total (default 2, minimum 1), waiting `STT_RETRY_BACKOFF_S` doubled per attempt between tries, when the call fails with a timeout, a connection error, or HTTP 429, 500, 502, 503 or 504. Any other failure — including HTTP 400/401/403, audio the vendor rejects, and a 2xx body the adapter cannot parse — MUST fail on the first attempt without a retry.
+
+#### Scenario: A transient vendor failure is retried and succeeds
+
+- GIVEN `STT_VENDOR=deepgram` and `STT_RETRY_ATTEMPTS=2`
+- AND the Deepgram endpoint answers `503` once and then `200`
+- WHEN a clip is POSTed to `/transcribe`
+- THEN the vendor is called twice with a `STT_RETRY_BACKOFF_S` wait in between
+- AND the response is `200` with the transcript from the second call
+
+#### Scenario: An authentication failure is not retried
+
+- GIVEN `STT_VENDOR=deepgram` and the Deepgram endpoint answers `401`
+- WHEN a clip is POSTed to `/transcribe`
+- THEN the vendor is called exactly once
+- AND the response is `502` with `code: "vendor_error"`
+
+### Requirement: REQ-VND-7 Automatic failover to the configured fallback vendor
+
+When the selected vendor exhausts its retry budget on transient failures, `STT_FALLBACK_ENABLED` is true (default), and the other vendor's API key is configured, the service SHALL make one attempt against that other vendor. The response's `stt_vendor` field and the per-request log's `vendor` field MUST name the vendor that actually served the request. If the fallback also fails, or no fallback is available, the service SHALL report the selected vendor's failure class. A missing fallback key MUST NOT affect startup.
+
+#### Scenario: Exhausted primary fails over and the response names the real vendor
+
+- GIVEN `STT_VENDOR=deepgram` with `GROQ_API_KEY` configured and `STT_FALLBACK_ENABLED=true`
+- AND the Deepgram endpoint answers `503` on every attempt
+- WHEN a clip is POSTed to `/transcribe`
+- THEN Groq is called once, authenticated with the Groq key
+- AND the response is `200` with `stt_vendor: "groq"`
+- AND the per-request INFO record reports `vendor: "groq"` and carries no other fields beyond `request_id` and `duration_ms`
+
+#### Scenario: No fallback key means no failover
+
+- GIVEN `STT_VENDOR=deepgram` and `GROQ_API_KEY` unset
+- AND the Deepgram endpoint times out on every attempt
+- WHEN a clip is POSTed to `/transcribe`
+- THEN Groq is never called
+- AND the response is `502` with `code: "vendor_timeout"`

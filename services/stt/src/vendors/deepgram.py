@@ -43,7 +43,9 @@ async def transcribe(
         params=_build_params(settings),
         content=audio,
         headers={
-            "Authorization": f"Token {settings.active_api_key}",
+            # This adapter's own key, never `active_api_key`: on failover it is
+            # the vendor that is not active (REQ-VND-7).
+            "Authorization": f"Token {settings.api_key_for('deepgram')}",
             "Content-Type": content_type,
         },
         timeout=settings.stt_vendor_timeout_s,
