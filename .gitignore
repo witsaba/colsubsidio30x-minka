@@ -1,6 +1,11 @@
 # The single root env file. Vendor credentials never enter git; .env.example
 # is the committed template and ./scripts/setup-env.sh fills this in.
+# `.env.*` and the negations keep every `.env.example` template tracked
+# (root, and any per-service one) while nothing named `.env` ever is.
 .env
+.env.*
+!.env.example
+!*.env.example
 
 # Python
 __pycache__/
@@ -18,14 +23,6 @@ __pycache__/
 frontend/node_modules/
 frontend/dist/
 frontend/.astro/
-
-# Secrets. `services/stt/.env` holds DEEPGRAM_API_KEY; nothing named .env is
-# ever committed. The `.env.example` files ARE tracked — they carry key NAMES
-# and safe localhost defaults, never values.
-.env
-.env.*
-!.env.example
-!*.env.example
 
 # Service-account credentials (product_identification / Vertex AI).
 gen-lang-client-*.json
