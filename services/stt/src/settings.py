@@ -10,10 +10,14 @@ from typing import Literal
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-VendorName = Literal["deepgram", "groq"]
+VendorName = Literal["deepgram", "groq", "elevenlabs"]
 
 #: Env var holding the API key for each supported vendor.
-VENDOR_KEY_ENV = {"deepgram": "DEEPGRAM_API_KEY", "groq": "GROQ_API_KEY"}
+VENDOR_KEY_ENV = {
+    "deepgram": "DEEPGRAM_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "elevenlabs": "ELEVENLABS_API_KEY",
+}
 
 
 class Settings(BaseSettings):
@@ -22,12 +26,16 @@ class Settings(BaseSettings):
     stt_vendor: VendorName = "deepgram"
     deepgram_api_key: str | None = None
     groq_api_key: str | None = None
+    elevenlabs_api_key: str | None = None
 
     # Deepgram request parameters, frozen by REQ-VND-1.
     stt_language: str = "es"
     stt_model: str = "nova-3"
     stt_numerals: bool = True
     stt_mip_opt_out: bool = True
+
+    #: ElevenLabs Scribe model: `scribe_v1` or `scribe_v2` (REQ-VND-9).
+    stt_elevenlabs_model: str = "scribe_v1"
 
     # is_garbage policy thresholds (REQ-STT-3).
     stt_confidence_floor: float = 0.60
@@ -58,6 +66,7 @@ class Settings(BaseSettings):
 
     deepgram_base_url: str = "https://api.deepgram.com"
     groq_base_url: str = "https://api.groq.com"
+    elevenlabs_base_url: str = "https://api.elevenlabs.io"
 
     def api_key_for(self, vendor: str) -> str | None:
         """API key of a named vendor, which is not always the active one.

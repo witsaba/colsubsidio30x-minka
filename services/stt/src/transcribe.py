@@ -17,7 +17,7 @@ from fastapi.responses import JSONResponse
 
 from src.logging_setup import get_logger
 from src.settings import Settings
-from src.vendors import deepgram, groq
+from src.vendors import deepgram, elevenlabs, groq
 from src.vendors.base import (
     TranscriptionResult,
     VendorAdapter,
@@ -30,7 +30,14 @@ from src.vendors.base import (
 ADAPTERS: dict[str, VendorAdapter] = {
     "deepgram": deepgram.transcribe,
     "groq": groq.transcribe,
+    "elevenlabs": elevenlabs.transcribe,
 }
+
+#: Order in which an unconfigured failover picks a vendor. Explicit rather
+#: than "whatever `ADAPTERS` happens to iterate as", because which vendor
+#: takes over is an operational decision, not an implementation detail
+#: (REQ-VND-9). A test keeps it in step with `ADAPTERS`.
+FALLBACK_PRIORITY: tuple[str, ...] = ("deepgram", "groq", "elevenlabs")
 
 router = APIRouter()
 logger = get_logger()
@@ -62,7 +69,7 @@ def fallback_vendor(settings: Settings) -> str | None:
     """
     if not settings.stt_fallback_enabled:
         return None
-    for name in ADAPTERS:
+    for name in FALLBACK_PRIORITY:
         if name != settings.stt_vendor and settings.api_key_for(name):
             return name
     return None
