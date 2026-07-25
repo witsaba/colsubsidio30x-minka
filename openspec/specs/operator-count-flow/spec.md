@@ -58,7 +58,7 @@ An anomaly MUST render the orange flag state (`flag` `#d9631a`) and block the mi
 
 ### Requirement: REQ-OCF-6 — Match status routing
 
-`matched` MUST open the confirm sheet. `ambiguous` AND `no_match` MUST open the manual-search sheet (S7) listing the matcher's candidates, with adjusted copy for `ambiguous`; `no_match` copy: "No encontré “{query}” en esta bodega. ¿Cuál es?". Footer "Ninguno · volver a dictar" returns to idle. (RF-15, RF-16)
+`matched` MUST open the confirm sheet. `ambiguous` AND `no_match` MUST open the manual-search sheet (S7) listing the matcher's candidates, with adjusted copy for `ambiguous`; `no_match` copy: "No encontré "{query}" en esta bodega. ¿Cuál es?". Footer "Ninguno · volver a dictar" returns to idle. (RF-15, RF-16)
 
 #### Scenario: Ambiguous goes to search, not confirm
 
