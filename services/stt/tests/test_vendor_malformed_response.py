@@ -6,10 +6,13 @@ error envelope Module 2 parses. Every one of these must be a 502
 `vendor_error`, and nothing at all may leave this service off-envelope.
 """
 
+import logging
+
 import httpx
 import pytest
 import respx
 
+from src.logging_setup import LOGGER_NAME
 from tests.conftest import DEEPGRAM_URL, GROQ_URL, audio_upload
 
 ENVELOPE_KEYS = {"code", "message", "request_id"}
@@ -120,3 +123,40 @@ async def test_an_unexpected_internal_failure_still_uses_the_envelope(
     assert error["code"] == "internal_error"
     assert error["request_id"]
     assert "something nobody planned for" not in error["message"]
+
+
+@respx.mock
+async def test_the_500_envelope_carries_the_request_id_that_was_logged(
+    tolerant_client, monkeypatch, caplog
+):
+    """A request_id nobody can correlate is worse than none at all (JD-6).
+
+    The crash here happens after the route's `finally` has already emitted the
+    per-request INFO record, which is the realistic case: the envelope must
+    hand Module 2 the id that is actually in the logs, not a fresh one.
+    """
+    caplog.set_level(logging.INFO)
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("something nobody planned for")
+
+    monkeypatch.setattr("src.transcribe.evaluate_garbage", _boom)
+    respx.post(DEEPGRAM_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "metadata": {"duration": 1.0},
+                "results": {"channels": [{"alternatives": [{"transcript": "hola"}]}]},
+            },
+        )
+    )
+
+    response = await tolerant_client.post("/transcribe", files=audio_upload())
+
+    info_records = [
+        record
+        for record in caplog.records
+        if record.name == LOGGER_NAME and record.levelno == logging.INFO
+    ]
+    assert len(info_records) == 1, "the request was served, so it was logged once"
+    assert response.json()["error"]["request_id"] == info_records[0].request_id
