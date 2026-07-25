@@ -146,7 +146,7 @@ Parallel groups: **P-A** = T4→T5→T6 (extraction/units chain) · **P-B** = T7
   GREEN: `src/components/operator/CountScreen.tsx`, `MicRecorder.tsx`.
   Requirements: REQ-OCF-2, REQ-OCF-5, **REQ-OCF-9**, REQ-VC-5, REQ-VC-8, D9. Deps: T7, T11, T14.
 
-- [ ] **T18 — Processing and confirm sheets.**
+- [x] **T18 — Processing and confirm sheets.**
   RED: `tests/components/confirm-sheet.test.tsx` — a 3-item queue renders exactly 3 cards; the only buttons are "Repetir" and "Confirmar"; no system stock renders; units come only from `unidad_display` and the strings `"Kilogram"`/`"Liter"`/`"Unidad"`/`"Portion"` appear nowhere; `nr_articulo:null` renders the SKU line without a code; `unidad_display:null` renders no unit text. `tests/components/processing-sheet.test.tsx` — the sheet stays visible until the injected promise resolves (assert with a promise resolved at a controlled tick) and **no fixed 1700 ms timer exists in the real path**; a rejected promise renders the authored retry state.
   GREEN: `src/components/operator/ProcessingSheet.tsx`, `ConfirmSheet.tsx`.
   Requirements: REQ-OCF-3, REQ-OCF-7, REQ-OCF-12. Deps: T7, T14.
