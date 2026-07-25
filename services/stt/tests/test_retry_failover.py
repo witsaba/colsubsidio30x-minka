@@ -306,24 +306,6 @@ async def test_the_switch_suppresses_an_explicit_fallback_too(make_client):
 
 
 @respx.mock
-async def test_elevenlabs_as_primary_fails_over_too(make_client):
-    """The third vendor is a first-class primary, not fallback-only."""
-    client = await make_client(STT_VENDOR="elevenlabs", **ALL_KEYS)
-    elevenlabs_route = respx.post(ELEVENLABS_URL).mock(
-        return_value=httpx.Response(503, text="unavailable")
-    )
-    deepgram_route = respx.post(DEEPGRAM_URL).mock(
-        return_value=httpx.Response(200, json=deepgram_payload())
-    )
-
-    body = (await client.post("/transcribe", files=audio_upload())).json()
-
-    assert body["stt_vendor"] == "deepgram"
-    assert elevenlabs_route.call_count == 2
-    assert deepgram_route.call_count == 1
-
-
-@respx.mock
 async def test_connect_errors_are_transient_too(client, backoff_sleeps):
     route = respx.post(DEEPGRAM_URL).mock(
         side_effect=[

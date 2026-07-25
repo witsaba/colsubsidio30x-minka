@@ -19,6 +19,21 @@ VENDOR_KEY_ENV = {
     "elevenlabs": "ELEVENLABS_API_KEY",
 }
 
+#: Vendors that may only ever be a failover target, never the primary.
+#:
+#: ElevenLabs is here because its zero-retention guarantee is Enterprise-gated
+#: and documented as revocable at the vendor's discretion, which is precisely
+#: why the vendor spike disqualified it under RNF-04 ("audio is never
+#: persisted"). Backup use is a bounded, deliberate exposure - it is reached
+#: only when the primary is already failing - whereas making it primary would
+#: route every clip through it, which RNF-04 does not allow.
+FALLBACK_ONLY_VENDORS = frozenset({"elevenlabs"})
+
+#: What is left: the vendors a deployment may point `STT_VENDOR` at.
+PRIMARY_VENDORS = tuple(
+    name for name in VENDOR_KEY_ENV if name not in FALLBACK_ONLY_VENDORS
+)
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -96,6 +111,24 @@ class Settings(BaseSettings):
         "not configured" rather than rejecting the deployment's own default.
         """
         return None if value == "" else value
+
+    @model_validator(mode="after")
+    def _reject_fallback_only_primary(self) -> "Settings":
+        """A backup-only vendor must not become the one every clip goes to.
+
+        Declared before the key check so a deployment that sets both gets the
+        reason it cannot use this vendor, rather than a missing-key error it
+        would "fix" by supplying the key.
+        """
+        if self.stt_vendor in FALLBACK_ONLY_VENDORS:
+            raise ValueError(
+                f"STT_VENDOR={self.stt_vendor} is not allowed: {self.stt_vendor} "
+                f"zero-retention is Enterprise-gated, so RNF-04 forbids routing "
+                f"every clip to it. Use one of {', '.join(PRIMARY_VENDORS)} as "
+                f"the primary and set STT_FALLBACK_VENDOR={self.stt_vendor} to "
+                f"keep it as the backup."
+            )
+        return self
 
     @model_validator(mode="after")
     def _require_active_vendor_key(self) -> "Settings":
