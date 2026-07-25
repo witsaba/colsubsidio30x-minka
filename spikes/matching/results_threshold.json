@@ -1,0 +1,624 @@
+{
+  "primary": {
+    "fts5_unicode61": {
+      "per_table": {
+        "stock_almacen_ayb": {
+          "n_rows": 270,
+          "n_clean_cases": 31,
+          "median_margin": 4.611507567486399,
+          "median_top1_score": 9.730400757702299
+        },
+        "stock_almacen_suministros": {
+          "n_rows": 296,
+          "n_clean_cases": 59,
+          "median_margin": 11.635289002318096,
+          "median_top1_score": 18.162195140727626
+        },
+        "stock_kiosco_piscigiros_ayb": {
+          "n_rows": 56,
+          "n_clean_cases": 24,
+          "median_margin": 3.2223103342377297,
+          "median_top1_score": 7.043425035752598
+        },
+        "stock_kiosco_taquilla_ayb": {
+          "n_rows": 58,
+          "n_clean_cases": 34,
+          "median_margin": 3.1179499062782403,
+          "median_top1_score": 6.992392659203601
+        },
+        "stock_restaurante_fuentes_ayb": {
+          "n_rows": 344,
+          "n_clean_cases": 42,
+          "median_margin": 3.8869866245390785,
+          "median_top1_score": 10.886059559912523
+        },
+        "stock_restaurante_fuentes_sumin": {
+          "n_rows": 133,
+          "n_clean_cases": 54,
+          "median_margin": 7.59496605725945,
+          "median_top1_score": 14.328610690351262
+        },
+        "zoologico": {
+          "n_rows": 55,
+          "n_clean_cases": 13,
+          "median_margin": 2.6113929093420967,
+          "median_top1_score": 4.2229911274478
+        },
+        "zoologico_suministros": {
+          "n_rows": 193,
+          "n_clean_cases": 29,
+          "median_margin": 5.359036551989149,
+          "median_top1_score": 10.055825048078145
+        }
+      },
+      "corr_size_vs_median_margin": 0.4790457667009853,
+      "corr_size_vs_median_top1": 0.6394965211414154,
+      "cv_median_margin_across_tables": 0.5389459129556364,
+      "cv_median_top1_across_tables": 0.40678581080221476
+    },
+    "fts5_trigram": {
+      "per_table": {
+        "stock_almacen_ayb": {
+          "n_rows": 270,
+          "n_clean_cases": 28,
+          "median_margin": 3.773405496911746,
+          "median_top1_score": 8.445708670628195
+        },
+        "stock_almacen_suministros": {
+          "n_rows": 296,
+          "n_clean_cases": 56,
+          "median_margin": 6.687975724982105,
+          "median_top1_score": 14.917791790647739
+        },
+        "stock_kiosco_piscigiros_ayb": {
+          "n_rows": 56,
+          "n_clean_cases": 25,
+          "median_margin": 3.0936046104117985,
+          "median_top1_score": 5.695706171160685
+        },
+        "stock_kiosco_taquilla_ayb": {
+          "n_rows": 58,
+          "n_clean_cases": 34,
+          "median_margin": 3.327430701684187,
+          "median_top1_score": 6.710542937257548
+        },
+        "stock_restaurante_fuentes_ayb": {
+          "n_rows": 344,
+          "n_clean_cases": 41,
+          "median_margin": 3.5986431678765243,
+          "median_top1_score": 9.223174766789777
+        },
+        "stock_restaurante_fuentes_sumin": {
+          "n_rows": 133,
+          "n_clean_cases": 41,
+          "median_margin": 5.901929455177211,
+          "median_top1_score": 11.839130193940388
+        },
+        "zoologico": {
+          "n_rows": 55,
+          "n_clean_cases": 10,
+          "median_margin": 2.56921814643672,
+          "median_top1_score": 5.095231355859615
+        },
+        "zoologico_suministros": {
+          "n_rows": 193,
+          "n_clean_cases": 23,
+          "median_margin": 3.4395652852227077,
+          "median_top1_score": 7.5485038432960305
+        }
+      },
+      "corr_size_vs_median_margin": 0.42338059559918045,
+      "corr_size_vs_median_top1": 0.622090246638987,
+      "cv_median_margin_across_tables": 0.33445598939539184,
+      "cv_median_top1_across_tables": 0.35527304415523697
+    },
+    "pg_trgm_similarity": {
+      "per_table": {
+        "stock_almacen_ayb": {
+          "n_rows": 270,
+          "n_clean_cases": 49,
+          "median_margin": 0.40941176470588236,
+          "median_top1_score": 0.76
+        },
+        "stock_almacen_suministros": {
+          "n_rows": 296,
+          "n_clean_cases": 62,
+          "median_margin": 0.458765479876161,
+          "median_top1_score": 0.7918918918918919
+        },
+        "stock_kiosco_piscigiros_ayb": {
+          "n_rows": 56,
+          "n_clean_cases": 48,
+          "median_margin": 0.5529411764705883,
+          "median_top1_score": 0.7638888888888888
+        },
+        "stock_kiosco_taquilla_ayb": {
+          "n_rows": 58,
+          "n_clean_cases": 56,
+          "median_margin": 0.4864718614718615,
+          "median_top1_score": 0.7559523809523809
+        },
+        "stock_restaurante_fuentes_ayb": {
+          "n_rows": 344,
+          "n_clean_cases": 57,
+          "median_margin": 0.40350877192982454,
+          "median_top1_score": 0.7857142857142857
+        },
+        "stock_restaurante_fuentes_sumin": {
+          "n_rows": 133,
+          "n_clean_cases": 61,
+          "median_margin": 0.5345622119815667,
+          "median_top1_score": 0.7804878048780488
+        },
+        "zoologico": {
+          "n_rows": 55,
+          "n_clean_cases": 40,
+          "median_margin": 0.5270467836257311,
+          "median_top1_score": 0.6921052631578948
+        },
+        "zoologico_suministros": {
+          "n_rows": 193,
+          "n_clean_cases": 51,
+          "median_margin": 0.3862433862433862,
+          "median_top1_score": 0.6333333333333333
+        }
+      },
+      "corr_size_vs_median_margin": -0.7682161628753444,
+      "corr_size_vs_median_top1": 0.29465958357697497,
+      "cv_median_margin_across_tables": 0.12990723466348217,
+      "cv_median_top1_across_tables": 0.06886909521080917
+    },
+    "pg_trgm_word_similarity": {
+      "per_table": {
+        "stock_almacen_ayb": {
+          "n_rows": 270,
+          "n_clean_cases": 44,
+          "median_margin": 0.2450980392156863,
+          "median_top1_score": 0.7646153846153847
+        },
+        "stock_almacen_suministros": {
+          "n_rows": 296,
+          "n_clean_cases": 62,
+          "median_margin": 0.3996181263733446,
+          "median_top1_score": 0.8441295546558705
+        },
+        "stock_kiosco_piscigiros_ayb": {
+          "n_rows": 56,
+          "n_clean_cases": 47,
+          "median_margin": 0.4427244582043344,
+          "median_top1_score": 0.7894736842105263
+        },
+        "stock_kiosco_taquilla_ayb": {
+          "n_rows": 58,
+          "n_clean_cases": 56,
+          "median_margin": 0.4366959064327485,
+          "median_top1_score": 0.7908653846153846
+        },
+        "stock_restaurante_fuentes_ayb": {
+          "n_rows": 344,
+          "n_clean_cases": 52,
+          "median_margin": 0.3852130325814536,
+          "median_top1_score": 0.8285714285714286
+        },
+        "stock_restaurante_fuentes_sumin": {
+          "n_rows": 133,
+          "n_clean_cases": 57,
+          "median_margin": 0.5217391304347825,
+          "median_top1_score": 0.8285714285714286
+        },
+        "zoologico": {
+          "n_rows": 55,
+          "n_clean_cases": 39,
+          "median_margin": 0.4888888888888889,
+          "median_top1_score": 0.7
+        },
+        "zoologico_suministros": {
+          "n_rows": 193,
+          "n_clean_cases": 51,
+          "median_margin": 0.5,
+          "median_top1_score": 0.8260869565217391
+        }
+      },
+      "corr_size_vs_median_margin": -0.5640980965389873,
+      "corr_size_vs_median_top1": 0.5258101083494877,
+      "cv_median_margin_across_tables": 0.19228827590687067,
+      "cv_median_top1_across_tables": 0.05545804932113283
+    },
+    "rapidfuzz_WRatio": {
+      "per_table": {
+        "stock_almacen_ayb": {
+          "n_rows": 270,
+          "n_clean_cases": 48,
+          "median_margin": 0.12273379515091531,
+          "median_top1_score": 0.9511904761904761
+        },
+        "stock_almacen_suministros": {
+          "n_rows": 296,
+          "n_clean_cases": 55,
+          "median_margin": 0.09499999999999997,
+          "median_top1_score": 0.95
+        },
+        "stock_kiosco_piscigiros_ayb": {
+          "n_rows": 56,
+          "n_clean_cases": 44,
+          "median_margin": 0.14500000000000002,
+          "median_top1_score": 0.94375
+        },
+        "stock_kiosco_taquilla_ayb": {
+          "n_rows": 58,
+          "n_clean_cases": 50,
+          "median_margin": 0.21309523809523812,
+          "median_top1_score": 0.95
+        },
+        "stock_restaurante_fuentes_ayb": {
+          "n_rows": 344,
+          "n_clean_cases": 54,
+          "median_margin": 0.1105172413793103,
+          "median_top1_score": 0.95
+        },
+        "stock_restaurante_fuentes_sumin": {
+          "n_rows": 133,
+          "n_clean_cases": 59,
+          "median_margin": 0.14500000000000002,
+          "median_top1_score": 0.95
+        },
+        "zoologico": {
+          "n_rows": 55,
+          "n_clean_cases": 40,
+          "median_margin": 0.3124401913875598,
+          "median_top1_score": 0.9333333333333332
+        },
+        "zoologico_suministros": {
+          "n_rows": 193,
+          "n_clean_cases": 50,
+          "median_margin": 0.1402597402597402,
+          "median_top1_score": 0.9
+        }
+      },
+      "corr_size_vs_median_margin": -0.7266138008163598,
+      "corr_size_vs_median_top1": 0.1381157652032976,
+      "cv_median_margin_across_tables": 0.41184310360022475,
+      "cv_median_top1_across_tables": 0.017522531909895705
+    },
+    "rapidfuzz_token_set_ratio": {
+      "per_table": {
+        "stock_almacen_ayb": {
+          "n_rows": 270,
+          "n_clean_cases": 45,
+          "median_margin": 0.20416666666666672,
+          "median_top1_score": 0.9629629629629629
+        },
+        "stock_almacen_suministros": {
+          "n_rows": 296,
+          "n_clean_cases": 56,
+          "median_margin": 0.30612244897959184,
+          "median_top1_score": 1.0
+        },
+        "stock_kiosco_piscigiros_ayb": {
+          "n_rows": 56,
+          "n_clean_cases": 48,
+          "median_margin": 0.36569200779727096,
+          "median_top1_score": 0.9449404761904763
+        },
+        "stock_kiosco_taquilla_ayb": {
+          "n_rows": 58,
+          "n_clean_cases": 49,
+          "median_margin": 0.3023872679045092,
+          "median_top1_score": 0.967741935483871
+        },
+        "stock_restaurante_fuentes_ayb": {
+          "n_rows": 344,
+          "n_clean_cases": 52,
+          "median_margin": 0.2093023255813954,
+          "median_top1_score": 0.9655172413793103
+        },
+        "stock_restaurante_fuentes_sumin": {
+          "n_rows": 133,
+          "n_clean_cases": 61,
+          "median_margin": 0.34883720930232553,
+          "median_top1_score": 0.967741935483871
+        },
+        "zoologico": {
+          "n_rows": 55,
+          "n_clean_cases": 40,
+          "median_margin": 0.3784663612249819,
+          "median_top1_score": 0.9333333333333332
+        },
+        "zoologico_suministros": {
+          "n_rows": 193,
+          "n_clean_cases": 50,
+          "median_margin": 0.3431372549019609,
+          "median_top1_score": 0.9589490968801313
+        }
+      },
+      "corr_size_vs_median_margin": -0.767838742666831,
+      "corr_size_vs_median_top1": 0.6124875330500453,
+      "cv_median_margin_across_tables": 0.20502726557021042,
+      "cv_median_top1_across_tables": 0.018877859246598783
+    }
+  },
+  "normalized": {
+    "fts5_unicode61_minmax": {
+      "per_table": {
+        "stock_almacen_ayb": {
+          "n_rows": 270,
+          "median_minmax_margin": 0.7088848118763464
+        },
+        "stock_almacen_suministros": {
+          "n_rows": 296,
+          "median_minmax_margin": 0.8094940683734724
+        },
+        "stock_kiosco_piscigiros_ayb": {
+          "n_rows": 56,
+          "median_minmax_margin": 0.8204955567657095
+        },
+        "stock_kiosco_taquilla_ayb": {
+          "n_rows": 58,
+          "median_minmax_margin": 0.8511929023635988
+        },
+        "stock_restaurante_fuentes_ayb": {
+          "n_rows": 344,
+          "median_minmax_margin": 0.7459928171176035
+        },
+        "stock_restaurante_fuentes_sumin": {
+          "n_rows": 133,
+          "median_minmax_margin": 0.9032834731485964
+        },
+        "zoologico": {
+          "n_rows": 55,
+          "median_minmax_margin": 1.0
+        },
+        "zoologico_suministros": {
+          "n_rows": 193,
+          "median_minmax_margin": 0.8208401991844346
+        }
+      },
+      "corr_size_vs_median_margin": -0.7169946441365415,
+      "cv_median_margin_across_tables": 0.1013809210233261
+    },
+    "fts5_trigram_minmax": {
+      "per_table": {
+        "stock_almacen_ayb": {
+          "n_rows": 270,
+          "median_minmax_margin": 0.7486031792009069
+        },
+        "stock_almacen_suministros": {
+          "n_rows": 296,
+          "median_minmax_margin": 0.8877299147302256
+        },
+        "stock_kiosco_piscigiros_ayb": {
+          "n_rows": 56,
+          "median_minmax_margin": 0.8484314247988651
+        },
+        "stock_kiosco_taquilla_ayb": {
+          "n_rows": 58,
+          "median_minmax_margin": 0.8347816513859266
+        },
+        "stock_restaurante_fuentes_ayb": {
+          "n_rows": 344,
+          "median_minmax_margin": 0.705517184955736
+        },
+        "stock_restaurante_fuentes_sumin": {
+          "n_rows": 133,
+          "median_minmax_margin": 0.8806180892613094
+        },
+        "zoologico": {
+          "n_rows": 55,
+          "median_minmax_margin": 0.9259371739278652
+        },
+        "zoologico_suministros": {
+          "n_rows": 193,
+          "median_minmax_margin": 0.8161411656400057
+        }
+      },
+      "corr_size_vs_median_margin": -0.63637709523535,
+      "cv_median_margin_across_tables": 0.08268529567382134
+    }
+  },
+  "theta_secondary": {
+    "fts5_unicode61": {
+      "stock_almacen_ayb": {
+        "n_rows": 270,
+        "theta_star": 0.0
+      },
+      "stock_almacen_suministros": {
+        "n_rows": 296,
+        "theta_star": 0.0
+      },
+      "stock_kiosco_piscigiros_ayb": {
+        "n_rows": 56,
+        "theta_star": 0.0
+      },
+      "stock_kiosco_taquilla_ayb": {
+        "n_rows": 58,
+        "theta_star": 0.0
+      },
+      "stock_restaurante_fuentes_ayb": {
+        "n_rows": 344,
+        "theta_star": 0.0
+      },
+      "stock_restaurante_fuentes_sumin": {
+        "n_rows": 133,
+        "theta_star": 0.6000103450034278
+      },
+      "zoologico": {
+        "n_rows": 55,
+        "theta_star": 0.5228582649336739
+      },
+      "zoologico_suministros": {
+        "n_rows": 193,
+        "theta_star": 0.0
+      }
+    },
+    "fts5_trigram": {
+      "stock_almacen_ayb": {
+        "n_rows": 270,
+        "theta_star": 0.26993085629687386
+      },
+      "stock_almacen_suministros": {
+        "n_rows": 296,
+        "theta_star": 0.14576386949977405
+      },
+      "stock_kiosco_piscigiros_ayb": {
+        "n_rows": 56,
+        "theta_star": 0.0856684564989445
+      },
+      "stock_kiosco_taquilla_ayb": {
+        "n_rows": 58,
+        "theta_star": 0.5476138738793797
+      },
+      "stock_restaurante_fuentes_ayb": {
+        "n_rows": 344,
+        "theta_star": 0.0
+      },
+      "stock_restaurante_fuentes_sumin": {
+        "n_rows": 133,
+        "theta_star": 0.0
+      },
+      "zoologico": {
+        "n_rows": 55,
+        "theta_star": 0.20838935971417127
+      },
+      "zoologico_suministros": {
+        "n_rows": 193,
+        "theta_star": 0.0
+      }
+    },
+    "pg_trgm_similarity": {
+      "stock_almacen_ayb": {
+        "n_rows": 270,
+        "theta_star": 0.1853146853146853
+      },
+      "stock_almacen_suministros": {
+        "n_rows": 296,
+        "theta_star": 0.06837606837606836
+      },
+      "stock_kiosco_piscigiros_ayb": {
+        "n_rows": 56,
+        "theta_star": 0.24949290060851925
+      },
+      "stock_kiosco_taquilla_ayb": {
+        "n_rows": 58,
+        "theta_star": 0.18659420289855072
+      },
+      "stock_restaurante_fuentes_ayb": {
+        "n_rows": 344,
+        "theta_star": 0.0
+      },
+      "stock_restaurante_fuentes_sumin": {
+        "n_rows": 133,
+        "theta_star": 0.0
+      },
+      "zoologico": {
+        "n_rows": 55,
+        "theta_star": 0.23611111111111108
+      },
+      "zoologico_suministros": {
+        "n_rows": 193,
+        "theta_star": 0.03166666666666662
+      }
+    },
+    "pg_trgm_word_similarity": {
+      "stock_almacen_ayb": {
+        "n_rows": 270,
+        "theta_star": 0.0
+      },
+      "stock_almacen_suministros": {
+        "n_rows": 296,
+        "theta_star": 0.06837606837606836
+      },
+      "stock_kiosco_piscigiros_ayb": {
+        "n_rows": 56,
+        "theta_star": 0.09523809523809523
+      },
+      "stock_kiosco_taquilla_ayb": {
+        "n_rows": 58,
+        "theta_star": 0.0
+      },
+      "stock_restaurante_fuentes_ayb": {
+        "n_rows": 344,
+        "theta_star": 0.0
+      },
+      "stock_restaurante_fuentes_sumin": {
+        "n_rows": 133,
+        "theta_star": 0.0
+      },
+      "zoologico": {
+        "n_rows": 55,
+        "theta_star": 0.04999999999999999
+      },
+      "zoologico_suministros": {
+        "n_rows": 193,
+        "theta_star": 0.0
+      }
+    },
+    "rapidfuzz_WRatio": {
+      "stock_almacen_ayb": {
+        "n_rows": 270,
+        "theta_star": 0.03166666666666662
+      },
+      "stock_almacen_suministros": {
+        "n_rows": 296,
+        "theta_star": 0.0
+      },
+      "stock_kiosco_piscigiros_ayb": {
+        "n_rows": 56,
+        "theta_star": 0.02195121951219503
+      },
+      "stock_kiosco_taquilla_ayb": {
+        "n_rows": 58,
+        "theta_star": 0.02195121951219503
+      },
+      "stock_restaurante_fuentes_ayb": {
+        "n_rows": 344,
+        "theta_star": 0.0
+      },
+      "stock_restaurante_fuentes_sumin": {
+        "n_rows": 133,
+        "theta_star": 0.0
+      },
+      "zoologico": {
+        "n_rows": 55,
+        "theta_star": 0.16888888888888887
+      },
+      "zoologico_suministros": {
+        "n_rows": 193,
+        "theta_star": 0.0
+      }
+    },
+    "rapidfuzz_token_set_ratio": {
+      "stock_almacen_ayb": {
+        "n_rows": 270,
+        "theta_star": 0.03703703703703709
+      },
+      "stock_almacen_suministros": {
+        "n_rows": 296,
+        "theta_star": 0.014155712841253831
+      },
+      "stock_kiosco_piscigiros_ayb": {
+        "n_rows": 56,
+        "theta_star": 0.09361393323657474
+      },
+      "stock_kiosco_taquilla_ayb": {
+        "n_rows": 58,
+        "theta_star": 0.0
+      },
+      "stock_restaurante_fuentes_ayb": {
+        "n_rows": 344,
+        "theta_star": 0.0
+      },
+      "stock_restaurante_fuentes_sumin": {
+        "n_rows": 133,
+        "theta_star": 0.0
+      },
+      "zoologico": {
+        "n_rows": 55,
+        "theta_star": 0.22435897435897445
+      },
+      "zoologico_suministros": {
+        "n_rows": 193,
+        "theta_star": 0.0
+      }
+    }
+  }
+}

@@ -1,0 +1,93 @@
+[
+  {
+    "matcher": "fts5_unicode61",
+    "n_variant": 430,
+    "top1_accuracy": 0.8465116279069768,
+    "recall@3": 0.9232558139534883,
+    "recall@5": 0.9302325581395349,
+    "n_ambiguous": 10,
+    "ambiguity_flag_recall": 0.4,
+    "n_garbage": 184,
+    "false_confident_rate": 0.0,
+    "p50_latency_ms": 0.09911850065691397,
+    "p95_latency_ms": 0.2637730504829961
+  },
+  {
+    "matcher": "fts5_trigram",
+    "n_variant": 430,
+    "top1_accuracy": 0.8093023255813954,
+    "recall@3": 0.9,
+    "recall@5": 0.9232558139534883,
+    "n_ambiguous": 10,
+    "ambiguity_flag_recall": 0.4,
+    "n_garbage": 184,
+    "false_confident_rate": 0.0,
+    "p50_latency_ms": 0.1471050009058672,
+    "p95_latency_ms": 0.4063495496666293
+  },
+  {
+    "matcher": "pg_trgm_similarity",
+    "n_variant": 430,
+    "top1_accuracy": 0.986046511627907,
+    "recall@3": 1.0,
+    "recall@5": 1.0,
+    "n_ambiguous": 10,
+    "ambiguity_flag_recall": 0.4,
+    "n_garbage": 184,
+    "false_confident_rate": 0.021739130434782608,
+    "p50_latency_ms": 0.5970700003672391,
+    "p95_latency_ms": 1.8167981003898603
+  },
+  {
+    "matcher": "pg_trgm_word_similarity",
+    "n_variant": 430,
+    "top1_accuracy": 0.9488372093023256,
+    "recall@3": 0.9976744186046511,
+    "recall@5": 0.9976744186046511,
+    "n_ambiguous": 10,
+    "ambiguity_flag_recall": 0.9,
+    "n_garbage": 184,
+    "false_confident_rate": 0.09239130434782608,
+    "p50_latency_ms": 4.029241001262562,
+    "p95_latency_ms": 12.484921850773393
+  },
+  {
+    "matcher": "rapidfuzz_WRatio",
+    "n_variant": 430,
+    "top1_accuracy": 0.9302325581395349,
+    "recall@3": 0.9720930232558139,
+    "recall@5": 0.9790697674418605,
+    "n_ambiguous": 10,
+    "ambiguity_flag_recall": 0.5,
+    "n_garbage": 184,
+    "false_confident_rate": 0.34782608695652173,
+    "p50_latency_ms": 1.5611764993082033,
+    "p95_latency_ms": 3.9957492503162944
+  },
+  {
+    "matcher": "rapidfuzz_token_set_ratio",
+    "n_variant": 430,
+    "top1_accuracy": 0.9325581395348838,
+    "recall@3": 1.0,
+    "recall@5": 1.0,
+    "n_ambiguous": 10,
+    "ambiguity_flag_recall": 1.0,
+    "n_garbage": 184,
+    "false_confident_rate": 0.10869565217391304,
+    "p50_latency_ms": 1.1663915001918213,
+    "p95_latency_ms": 2.899634649929795
+  },
+  {
+    "matcher": "hybrid_normalizer_token_overlap",
+    "n_variant": 430,
+    "top1_accuracy": 0.858139534883721,
+    "recall@3": 0.9279069767441861,
+    "recall@5": 0.9372093023255814,
+    "n_ambiguous": 10,
+    "ambiguity_flag_recall": 0.6,
+    "n_garbage": 184,
+    "false_confident_rate": 0.0,
+    "p50_latency_ms": 0.2399160002823919,
+    "p95_latency_ms": 0.6276749009884953
+  }
+]
