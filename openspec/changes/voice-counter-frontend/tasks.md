@@ -97,7 +97,7 @@ Parallel groups: **P-A** = T4→T5→T6 (extraction/units chain) · **P-B** = T7
   GREEN: `src/lib/anomaly/fixtureEngine.ts`, `src/fixtures/anomalyRules.ts` (aceite de oliva 2–8 L, gaseosa 20–40 und, lechuga 1,5–6 kg, arroz 3–12 kg, pechuga 12–40 und).
   Requirements: REQ-OCF-5, D11. Deps: T5.
 
-- [ ] **T9 — Typed API client + error taxonomy.**
+- [x] **T9 — Typed API client + error taxonomy.**
   RED: `tests/api/client.test.ts` with stubbed `fetch` — 413 → `UiError('payload_too_large')`, 400 `invalid_audio`, 502 `vendor_timeout`/`vendor_error`, 422 FastAPI `{detail:[...]}` shape → `validation`, match 404 → `unknown_catalogue` (NEVER `no_match`), thrown fetch → `proxy_unreachable`, `AbortError` → `aborted`; `request_id` is preserved on the error; `stt_confidence:null` and `audio_duration_ms:null` survive as `null` and are never coerced to `0`.
   GREEN: `src/lib/api/client.ts` (`transcribe` timeout 50 000 ms, `match`/`getCatalogues` 10 000 ms).
   Requirements: REQ-PRX-2, REQ-PRX-3, REQ-OCF-7, REQ-VC-6. Deps: T3.
