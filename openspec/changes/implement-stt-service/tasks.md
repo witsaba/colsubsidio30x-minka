@@ -89,7 +89,7 @@ fit the 800-line session budget; only PR1 needs the documentation exception.
 
 ## Phase 6: Documentation
 
-- [ ] **T20 — Service and benchmark docs + live-DoD checklist.** Add `services/stt/README.md` (uv commands, env table, docker compose, frozen response shape, `is_garbage` rules) and `benchmarks/README.md` (corpus format, run/report commands, corpus-validity caveat); add `services/stt/docs/dod-live-checks.md` with the four unchecked live-key items from T21–T24. Satisfies REQ-STT-1, REQ-VND-3, REQ-BMK-1. **Verify:** `(cd services/stt && uv run pytest)` and `uv run --project services/stt pytest benchmarks/tests` both green; every env var in `README.md` exists in `src/settings.py`. **Rollback:** `git rm services/stt/README.md benchmarks/README.md services/stt/docs/dod-live-checks.md`.
+- [x] **T20 — Service and benchmark docs + live-DoD checklist.** Add `services/stt/README.md` (uv commands, env table, docker compose, frozen response shape, `is_garbage` rules) and `benchmarks/README.md` (corpus format, run/report commands, corpus-validity caveat); add `services/stt/docs/dod-live-checks.md` with the four unchecked live-key items from T21–T24. Satisfies REQ-STT-1, REQ-VND-3, REQ-BMK-1. **Verify:** `(cd services/stt && uv run pytest)` and `uv run --project services/stt pytest benchmarks/tests` both green; every env var in `README.md` exists in `src/settings.py`. **Rollback:** `git rm services/stt/README.md benchmarks/README.md services/stt/docs/dod-live-checks.md`.
 
 ## Phase 7: Live-key DoD — `blocked-without-keys` (MUST NOT block Phases 1–6)
 
