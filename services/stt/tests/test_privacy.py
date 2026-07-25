@@ -28,15 +28,22 @@ ALLOWED_INFO_FIELDS = {"request_id", "duration_ms", "vendor"}
 
 @pytest.fixture
 def disk_writes_forbidden(monkeypatch):
-    """Make every filesystem escape hatch explode."""
+    """Make every filesystem escape hatch explode, and record the attempt.
+
+    Yields the (normally empty) list of attempts so a test can assert on it
+    even on a path where the AssertionError could be swallowed by a handler.
+    """
+    attempts: list[str] = []
 
     def _explode(*args, **kwargs):
+        attempts.append("filesystem write attempted")
         raise AssertionError("audio must never touch the filesystem (RNF-04)")
 
     monkeypatch.setattr(tempfile.SpooledTemporaryFile, "rollover", _explode)
     monkeypatch.setattr(tempfile, "NamedTemporaryFile", _explode)
     monkeypatch.setattr(tempfile, "TemporaryFile", _explode)
     monkeypatch.setattr(tempfile, "mkstemp", _explode)
+    return attempts
 
 
 @respx.mock
@@ -63,6 +70,67 @@ async def test_error_path_never_writes_audio_to_disk(client, disk_writes_forbidd
 
     assert response.status_code == 502
     assert response.json()["error"]["code"] == "vendor_timeout"
+
+
+@respx.mock
+async def test_oversized_upload_never_reaches_the_disk_spool(
+    client, disk_writes_forbidden
+):
+    """One byte over the cap is exactly where Starlette used to spill (JD-1).
+
+    `SpooledTemporaryFile` rolls over on *strictly* more than its threshold, so
+    `MAX_UPLOAD_BYTES + 1` is the smallest upload that reached a real inode
+    before the route's own cap check ever ran.
+    """
+    route = respx.post(DEEPGRAM_URL).mock(
+        return_value=httpx.Response(200, json=deepgram_payload())
+    )
+
+    response = await client.post(
+        "/transcribe", files=audio_upload(payload=b"a" * (MAX_UPLOAD_BYTES + 1))
+    )
+
+    assert response.status_code == 413
+    error = response.json()["error"]
+    assert error["code"] == "payload_too_large"
+    assert error["request_id"]
+    assert disk_writes_forbidden == []
+    assert not route.called
+
+
+@respx.mock
+async def test_oversized_chunked_upload_never_reaches_the_disk_spool(
+    client, disk_writes_forbidden
+):
+    """A body with no Content-Length must be capped while it streams (JD-1)."""
+    boundary = "jdroundoneboundary"
+    chunk = b"a" * 131_072
+
+    async def _stream():
+        yield (
+            f"--{boundary}\r\n"
+            'Content-Disposition: form-data; name="file"; filename="clip.webm"\r\n'
+            "Content-Type: audio/webm\r\n\r\n"
+        ).encode()
+        for _ in range(12):  # 1.5 MiB of payload, streamed
+            yield chunk
+        yield f"\r\n--{boundary}--\r\n".encode()
+
+    route = respx.post(DEEPGRAM_URL).mock(
+        return_value=httpx.Response(200, json=deepgram_payload())
+    )
+
+    response = await client.post(
+        "/transcribe",
+        content=_stream(),
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )
+
+    assert response.status_code == 413
+    assert response.json()["error"]["code"] == "payload_too_large"
+    assert "content-length" not in response.request.headers
+    assert disk_writes_forbidden == []
+    assert not route.called
 
 
 @respx.mock

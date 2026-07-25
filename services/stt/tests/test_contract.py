@@ -205,18 +205,23 @@ async def test_upload_at_the_cap_is_accepted(make_client):
 
 
 @respx.mock
-async def test_upload_above_starlettes_part_limit_is_also_413(client):
-    """The default cap equals Starlette's 1 MiB max_part_size (Decision 6)."""
-    respx.post(DEEPGRAM_URL).mock(
+async def test_one_byte_above_the_default_cap_is_413(client):
+    """The boundary that matters: 1 MiB + 1 is where Starlette used to spill.
+
+    The proof that no byte reaches the filesystem at this size lives in
+    `tests/test_privacy.py` (JD-1); here we only pin the contract answer.
+    """
+    route = respx.post(DEEPGRAM_URL).mock(
         return_value=httpx.Response(200, json=deepgram_payload())
     )
 
     response = await client.post(
-        "/transcribe", files=audio_upload(payload=b"a" * (1_048_576 + 4096))
+        "/transcribe", files=audio_upload(payload=b"a" * (1_048_576 + 1))
     )
 
     assert response.status_code == 413
     assert response.json()["error"]["code"] == "payload_too_large"
+    assert not route.called
 
 
 @pytest.mark.parametrize("vendor_key", ["DEEPGRAM_API_KEY"])
