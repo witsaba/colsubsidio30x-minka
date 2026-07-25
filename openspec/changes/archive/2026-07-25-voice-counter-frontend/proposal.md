@@ -21,7 +21,7 @@ The product has two shipped, spec-governed backend services (STT `:8001`, matche
 | Real matcher integration: all three statuses render; `ambiguous` + `no_match` reuse the S7 manual-search sheet (**with a real `<input>` — design gap**); nullable `nr_articulo`, `unidad`/`unidad_display`, `stt_confidence`, `audio_duration_ms` honored (never coerced; elapsed time from a local timer) | RF-15, RF-16, QA-05, QA-10 |
 | S5 confirm (multi-item cards, Repetir/Confirmar), S6 anomaly overlays with **two fixture-scoped demo rules** (unit vs `unidad_display`; quantity range fixture — NOT Module 4), S8 exclude (stretch; design-only, PRD lists actas out of scope), S9 done | RF-33, RF-21, RF-26–RF-29 (mocked), CU-05, CU-06 |
 | Auditor V1 review live (selection, filters, approve/correct/recount as local state, export gate) seeded with the design's 8 verbatim records; V2 `close` / V3 `base` static shells; **fixed `blocked` modal wiring (design gap: inverted buttons)** — primary "Ver los pendientes" navigates, secondary "Cancelar" dismisses, "Exportar de todos modos" dropped (strict gate is the honest behavior) | RF-08, RF-09 (partial), RF-30–RF-32 (visual) |
-| Audit categories = the 8 real matcher stock tables with human-friendly labels over real `catalogue_id`; RF-11 bodega→catalogue limitation stated honestly | RF-11 (limited) |
+| Audit categories = the 8 real matcher stock tables with human-friendly labels over real `catalogue_id`, and the RF-11 bodega→catalogue limitation MUST be stated, not faked. | RF-11 (limited) |
 | Astro server-endpoint proxy to `:8001`/`:8002` — no CORS added to the archived services | RNF-05 (posture) |
 | Design tokens as CSS custom properties from the design contract; **C2 fixed**: no "Funciona sin señal" claim, `sync` state at most "pending upload" in-session | — |
 | Vitest + happy-dom test suite under strict TDD (first RED: extraction adapter, 900 fixture) | QA-03, QA-04 (unit layer) |
@@ -60,7 +60,7 @@ None — `stt-transcription` and matcher specs are untouched.
 ## Demo Narrative (acceptance bar, 22:00)
 
 1. `/conteo` → S1 consent (corrected copy) → check → mic permission granted live.
-2. S2 → "Iniciar conteo" (Cocina Principal label over a real catalogue).
+2. S2 → "Iniciar conteo" (Restaurante Fuentes · AyB label over a real catalogue).
 3. Hold mic, dictate script 1 *"tres kilos de lechuga batavia, doce botellas de aceite vegetal y dos cajas de tomate chonto"* → real STT → processing → 3 confirm cards → Confirmar → 3 records.
 4. Script 2 *"novecientos gramos de aceite de oliva extra virgen"* → ITN 900 → `anomaly:unidad` → resolve.
 5. Script 3 *"cinco tablas para picar blancas"* → matcher non-match → S7 manual search with real candidates → select.
@@ -90,11 +90,11 @@ Everything lands as a new `frontend/` directory plus this change folder in a sin
 
 ## Success Criteria
 
-- [ ] The 8-step demo narrative completes end-to-end on Chrome/localhost with real mic → real STT → real matcher.
-- [ ] Consent screen states audio is NOT stored (C1); no offline claim anywhere (C2).
-- [ ] All three matcher statuses render; null `nr_articulo`/`unidad`/`stt_confidence`/`audio_duration_ms` never render as 0, "failed", or English units.
-- [ ] Recording auto-stops at 20 s; uploads never exceed 1,048,576 bytes client-side.
-- [ ] Processing state remains coherent through a forced 45 s delay.
-- [ ] "Terminar conteo" reaches S9; auditor `blocked` modal buttons act as labelled.
-- [ ] Vitest suite green, with the extraction-adapter 900 fixture written RED-first.
-- [ ] No file under `services/` modified.
+- The 8-step demo narrative completes end-to-end on Chrome/localhost with real mic → real STT → real matcher.
+- Consent screen states audio is NOT stored (C1); no offline claim anywhere (C2).
+- All three matcher statuses render; null `nr_articulo`/`unidad`/`stt_confidence`/`audio_duration_ms` never render as 0, "failed", or English units.
+- Recording auto-stops at 20 s; uploads never exceed 1,048,576 bytes client-side.
+- Processing state remains coherent through a forced 45 s delay.
+- "Terminar conteo" reaches S9; auditor `blocked` modal buttons act as labelled.
+- Vitest suite green, with the extraction-adapter 900 fixture written RED-first.
+- No file under `services/` modified.
