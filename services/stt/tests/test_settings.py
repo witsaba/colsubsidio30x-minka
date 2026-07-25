@@ -21,6 +21,9 @@ ALL_SETTING_ENV_VARS = (
     "STT_RETRY_ATTEMPTS",
     "STT_RETRY_BACKOFF_S",
     "STT_FALLBACK_ENABLED",
+    "STT_FALLBACK_VENDOR",
+    "ELEVENLABS_API_KEY",
+    "STT_ELEVENLABS_MODEL",
     "LOG_LEVEL",
 )
 
@@ -141,16 +144,75 @@ def test_a_retry_budget_below_one_is_rejected(monkeypatch):
     assert "stt_retry_attempts" in str(excinfo.value).lower()
 
 
+def test_the_fallback_vendor_is_unset_by_default(monkeypatch):
+    """Unset means auto: pick by priority from whatever keys are configured."""
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "dg-key")
+
+    assert Settings().stt_fallback_vendor is None
+    assert Settings().stt_elevenlabs_model == "scribe_v1"
+
+
+def test_an_empty_fallback_vendor_reads_as_unset(monkeypatch):
+    """`STT_FALLBACK_VENDOR: ${STT_FALLBACK_VENDOR:-}` sends an empty string."""
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "dg-key")
+    monkeypatch.setenv("STT_FALLBACK_VENDOR", "")
+
+    assert Settings().stt_fallback_vendor is None
+
+
+def test_an_explicit_fallback_vendor_is_accepted(monkeypatch):
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "dg-key")
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "el-key")
+    monkeypatch.setenv("STT_FALLBACK_VENDOR", "elevenlabs")
+
+    assert Settings().stt_fallback_vendor == "elevenlabs"
+
+
+def test_a_fallback_equal_to_the_primary_fails_boot(monkeypatch):
+    """Failing over to the vendor that just failed is not a fallback."""
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "dg-key")
+    monkeypatch.setenv("STT_FALLBACK_VENDOR", "deepgram")
+
+    with pytest.raises(ValidationError) as excinfo:
+        Settings()
+
+    assert "STT_FALLBACK_VENDOR" in str(excinfo.value)
+
+
+def test_an_explicit_fallback_without_its_key_fails_boot(monkeypatch):
+    """Configuring an unusable fallback is a misconfiguration, not a default."""
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "dg-key")
+    monkeypatch.setenv("STT_FALLBACK_VENDOR", "elevenlabs")
+
+    with pytest.raises(ValidationError) as excinfo:
+        Settings()
+
+    assert "ELEVENLABS_API_KEY" in str(excinfo.value)
+
+
+def test_an_unknown_fallback_vendor_fails_boot(monkeypatch):
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "dg-key")
+    monkeypatch.setenv("STT_FALLBACK_VENDOR", "whisper-cpp")
+
+    with pytest.raises(ValidationError) as excinfo:
+        Settings()
+
+    assert "whisper-cpp" in str(excinfo.value)
+
+
 def test_api_key_for_resolves_each_vendors_own_key(monkeypatch):
     """Failover calls the non-active vendor, so the key cannot follow the switch."""
     monkeypatch.setenv("STT_VENDOR", "deepgram")
     monkeypatch.setenv("DEEPGRAM_API_KEY", "dg-key")
     monkeypatch.setenv("GROQ_API_KEY", "gq-key")
 
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "el-key")
+
     settings = Settings()
 
     assert settings.api_key_for("deepgram") == "dg-key"
     assert settings.api_key_for("groq") == "gq-key"
+    assert settings.api_key_for("elevenlabs") == "el-key"
 
 
 def test_overrides_are_read_from_the_environment(monkeypatch):
