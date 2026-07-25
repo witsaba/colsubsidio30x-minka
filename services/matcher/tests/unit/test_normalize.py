@@ -22,6 +22,7 @@ from matcher.normalize import (
     pluralize_es,
     strip_accents,
     strip_packaging,
+    trigrams,
 )
 
 
@@ -161,3 +162,32 @@ def test_normalize_for_match_is_idempotent_upper_cased_and_whitespace_collapsed(
 
     assert normalized == expected
     assert normalize_for_match(normalized) == expected
+
+
+# --- Trigram cache is bounded (JD-1) ------------------------------------------
+
+
+def test_trigram_cache_is_bounded() -> None:
+    """An unbounded cache keyed by untrusted request text grows without limit.
+
+    The catalogue side holds ~1405 hot `articulo` strings; 4096 keeps every one
+    of them resident while capping what a hostile or merely chatty stream of
+    `spoken_name` values can pin in memory.
+    """
+    assert trigrams.cache_info().maxsize == 4096
+
+
+def test_trigrams_are_correct_after_the_cache_evicts_the_entry() -> None:
+    """Eviction is a memory event, never a correctness event."""
+    query = "achiote molido"
+    before = trigrams(query)
+
+    # Overflow the cache so `query` is guaranteed to have been evicted.
+    for i in range(trigrams.cache_info().maxsize + 1):
+        trigrams(f"filler articulo {i}")
+
+    assert trigrams(query) == before
+    assert trigrams(query) == frozenset(
+        {"  a", " ac", "ach", "chi", "hio", "iot", "ote", "te ", "e m", " mo",
+         "mol", "oli", "lid", "ido", "do "}
+    )

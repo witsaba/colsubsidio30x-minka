@@ -53,7 +53,11 @@ def _pg_trgm_pad(s: str) -> str:
     return "  " + " ".join(words) + " "
 
 
-@lru_cache(maxsize=None)
+# The cache MUST stay bounded: `trigrams()` is called with untrusted
+# per-request `spoken_name` text, so an unbounded cache would pin every string
+# a caller ever sent and grow the resident set until the process is OOM-killed.
+# 4096 keeps the ~1405 hot catalogue `articulo` strings resident with headroom.
+@lru_cache(maxsize=4096)
 def trigrams(s: str) -> frozenset[str]:
     padded = _pg_trgm_pad(s)
     if len(padded) < 3:
