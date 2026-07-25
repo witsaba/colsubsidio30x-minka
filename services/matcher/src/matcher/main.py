@@ -62,20 +62,45 @@ def configure_logging() -> None:
 configure_logging()
 
 
+def _load_service_with_retry(settings: Settings) -> MatcherService:
+    """Build the service, retrying a bounded number of times.
+
+    Two retry layers, deliberately: this loop absorbs the seconds-long cold
+    start race (catalogue volume not mounted yet, file mid-copy), and Docker's
+    `restart: unless-stopped` absorbs everything longer once the process exits.
+    Exhaustion is always an abort -- the service must never come up serving an
+    empty catalogue.
+    """
+    attempts = settings.startup_retries + 1
+    for attempt in range(1, attempts + 1):
+        try:
+            return MatcherService(settings)
+        except CatalogueUnavailableError as exc:
+            if attempt == attempts:
+                # Startup aborts (uvicorn exits 3). Leave the reason in the log
+                # first: without it the container just disappears silently.
+                logger.error("startup aborted after %d attempts: %s", attempts, exc)
+                raise
+            logger.warning(
+                "catalogue unavailable on attempt %d/%d, retrying in %.1fs: %s",
+                attempt,
+                attempts,
+                settings.startup_retry_delay_seconds,
+                exc,
+            )
+            time.sleep(settings.startup_retry_delay_seconds)
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Load configuration and catalogue once; fail fast when either is bad."""
     app.state.service = None
     # `Settings()` may raise ValidationError (bad env); it is not caught --
-    # a misconfigured process must abort rather than serve wrong decisions.
+    # bad configuration is permanent, so retrying it would only delay the
+    # abort. Only an unavailable catalogue is treated as possibly transient.
     settings = Settings()
-    try:
-        service = MatcherService(settings)
-    except CatalogueUnavailableError as exc:
-        # Startup aborts (uvicorn exits 3). Leave the reason in the log first:
-        # without it the container just disappears with no explanation.
-        logger.error("startup aborted: %s", exc)
-        raise
+    service = _load_service_with_retry(settings)
     loaded = service.catalogues()
     logger.info(
         "catalogue loaded catalogues=%d rows=%d db=%s",

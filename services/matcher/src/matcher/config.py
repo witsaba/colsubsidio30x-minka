@@ -42,3 +42,14 @@ class Settings(BaseSettings):
 
     match_unit_rerank: bool = True
     """When false the secondary unit re-rank is disabled entirely."""
+
+    startup_retries: int = Field(default=3, ge=0)
+    """Extra catalogue-load attempts before startup aborts.
+
+    A cold start can race the catalogue volume (not mounted yet, file mid-copy).
+    Three extra attempts absorb that race; 0 opts out and leaves all retrying to
+    Docker's `restart: unless-stopped`.
+    """
+
+    startup_retry_delay_seconds: float = Field(default=2.0, ge=0)
+    """Wait between catalogue-load attempts, in seconds."""

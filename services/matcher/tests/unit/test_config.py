@@ -22,6 +22,8 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "MATCH_TSR_MARGIN",
         "MATCH_MAX_CANDIDATES",
         "MATCH_UNIT_RERANK",
+        "STARTUP_RETRIES",
+        "STARTUP_RETRY_DELAY_SECONDS",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -60,7 +62,19 @@ class TestDefaults:
         _clear_env(monkeypatch)
         assert Settings().catalogue_db == Path("data/bodegas-y-stock.sqlite")
 
-    def test_exactly_five_match_knobs_plus_catalogue_db(self) -> None:
+    def test_startup_retries_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _clear_env(monkeypatch)
+        assert Settings().startup_retries == 3
+
+    def test_startup_retry_delay_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clear_env(monkeypatch)
+        assert Settings().startup_retry_delay_seconds == 2.0
+
+    def test_exactly_five_match_knobs_two_startup_knobs_and_catalogue_db(
+        self,
+    ) -> None:
         assert set(Settings.model_fields) == {
             "catalogue_db",
             "match_accept_score",
@@ -68,6 +82,8 @@ class TestDefaults:
             "match_tsr_margin",
             "match_max_candidates",
             "match_unit_rerank",
+            "startup_retries",
+            "startup_retry_delay_seconds",
         }
 
 
@@ -91,6 +107,18 @@ class TestEnvOverride:
         _clear_env(monkeypatch)
         monkeypatch.setenv("MATCH_MAX_CANDIDATES", "3")
         assert Settings().match_max_candidates == 3
+
+    def test_startup_retries_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _clear_env(monkeypatch)
+        monkeypatch.setenv("STARTUP_RETRIES", "7")
+        assert Settings().startup_retries == 7
+
+    def test_startup_retry_delay_from_env(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clear_env(monkeypatch)
+        monkeypatch.setenv("STARTUP_RETRY_DELAY_SECONDS", "0.5")
+        assert Settings().startup_retry_delay_seconds == 0.5
 
     def test_catalogue_db_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _clear_env(monkeypatch)
@@ -160,6 +188,38 @@ class TestInvalidValuesFailFast:
     def test_zero_max_candidates_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _clear_env(monkeypatch)
         monkeypatch.setenv("MATCH_MAX_CANDIDATES", "0")
+        with pytest.raises(ValidationError):
+            Settings()
+
+    def test_negative_startup_retries_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clear_env(monkeypatch)
+        monkeypatch.setenv("STARTUP_RETRIES", "-1")
+        with pytest.raises(ValidationError):
+            Settings()
+
+    def test_zero_startup_retries_is_allowed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Opting out of in-process retry is legitimate; Docker retries too."""
+        _clear_env(monkeypatch)
+        monkeypatch.setenv("STARTUP_RETRIES", "0")
+        assert Settings().startup_retries == 0
+
+    def test_negative_startup_retry_delay_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clear_env(monkeypatch)
+        monkeypatch.setenv("STARTUP_RETRY_DELAY_SECONDS", "-0.5")
+        with pytest.raises(ValidationError):
+            Settings()
+
+    def test_non_numeric_startup_retries_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clear_env(monkeypatch)
+        monkeypatch.setenv("STARTUP_RETRIES", "many")
         with pytest.raises(ValidationError):
             Settings()
 

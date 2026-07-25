@@ -1,0 +1,19 @@
+# Build context is the REPOSITORY ROOT (services/matcher/Dockerfile, design D5),
+# so everything the image does not need is excluded here. The image needs only
+# pyproject.toml, uv.lock and services/matcher/{pyproject.toml,src}; the
+# catalogue is mounted at runtime, never baked in.
+.git
+.gitignore
+**/__pycache__
+**/*.pyc
+**/.venv
+.pytest_cache
+.ruff_cache
+data/
+spikes/
+openspec/
+docs/
+scripts/
+.codegraph/
+.atl/
+services/matcher/tests/

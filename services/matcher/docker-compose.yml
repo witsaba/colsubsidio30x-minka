@@ -15,10 +15,15 @@ services:
       MATCH_TSR_MARGIN: "0.08"
       MATCH_MAX_CANDIDATES: "5"
       MATCH_UNIT_RERANK: "true"
+      STARTUP_RETRIES: "3"
+      STARTUP_RETRY_DELAY_SECONDS: "2.0"
     healthcheck:
       test: ["CMD", "python", "-c",
              "import urllib.request;urllib.request.urlopen('http://localhost:8002/health')"]
       interval: 10s
       timeout: 3s
       retries: 3
+      # Loading the catalogue (plus any startup retry) takes time; probes
+      # during that window are not failures.
+      start_period: 10s
     restart: unless-stopped

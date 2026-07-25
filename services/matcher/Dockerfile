@@ -18,6 +18,9 @@ COPY services/matcher/src services/matcher/src
 RUN uv sync --frozen --no-dev --package matcher
 
 ENV PATH="/app/.venv/bin:$PATH"
+# Unbuffered stdout: when the kernel SIGKILLs the process (OOM) a buffered
+# stream is lost, and the last log lines are exactly the crash evidence.
+ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8002
 CMD ["uvicorn", "matcher.main:app", "--host", "0.0.0.0", "--port", "8002"]

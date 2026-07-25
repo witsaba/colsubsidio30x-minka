@@ -13,6 +13,18 @@ StockRow = tuple[str | None, str | None, float | None, str | None]
 """(articulo, unidad, sd, nr_articulo) — the columns the loader reads."""
 
 
+@pytest.fixture(autouse=True)
+def instant_startup_retry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the bounded startup retry real but instant across the suite.
+
+    Startup-failure tests still perform every configured attempt; only the
+    wait between them is removed, so the suite does not pay the production
+    `STARTUP_RETRY_DELAY_SECONDS` default. Tests that assert on the delay set
+    the variable themselves and override this.
+    """
+    monkeypatch.setenv("STARTUP_RETRY_DELAY_SECONDS", "0")
+
+
 @pytest.fixture(scope="session")
 def catalogue_db_path() -> Path:
     """Path to the real catalogue SQLite built by `make build-sqlite`."""

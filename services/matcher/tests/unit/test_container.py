@@ -15,6 +15,14 @@ from pathlib import Path
 import pytest
 
 SERVICE_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[4]
+
+
+@pytest.fixture(scope="module")
+def dockerignore() -> str:
+    path = REPO_ROOT / ".dockerignore"
+    assert path.is_file(), f"missing {path}"
+    return path.read_text(encoding="utf-8")
 
 
 @pytest.fixture(scope="module")
@@ -61,6 +69,39 @@ class TestDockerfile:
         )
         assert "src.main:app" not in dockerfile, "spike entrypoint is superseded"
         assert "EXPOSE 8002" in dockerfile
+
+    def test_stdout_is_unbuffered(self, dockerfile: str) -> None:
+        """Buffered stdout loses the crash evidence when the kernel SIGKILLs."""
+        assert "ENV PYTHONUNBUFFERED=1" in dockerfile
+
+
+class TestDockerignore:
+    """The build context is the repo root, so it needs an exclusion list."""
+
+    def test_excludes_git_metadata_and_python_caches(
+        self, dockerignore: str
+    ) -> None:
+        for pattern in (".git", "**/__pycache__", "**/.venv", ".pytest_cache"):
+            assert pattern in dockerignore.splitlines(), pattern
+
+    def test_excludes_the_directories_the_image_never_needs(
+        self, dockerignore: str
+    ) -> None:
+        for pattern in ("data/", "spikes/", "openspec/", ".codegraph/", ".atl/"):
+            assert pattern in dockerignore.splitlines(), pattern
+
+    def test_does_not_exclude_anything_the_dockerfile_copies(
+        self, dockerignore: str, dockerfile: str
+    ) -> None:
+        excluded = set(dockerignore.splitlines())
+        for required in (
+            "pyproject.toml",
+            "uv.lock",
+            "services/matcher/src",
+            "services/matcher/pyproject.toml",
+        ):
+            assert required in dockerfile
+            assert required not in excluded
 
 
 class TestCompose:
@@ -114,5 +155,24 @@ class TestCompose:
         assert "http://localhost:8002/health" in compose
         assert "retries: 3" in compose
 
+    def test_healthcheck_grants_a_start_period(self, compose: str) -> None:
+        """Loading the catalogue takes time; probes before it are not failures."""
+        assert "start_period: 10s" in compose
+
     def test_restarts_unless_stopped(self, compose: str) -> None:
         assert "restart: unless-stopped" in compose
+
+    def test_pins_the_startup_retry_knobs(
+        self, compose: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from matcher.config import Settings
+
+        # Read the code defaults, not whatever the harness exported.
+        monkeypatch.delenv("STARTUP_RETRIES", raising=False)
+        monkeypatch.delenv("STARTUP_RETRY_DELAY_SECONDS", raising=False)
+        defaults = Settings(catalogue_db=Path("/data/bodegas-y-stock.sqlite"))
+        assert f'STARTUP_RETRIES: "{defaults.startup_retries}"' in compose
+        assert (
+            f'STARTUP_RETRY_DELAY_SECONDS: '
+            f'"{defaults.startup_retry_delay_seconds:.1f}"' in compose
+        )
