@@ -14,3 +14,11 @@ __pycache__/
 frontend/node_modules/
 frontend/dist/
 frontend/.astro/
+
+# Secrets. `services/stt/.env` holds DEEPGRAM_API_KEY; nothing named .env is
+# ever committed. The `.env.example` files ARE tracked — they carry key NAMES
+# and safe localhost defaults, never values.
+.env
+.env.*
+!.env.example
+!*.env.example
