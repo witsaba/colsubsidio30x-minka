@@ -141,7 +141,7 @@ Parallel groups: **P-A** = T4→T5→T6 (extraction/units chain) · **P-B** = T7
   GREEN: `src/components/operator/ConsentScreen.tsx`, `PlansScreen.tsx`.
   Requirements: **REQ-OCF-10 (C1)**, **REQ-OCF-11 (C2)**, REQ-VC-7, REQ-OCF-8, D6, D7. Deps: T7, T12, T14.
 
-- [ ] **T17 — Count screen, mic dock, and the authored «Terminar conteo» control.**
+- [x] **T17 — Count screen, mic dock, and the authored «Terminar conteo» control.**
   RED: `tests/components/count-screen.test.tsx` — the footer reads "Conteo ciego: nunca verás el stock del sistema." and **no system/theoretical stock value appears anywhere in the render tree** (REQ-OCF-2); `pointerdown` starts and both `pointerup` **and** `pointerleave` stop recording, with no toggle path (REQ-VC-5); with a record in `anom_open` the mic is inert and the banner reads "Micrófono en pausa hasta resolver el registro señalado."; **«Terminar conteo» exists, dispatches `COUNT_FINISHED`, reaches `screen==='done'`, and is disabled while an overlay is open or a request is in flight** (REQ-OCF-9, the design gap).
   GREEN: `src/components/operator/CountScreen.tsx`, `MicRecorder.tsx`.
   Requirements: REQ-OCF-2, REQ-OCF-5, **REQ-OCF-9**, REQ-VC-5, REQ-VC-8, D9. Deps: T7, T11, T14.
