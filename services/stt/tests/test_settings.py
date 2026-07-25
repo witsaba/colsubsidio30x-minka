@@ -17,6 +17,9 @@ ALL_SETTING_ENV_VARS = (
     "STT_MIN_SPEECH_MS",
     "STT_MAX_UPLOAD_BYTES",
     "STT_VENDOR_TIMEOUT_S",
+    "STT_RETRY_ATTEMPTS",
+    "STT_RETRY_BACKOFF_S",
+    "STT_FALLBACK_ENABLED",
     "LOG_LEVEL",
 )
 
@@ -93,6 +96,45 @@ def test_defaults(monkeypatch):
     assert settings.stt_model == "nova-3"
     assert settings.stt_numerals is True
     assert settings.stt_mip_opt_out is True
+    assert settings.stt_retry_attempts == 2
+    assert settings.stt_retry_backoff_s == 0.5
+    assert settings.stt_fallback_enabled is True
+
+
+def test_resilience_settings_are_read_from_the_environment(monkeypatch):
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "dg-key")
+    monkeypatch.setenv("STT_RETRY_ATTEMPTS", "4")
+    monkeypatch.setenv("STT_RETRY_BACKOFF_S", "0.25")
+    monkeypatch.setenv("STT_FALLBACK_ENABLED", "false")
+
+    settings = Settings()
+
+    assert settings.stt_retry_attempts == 4
+    assert settings.stt_retry_backoff_s == 0.25
+    assert settings.stt_fallback_enabled is False
+
+
+def test_a_retry_budget_below_one_is_rejected(monkeypatch):
+    """One attempt means "no retry"; zero would mean "never call the vendor"."""
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "dg-key")
+    monkeypatch.setenv("STT_RETRY_ATTEMPTS", "0")
+
+    with pytest.raises(ValidationError) as excinfo:
+        Settings()
+
+    assert "stt_retry_attempts" in str(excinfo.value).lower()
+
+
+def test_api_key_for_resolves_each_vendors_own_key(monkeypatch):
+    """Failover calls the non-active vendor, so the key cannot follow the switch."""
+    monkeypatch.setenv("STT_VENDOR", "deepgram")
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "dg-key")
+    monkeypatch.setenv("GROQ_API_KEY", "gq-key")
+
+    settings = Settings()
+
+    assert settings.api_key_for("deepgram") == "dg-key"
+    assert settings.api_key_for("groq") == "gq-key"
 
 
 def test_overrides_are_read_from_the_environment(monkeypatch):

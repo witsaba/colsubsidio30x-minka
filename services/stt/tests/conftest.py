@@ -29,8 +29,28 @@ MANAGED_ENV_VARS = (
     "STT_MIN_SPEECH_MS",
     "STT_MAX_UPLOAD_BYTES",
     "STT_VENDOR_TIMEOUT_S",
+    "STT_RETRY_ATTEMPTS",
+    "STT_RETRY_BACKOFF_S",
+    "STT_FALLBACK_ENABLED",
     "LOG_LEVEL",
 )
+
+
+@pytest.fixture(autouse=True)
+def backoff_sleeps(monkeypatch):
+    """Nothing in the suite waits on a real backoff.
+
+    Yields the recorded delay schedule, so a test can assert the retry timing
+    it asked for without spending it. `raising=False` keeps this harmless for
+    the tests that run before the seam exists.
+    """
+    delays: list[float] = []
+
+    async def _record(delay: float) -> None:
+        delays.append(delay)
+
+    monkeypatch.setattr("src.transcribe.sleep", _record, raising=False)
+    return delays
 
 
 @pytest.fixture
