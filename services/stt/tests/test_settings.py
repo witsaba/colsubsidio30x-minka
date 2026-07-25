@@ -26,7 +26,7 @@ def clean_env(monkeypatch):
     """Isolate every test from the developer's shell and from any local .env."""
     for name in ALL_SETTING_ENV_VARS:
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setattr(Settings.model_config, "env_file", None, raising=False)
+    monkeypatch.setitem(Settings.model_config, "env_file", None)
 
 
 def test_missing_key_for_active_vendor_fails_boot(monkeypatch):
