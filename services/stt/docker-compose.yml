@@ -1,0 +1,25 @@
+services:
+  stt:
+    build: .
+    ports:
+      - "8001:8001"
+    environment:
+      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:?set it in .env}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      STT_VENDOR: ${STT_VENDOR:-deepgram}
+      STT_LANGUAGE: es
+      STT_MODEL: nova-3
+      STT_NUMERALS: "true"
+      STT_MIP_OPT_OUT: "true"
+      STT_CONFIDENCE_FLOOR: "0.60"
+      STT_MIN_SPEECH_MS: ${STT_MIN_SPEECH_MS:-300}
+      STT_MAX_UPLOAD_BYTES: ${STT_MAX_UPLOAD_BYTES:-1048576}
+      STT_VENDOR_TIMEOUT_S: ${STT_VENDOR_TIMEOUT_S:-30}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request;urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
