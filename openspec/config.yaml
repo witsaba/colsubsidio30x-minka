@@ -2,15 +2,26 @@ schema: spec-driven
 
 context: |
   Project: colsubsidio30x-minka
-  State: Data tooling exists (uv-managed Python, SQLite build script); backend
-  services are being implemented from decided spikes (spikes/01..06).
-  Tech stack: Python 3.11+ managed by uv (pyproject.toml + uv.lock, no
-  requirements.txt). Services: FastAPI + uvicorn, httpx (no vendor SDKs),
-  pydantic-settings, docker-compose per service.
-  Architecture: Two independent backend services (Module 1 STT :8001,
-  Module 3 matching :8002); no shared process, datastore, or deploy unit.
-  Testing: pytest + pytest-asyncio + respx (httpx mocking).
-  Style: Generated technical artifacts use English; product scope is es-CO.
+  State: Active. Data pipeline (xlsx -> SQLite) plus two backend services built
+  from decided spikes (spikes/01..06): Module 1 STT (:8001) and Module 3
+  product matching (:8002). No shared process, datastore, or deploy unit.
+  Tech stack: Python 3.11+ managed by uv. Root uv workspace hosts the data
+    build plus `services/matcher` (workspace member); `services/stt` is a
+    standalone uv project with its own pyproject.toml and uv.lock.
+    FastAPI + uvicorn for HTTP surfaces, pydantic-settings for configuration.
+    Matcher: rapidfuzz scoring primitives, stdlib sqlite3 (read-only) catalogue.
+    STT: httpx only (no vendor SDKs) against Deepgram/Groq REST APIs.
+    pandas/openpyxl for the spreadsheet build step.
+  Architecture: `scripts/` builds `data/bodegas-y-stock.sqlite`;
+    `services/matcher` is an installable package (`src/matcher/`) served as
+    `matcher.main:app` on port 8002; `services/stt` serves port 8001; each
+    service is containerized with its own docker compose.
+  Testing: pytest. Root `uv run pytest` collects `services/matcher/tests`
+    (unit, api via FastAPI TestClient, eval accuracy gate). The STT suite runs
+    separately: `cd services/stt && uv run pytest` (pytest-asyncio + respx).
+  Style: src layout, `from __future__ import annotations`, type hints on public
+    functions, frozen dataclasses for value objects, pure functions kept free of I/O;
+    generated technical artifacts use English; product scope is es-CO.
 
 strict_tdd: true
 
@@ -19,9 +30,9 @@ testing:
   test_command: uv run pytest
   runner: pytest
   layers:
-    unit: uv run pytest
-    integration: uv run pytest
-    e2e: null
+    unit: uv run pytest services/matcher/tests/unit
+    integration: uv run pytest services/matcher/tests/api
+    e2e: uv run pytest services/matcher/tests/eval
   coverage:
     available: false
     command: null
@@ -36,18 +47,20 @@ rules:
   specs:
     - Use Given/When/Then scenarios and RFC 2119 keywords.
   design:
-    - Record architecture choices and rationale after the stack is selected.
+    - Record architecture choices and rationale, including rejected alternatives.
   tasks:
     - Group work hierarchically and keep tasks independently verifiable.
   apply:
     guidelines:
       - Follow conventions established by the approved design.
+      - Write the failing test first; promoted spike code lands behind characterization tests.
+      - Keep the catalogue read-only (`mode=ro` URI and `:ro` mount).
       - Audio is never written to disk (RNF-04); never log transcript bodies at INFO (Ley 1581).
     tdd: true
     test_command: uv run pytest
   verify:
     test_command: uv run pytest
-    build_command: null
+    build_command: docker compose -f services/matcher/docker-compose.yml build
     coverage_threshold: 0
   archive:
     - Warn before merging destructive deltas.
