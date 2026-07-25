@@ -37,7 +37,15 @@ ADAPTERS: dict[str, VendorAdapter] = {
 #: than "whatever `ADAPTERS` happens to iterate as", because which vendor
 #: takes over is an operational decision, not an implementation detail
 #: (REQ-VND-9). A test keeps it in step with `ADAPTERS`.
-FALLBACK_PRIORITY: tuple[str, ...] = ("deepgram", "groq", "elevenlabs")
+#:
+#: Deepgram leads: it is the sanctioned primary. ElevenLabs is second because
+#: it is the stronger Spanish transcriber, and by the time it is reached the
+#: primary has already failed - a dictation that would otherwise be lost is
+#: worth the bounded retention exposure RNF-04 refuses to accept for *every*
+#: clip. Groq is the third layer rather than the second for the same reason
+#: read the other way: it is the weaker transcriber, so it answers only when
+#: the two above it are both down.
+FALLBACK_PRIORITY: tuple[str, ...] = ("deepgram", "elevenlabs", "groq")
 
 router = APIRouter()
 logger = get_logger()
