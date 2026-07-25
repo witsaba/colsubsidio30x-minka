@@ -100,6 +100,16 @@ const CARDINAL_WORDS: ReadonlySet<string> = new Set([
   'y',
 ]);
 
+/**
+ * True when `word` is a tens word (20-90), i.e. a word that legitimately takes
+ * a joining "y" ("treinta y dos"). The adapter needs this to tell that "y"
+ * apart from the conjunction that separates two dictated items.
+ */
+export function isTensWord(word: string): boolean {
+  const key = normalizeSpokenNumber(word);
+  return key === 'veinte' || TENS[key] !== undefined;
+}
+
 /** True when `word` may take part in a spoken cardinal (already normalized). */
 export function isCardinalWord(word: string): boolean {
   return CARDINAL_WORDS.has(word) || /^\d+$/.test(word);

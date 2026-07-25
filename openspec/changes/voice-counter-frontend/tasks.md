@@ -82,7 +82,7 @@ Parallel groups: **P-A** = T4→T5→T6 (extraction/units chain) · **P-B** = T7
   GREEN: `src/lib/units.ts` (+ `displayUnit()` helper: renders `unidad_display` only, returns `null` for null).
   Requirements: REQ-EXT-4, REQ-OCF-7. Deps: T3.
 
-- [ ] **T6 — `MockExtractionAdapter` (the Module 2 seam).**
+- [x] **T6 — `MockExtractionAdapter` (the Module 2 seam).**
   RED: `tests/extraction/mock-adapter.test.ts` — script 1 `"tres kilos de lechuga batavia, doce botellas de aceite vegetal y dos cajas de tomate chonto"` yields **exactly 3** items with quantities `[3,12,2]`; script 2 `"novecientos gramos de aceite de oliva extra virgen"` → `{quantity:900, unit:'gramos'}`; script 3 `"cinco tablas para picar blancas"` → `[{5,'tablas'}]`; script 4 `"trescientas cinco unidades de gaseosa personal"` → `[{305,'unidades'}]`; an unresolvable unit yields `unit: null`.
   GREEN: `src/lib/extraction/mock.ts` (conjunction/comma split + ITN + unit lookup), `src/fixtures/scripts.ts` (4 scripts + expected extractions, shared by app and tests).
   Requirements: REQ-EXT-1, REQ-EXT-3, REQ-EXT-5. Deps: T4, T5.
