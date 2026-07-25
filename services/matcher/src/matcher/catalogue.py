@@ -26,6 +26,9 @@ __all__ = [
     "Row",
     "Snapshot",
     "SnapshotCache",
+    "as_utc",
+    "flatten_catalogue",
+    "group_rows",
     "load_index",
 ]
 
@@ -42,13 +45,20 @@ class CatalogueUnavailableError(RuntimeError):
 
 @dataclass(frozen=True)
 class LoadedCatalogue:
-    """The catalogue plus where it came from, for the startup log line."""
+    """The catalogue, where it came from, and when it was read at the origin.
+
+    `loaded_at` is the *origin* timestamp, not the moment this process built
+    the index: for a snapshot it is the instant the winning replica read
+    Supabase. Refresh compares it against a competitor's snapshot to decide
+    whether that snapshot is worth adopting (D4), so it must not be reset here.
+    """
 
     catalogue: dict[str, list[Row]]
     source: str
+    loaded_at: datetime
 
 
-def _group(rows: list[Row]) -> dict[str, list[Row]]:
+def group_rows(rows: list[Row]) -> dict[str, list[Row]]:
     """Rebuild the per-warehouse grouping from a flat snapshot payload."""
     grouped: dict[str, list[Row]] = {}
     for row in rows:
@@ -56,16 +66,21 @@ def _group(rows: list[Row]) -> dict[str, list[Row]]:
     return grouped
 
 
-def _flatten(catalogue: dict[str, list[Row]]) -> list[Row]:
+def flatten_catalogue(catalogue: dict[str, list[Row]]) -> list[Row]:
     return [row for rows in catalogue.values() for row in rows]
+
+
+def as_utc(moment: datetime) -> datetime:
+    """Naive timestamps are read as UTC, so two `loaded_at` are comparable."""
+    if moment.tzinfo is None:
+        return moment.replace(tzinfo=UTC)
+    return moment.astimezone(UTC)
 
 
 def _is_fresh(snapshot: Snapshot, ttl_seconds: int) -> bool:
     """Freshness is judged from `loaded_at`, never from the Redis key expiry."""
-    loaded_at = snapshot.loaded_at
-    if loaded_at.tzinfo is None:
-        loaded_at = loaded_at.replace(tzinfo=UTC)
-    return (datetime.now(UTC) - loaded_at).total_seconds() < ttl_seconds
+    age = datetime.now(UTC) - as_utc(snapshot.loaded_at)
+    return age.total_seconds() < ttl_seconds
 
 
 def _cached(cache: SnapshotCache) -> Snapshot | None:
@@ -101,7 +116,11 @@ def load_index(
     """
     snapshot = _cached(cache)
     if snapshot is not None and _is_fresh(snapshot, ttl_seconds):
-        return LoadedCatalogue(_group(snapshot.rows), SOURCE_REDIS_SNAPSHOT)
+        return LoadedCatalogue(
+            group_rows(snapshot.rows),
+            SOURCE_REDIS_SNAPSHOT,
+            as_utc(snapshot.loaded_at),
+        )
 
     try:
         catalogue = source.load()
@@ -114,10 +133,15 @@ def load_index(
             snapshot.loaded_at,
             exc,
         )
-        return LoadedCatalogue(_group(snapshot.rows), SOURCE_REDIS_SNAPSHOT_STALE)
+        return LoadedCatalogue(
+            group_rows(snapshot.rows),
+            SOURCE_REDIS_SNAPSHOT_STALE,
+            as_utc(snapshot.loaded_at),
+        )
 
+    loaded_at = datetime.now(UTC)
     try:
-        cache.put(Snapshot(rows=_flatten(catalogue), loaded_at=datetime.now(UTC)))
+        cache.put(Snapshot(rows=flatten_catalogue(catalogue), loaded_at=loaded_at))
     except Exception as exc:  # noqa: BLE001 - the write back is best effort
         logger.warning("catalogue snapshot not cached: %s", exc)
-    return LoadedCatalogue(catalogue, SOURCE_SUPABASE)
+    return LoadedCatalogue(catalogue, SOURCE_SUPABASE, loaded_at)

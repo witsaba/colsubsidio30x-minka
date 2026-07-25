@@ -1,11 +1,17 @@
 """FastAPI application for the matcher service (REQ-API-1/2/3/4).
 
-The app owns exactly one piece of state: a `MatcherService` built during the
-lifespan startup. Configuration parsing and catalogue loading both happen
-there, so an invalid threshold (`ValidationError`) or an unresolvable catalogue
+The app owns two pieces of state, both created by the lifespan: a
+`MatcherService` and the background refresh task that keeps its catalogue
+current. Configuration parsing and catalogue loading both happen at startup, so
+an invalid threshold (`ValidationError`) or an unresolvable catalogue
 (`CatalogueUnavailableError`) aborts startup and uvicorn exits non-zero -- the
 service never serves an empty or misconfigured catalogue, and the compose
 healthcheck therefore never passes on a broken deployment.
+
+The refresh task is deliberately *not* on the request path (design D4): it
+sleeps a jittered TTL, refreshes in a worker thread, and swaps a fully built
+index in one assignment, so `POST /match` never pays for Redis or Supabase and
+keeps answering from the last-good catalogue through an outage (REQ-RCC-3).
 
 Routes are deliberately thin: they translate between the wire models in
 `schemas.py` and `MatcherService`, and they map `UnknownCatalogueError` to a
@@ -20,7 +26,10 @@ this.
 """
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
+import random
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -45,6 +54,9 @@ from matcher.service import MatcherService, UnknownCatalogueError
 from matcher.supabase_source import SupabaseCatalogueSource
 
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
+
+REFRESH_JITTER_FRACTION = 0.1
+"""+/-10% of the TTL. Replicas that started together must not refresh together."""
 
 logger = logging.getLogger("matcher")
 
@@ -118,10 +130,43 @@ def _load_service_with_retry(settings: Settings) -> MatcherService:
     raise AssertionError("unreachable")  # pragma: no cover
 
 
+def _next_delay(ttl_seconds: float) -> float:
+    """Seconds to wait before the next refresh, jittered +/-10% (design D4).
+
+    Without jitter every replica that booted from the same deploy would expire
+    its snapshot in the same second and stampede Supabase together; the Redis
+    lock would then make all but one of them do nothing useful. The jitter is
+    the cheap half of that fix, the lock is the safety net.
+    """
+    spread = REFRESH_JITTER_FRACTION * ttl_seconds
+    return ttl_seconds + random.uniform(-spread, spread)
+
+
+async def _refresh_loop(service: MatcherService, settings: Settings) -> None:
+    """Refresh the catalogue forever, one jittered cycle at a time.
+
+    The refresh itself is synchronous (httpx and redis), so it runs in a worker
+    thread: blocking the event loop here would add the whole Supabase round trip
+    to the latency of every concurrent `/match`. `service.refresh()` already
+    swallows its own failures; the guard below is what keeps an unexpected one
+    from ending the loop and leaving the replica silently frozen on a stale
+    catalogue for the rest of its life.
+    """
+    while True:
+        await asyncio.sleep(_next_delay(settings.catalogue_cache_ttl_seconds))
+        try:
+            await asyncio.to_thread(service.refresh)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - the loop must outlive a cycle
+            logger.warning("catalogue refresh cycle failed: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Load configuration and catalogue once; fail fast when either is bad."""
     app.state.service = None
+    app.state.refresh_task = None
     # `Settings()` may raise ValidationError (bad env); it is not caught --
     # bad configuration is permanent, so retrying it would only delay the
     # abort. Only an unavailable catalogue is treated as possibly transient.
@@ -138,9 +183,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         service.source,
     )
     app.state.service = service
+    # Started only after the service exists: the loop refreshes a catalogue
+    # that is already serving, it never participates in producing the first one.
+    refresh_task = asyncio.create_task(_refresh_loop(service, settings))
+    app.state.refresh_task = refresh_task
     try:
         yield
     finally:
+        # Cancel and await: an abandoned task would keep refreshing a service
+        # the app has already dropped, and would log after shutdown.
+        refresh_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await refresh_task
         app.state.service = None
 
 
