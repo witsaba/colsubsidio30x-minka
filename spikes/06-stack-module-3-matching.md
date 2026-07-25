@@ -13,7 +13,7 @@ This document is the build spec.
 | :--- | :--- | :--- |
 | Runtime | Python 3.11+, managed by **`uv`** | Repository convention; the measured spike code is already Python |
 | API framework | **FastAPI** + **uvicorn** | Same shape as Module 1 — one framework across both services the same person maintains |
-| Matching | **rapidfuzz** + **unidecode** | Already in `uv.lock` from the spike. `rapidfuzz` is C++-backed; the trigram scorer is our own code |
+| Matching | **rapidfuzz** + ~~**unidecode**~~ | Already in `uv.lock` from the spike. `rapidfuzz` is C++-backed; the trigram scorer is our own code. **Correction (2026-07-24)**: `unidecode` was never imported — the spike's accent stripping uses stdlib `unicodedata` (`normalize.py: strip_accents`). The dependency was dropped from `pyproject.toml`/`uv.lock` in `add-matching-service`; only `rapidfuzz` ships |
 | Catalogue source | **SQLite** (`data/bodegas-y-stock.sqlite`), read-only, loaded into memory at startup | The artefact already exists and is reproducible from the spreadsheet. Supabase becomes the source later without touching the matcher |
 | Tests | **pytest** + the spike's labelled eval set | 624 cases already generated; the harness is the durable asset |
 | Container | `python:3.12-slim`, `uv sync --frozen` | Same as Module 1 |

@@ -1,0 +1,18 @@
+[project]
+name = "matcher"
+version = "0.1.0"
+description = "Module 3 -- Spanish product matching service over the Minka catalogue."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn>=0.32",
+  "pydantic-settings>=2.6",
+  "rapidfuzz>=3.14.5",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/matcher"]

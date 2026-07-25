@@ -1,0 +1,24 @@
+# Module 3 — product matching service (spike 06 block, design D5 build context).
+services:
+  matcher:
+    build:
+      context: ../..
+      dockerfile: services/matcher/Dockerfile
+    ports:
+      - "8002:8002"
+    volumes:
+      - ../../data:/data:ro          # catalogue is read-only, always
+    environment:
+      CATALOGUE_DB: /data/bodegas-y-stock.sqlite
+      MATCH_ACCEPT_SCORE: "0.50"
+      MATCH_AMBIGUITY_MARGIN: "0.08"
+      MATCH_TSR_MARGIN: "0.08"
+      MATCH_MAX_CANDIDATES: "5"
+      MATCH_UNIT_RERANK: "true"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request;urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped

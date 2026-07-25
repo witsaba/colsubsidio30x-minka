@@ -1,0 +1,58 @@
+schema: spec-driven
+
+context: |
+  Project: colsubsidio30x-minka
+  State: Active. Data pipeline (xlsx -> SQLite) plus Module 3, the product matching service.
+  Tech stack: Python 3.11+ managed by uv (single workspace, root + `services/matcher`).
+    FastAPI + uvicorn for the HTTP surface, pydantic-settings for configuration,
+    rapidfuzz for the scoring primitives, stdlib sqlite3 (read-only) for the catalogue,
+    pandas/openpyxl for the spreadsheet build step.
+  Architecture: uv workspace. `scripts/` builds `data/bodegas-y-stock.sqlite`;
+    `services/matcher` is an installable package (`src/matcher/`) served as
+    `matcher.main:app` on port 8002 and containerized with docker compose.
+  Testing: pytest (`uv run pytest`), collected from `services/matcher/tests`
+    across unit, api (fastapi TestClient), and eval (labelled accuracy gate) layers.
+  Style: src layout, `from __future__ import annotations`, type hints on public
+    functions, frozen dataclasses for value objects, pure functions kept free of I/O;
+    generated technical artifacts use English.
+
+strict_tdd: true
+
+testing:
+  detected: 2026-07-24
+  test_command: uv run pytest
+  runner: pytest
+  layers:
+    unit: uv run pytest services/matcher/tests/unit
+    integration: uv run pytest services/matcher/tests/api
+    e2e: uv run pytest services/matcher/tests/eval
+  coverage:
+    available: false
+    command: null
+  quality:
+    linter: null
+    type_checker: null
+    formatter: null
+
+rules:
+  proposal:
+    - Keep scope, risks, and rollback explicit.
+  specs:
+    - Use Given/When/Then scenarios and RFC 2119 keywords.
+  design:
+    - Record architecture choices and rationale, including rejected alternatives.
+  tasks:
+    - Group work hierarchically and keep tasks independently verifiable.
+  apply:
+    guidelines:
+      - Follow conventions established by the approved design.
+      - Write the failing test first; promoted spike code lands behind characterization tests.
+      - Keep the catalogue read-only (`mode=ro` URI and `:ro` mount).
+    tdd: true
+    test_command: uv run pytest
+  verify:
+    test_command: uv run pytest
+    build_command: docker compose -f services/matcher/docker-compose.yml build
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas.
