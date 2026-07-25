@@ -2,26 +2,37 @@ schema: spec-driven
 
 context: |
   Project: colsubsidio30x-minka
-  State: Active. Data pipeline (xlsx -> SQLite) plus two backend services built
-  from decided spikes (spikes/01..06): Module 1 STT (:8001) and Module 3
-  product matching (:8002). No shared process, datastore, or deploy unit.
-  Tech stack: Python 3.11+ managed by uv. Root uv workspace hosts the data
-    build plus `services/matcher` (workspace member); `services/stt` is a
-    standalone uv project with its own pyproject.toml and uv.lock.
-    FastAPI + uvicorn for HTTP surfaces, pydantic-settings for configuration.
+  State: Active. Data pipeline (xlsx -> SQLite) plus three backend services built
+  from decided spikes (spikes/01..06): Module 1 STT (:8001), Module 2 product
+  identification / voice inventory extraction (:8003), Module 3 product matching
+  (:8002). No shared process, datastore, or deploy unit. No frontend and no cache
+  (Redis or other) exist in this worktree/branch yet; a frontend lives only on
+  the separate unmerged feat/voice-counter-frontend branch. A Supabase/Postgres
+  schema is documented under docs/database/ but not yet implemented in code.
+  Tech stack: Python (>=3.11 root/matcher/stt, >=3.10 product_identification)
+    managed by uv. Root uv workspace hosts the data build plus `services/matcher`
+    and `services/product_identification` (workspace members); `services/stt` is
+    a standalone uv project with its own pyproject.toml and uv.lock.
+    FastAPI + uvicorn for HTTP surfaces, pydantic-settings for matcher/STT config.
     Matcher: rapidfuzz scoring primitives, stdlib sqlite3 (read-only) catalogue.
-    STT: httpx only (no vendor SDKs) against Deepgram/Groq REST APIs.
-    pandas/openpyxl for the spreadsheet build step.
+    STT: httpx only (no vendor SDKs) against Deepgram/ElevenLabs/Groq REST APIs.
+    Product identification: google-genai dual-model consensus (Gemini via Vertex
+    AI) over voice transcripts. pandas/openpyxl for the spreadsheet build step.
   Architecture: `scripts/` builds `data/bodegas-y-stock.sqlite`;
     `services/matcher` is an installable package (`src/matcher/`) served as
-    `matcher.main:app` on port 8002; `services/stt` serves port 8001. Both are
+    `matcher.main:app` on port 8002; `services/product_identification` serves
+    port 8003 (`server.py`); `services/stt` serves port 8001. All three are
     deployed from the single root `docker-compose.yml` with a single root
     `.env` (template `.env.example`, filled in by `scripts/setup-env.sh`);
     `docs/deployment.md` carries the checklist for adding a service.
   Testing: pytest. Root `uv run pytest` collects `services/matcher/tests`
     (unit, api via FastAPI TestClient, eval accuracy gate) and
-    `tests/deployment` (daemon-free Compose contracts). The STT suite runs
-    separately: `cd services/stt && uv run pytest` (pytest-asyncio + respx).
+    `tests/deployment` (daemon-free Compose contracts) — confirmed 372 tests
+    collected. The STT suite runs separately: `cd services/stt && uv run pytest`
+    (pytest-asyncio + respx). product_identification has no pytest suite: its
+    `tests/product_identification/` scripts run standalone (`uv run python
+    tests/product_identification/test_*.py`) against a live server + GCP creds.
+    No linter, type checker, or formatter config exists anywhere in the repo.
   Style: src layout, `from __future__ import annotations`, type hints on public
     functions, frozen dataclasses for value objects, pure functions kept free of I/O;
     generated technical artifacts use English; product scope is es-CO.
