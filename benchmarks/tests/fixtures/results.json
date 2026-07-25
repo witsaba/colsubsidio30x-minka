@@ -1,0 +1,108 @@
+{
+  "run_at": "2026-07-25T06:00:00+00:00",
+  "vendor": "deepgram",
+  "base_url": "http://localhost:8001",
+  "clips": [
+    {
+      "clip_id": "clean-01",
+      "condition": "clean",
+      "transcript": "tres kilos de lechuga",
+      "items": ["3"],
+      "is_garbage": false,
+      "status": 200,
+      "latency_ms": 812,
+      "error": null,
+      "response": {
+        "raw_transcript": "3 kilos de lechuga",
+        "is_garbage": false,
+        "stt_confidence": 0.95,
+        "audio_duration_ms": 3100,
+        "stt_vendor": "deepgram",
+        "request_id": "11111111-1111-4111-8111-111111111111"
+      }
+    },
+    {
+      "clip_id": "noisy-01",
+      "condition": "noisy",
+      "transcript": "noventa canastas de mango",
+      "items": ["90"],
+      "is_garbage": false,
+      "status": 200,
+      "latency_ms": 934,
+      "error": null,
+      "response": {
+        "raw_transcript": "900 canastas de mango",
+        "is_garbage": false,
+        "stt_confidence": 0.72,
+        "audio_duration_ms": 3600,
+        "stt_vendor": "deepgram",
+        "request_id": "22222222-2222-4222-8222-222222222222"
+      }
+    },
+    {
+      "clip_id": "spontaneous-01",
+      "condition": "spontaneous",
+      "transcript": "eh dos bultos de papa",
+      "items": ["2"],
+      "is_garbage": false,
+      "status": 200,
+      "latency_ms": 1010,
+      "error": null,
+      "response": {
+        "raw_transcript": "eh 2 bultos de papa",
+        "is_garbage": false,
+        "stt_confidence": 0.81,
+        "audio_duration_ms": 4200,
+        "stt_vendor": "deepgram",
+        "request_id": "33333333-3333-4333-8333-333333333333"
+      }
+    },
+    {
+      "clip_id": "garbage-noise-01",
+      "condition": "noisy",
+      "transcript": "",
+      "items": [],
+      "is_garbage": true,
+      "status": 200,
+      "latency_ms": 640,
+      "error": null,
+      "response": {
+        "raw_transcript": "dos cajas",
+        "is_garbage": false,
+        "stt_confidence": 0.66,
+        "audio_duration_ms": 2200,
+        "stt_vendor": "deepgram",
+        "request_id": "44444444-4444-4444-8444-444444444444"
+      }
+    },
+    {
+      "clip_id": "garbage-silence-01",
+      "condition": "clean",
+      "transcript": "",
+      "items": [],
+      "is_garbage": true,
+      "status": 200,
+      "latency_ms": 410,
+      "error": null,
+      "response": {
+        "raw_transcript": "",
+        "is_garbage": true,
+        "stt_confidence": null,
+        "audio_duration_ms": 1800,
+        "stt_vendor": "deepgram",
+        "request_id": "55555555-5555-4555-8555-555555555555"
+      }
+    },
+    {
+      "clip_id": "clean-02",
+      "condition": "clean",
+      "transcript": "doce botellas de aceite",
+      "items": ["12"],
+      "is_garbage": false,
+      "status": 502,
+      "latency_ms": 30012,
+      "error": "vendor_timeout",
+      "response": null
+    }
+  ]
+}
