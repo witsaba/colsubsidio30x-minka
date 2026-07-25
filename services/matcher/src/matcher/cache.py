@@ -18,12 +18,19 @@ value returns `None`, which the caller treats exactly like a cache miss
 
 The codec serializes exactly the five `Row` fields and nothing else, so no
 stock quantity can enter Redis (REQ-RCC-5, RF-18).
+
+`RedisSnapshotCache` is the adapter behind the `SnapshotCache` port. Redis is a
+*soft* dependency of the matcher: every `redis.RedisError` is swallowed into a
+miss, a no-op, or a refused lock, so a dead cache degrades to a Supabase read
+and can never surface on `POST /match` (REQ-RCC-3).
 """
 from __future__ import annotations
 
 import json
 from dataclasses import asdict
 from datetime import UTC, datetime
+
+import redis
 
 from matcher.ports import Row, Snapshot
 
@@ -71,3 +78,68 @@ def decode_snapshot(raw: bytes | str | None) -> Snapshot | None:
     except (ValueError, TypeError, KeyError, AttributeError):
         return None
     return Snapshot(rows=rows, loaded_at=loaded_at)
+
+
+class RedisSnapshotCache:
+    """Redis-backed `SnapshotCache`: versioned snapshot plus the refresh lock.
+
+    `ttl_seconds` is the *freshness* window used to decide whether a snapshot
+    is worth reusing. The Redis key expiry is deliberately twice that (D3): a
+    replica restarting after one missed refresh still finds a stale-but-real
+    snapshot to serve while it re-reads Supabase, instead of an empty slot.
+    Staleness is judged from `Snapshot.loaded_at`, never from key expiry.
+    """
+
+    def __init__(
+        self,
+        client: redis.Redis,
+        ttl_seconds: int,
+        lock_ttl_seconds: float,
+    ) -> None:
+        self._client = client
+        self._ttl_seconds = ttl_seconds
+        self._lock_ttl_seconds = lock_ttl_seconds
+
+    def get(self) -> Snapshot | None:
+        """The cached snapshot, or `None` on miss, corruption or Redis error."""
+        try:
+            raw = self._client.get(SNAPSHOT_KEY)
+        except redis.RedisError:
+            return None
+        return decode_snapshot(raw)
+
+    def put(self, snapshot: Snapshot) -> None:
+        """Store the snapshot at twice the freshness TTL. Best effort."""
+        try:
+            self._client.set(
+                SNAPSHOT_KEY,
+                encode_snapshot(snapshot),
+                ex=2 * self._ttl_seconds,
+            )
+        except redis.RedisError:
+            return
+
+    def try_acquire_refresh_lock(self, ttl_seconds: float | None = None) -> bool:
+        """Claim the right to refresh from the source via `SET NX PX`.
+
+        The expiry frees a holder that died mid-refresh; no fencing token is
+        needed because a duplicate Supabase read is idempotent and harmless
+        (D4). A Redis error refuses the lock rather than raising -- the caller
+        then refreshes directly, since the lock is stampede control and not a
+        correctness dependency.
+        """
+        expiry = self._lock_ttl_seconds if ttl_seconds is None else ttl_seconds
+        try:
+            acquired = self._client.set(
+                REFRESH_LOCK_KEY, b"1", nx=True, px=int(expiry * 1000)
+            )
+        except redis.RedisError:
+            return False
+        return bool(acquired)
+
+    def release_refresh_lock(self) -> None:
+        """Release the refresh lock. Best effort -- never raises."""
+        try:
+            self._client.delete(REFRESH_LOCK_KEY)
+        except redis.RedisError:
+            return

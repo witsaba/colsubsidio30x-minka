@@ -140,7 +140,7 @@ D2 specifies is preserved. This keeps every commit green with no rename churn.
 
 ## WU-2: `RedisSnapshotCache` over `fakeredis` — PARALLEL with WU-3
 
-- [ ] 2.1 **RED** — create `services/matcher/tests/unit/test_redis_cache.py`, `TestGetPut`:
+- [x] 2.1 **RED** — create `services/matcher/tests/unit/test_redis_cache.py`, `TestGetPut`:
   - `test_a_written_snapshot_is_read_back_intact`
   - `test_get_on_an_empty_redis_returns_none`
   - `test_put_sets_a_key_ttl_of_twice_the_configured_ttl` (D3) — `ttl = client.ttl(SNAPSHOT_KEY)`; assert `2*cfg - 2 <= ttl <= 2*cfg`.
@@ -149,13 +149,13 @@ D2 specifies is preserved. This keeps every commit green with no rename churn.
   - `test_put_never_raises_when_redis_is_down` (REQ-RCC-1, best effort)
   - Fixture: `fakeredis.FakeRedis()` injected into the **real** `RedisSnapshotCache` (D2 — real adapter, throwaway backend; never a hand-rolled cache fake).
   - **Expected RED:** `ImportError: cannot import name 'RedisSnapshotCache' from 'matcher.cache'`.
-- [ ] 2.2 **RED** — same file, `TestRefreshLock` (REQ-RCC-4):
+- [x] 2.2 **RED** — same file, `TestRefreshLock` (REQ-RCC-4):
   - `test_only_the_first_caller_acquires_the_lock` — two `RedisSnapshotCache` instances over one `FakeRedis`; second `try_acquire_refresh_lock(60)` returns `False`.
   - `test_the_lock_carries_the_configured_px_expiry` — `0 < client.pttl(REFRESH_LOCK_KEY) <= 60_000`.
   - `test_releasing_lets_the_next_caller_acquire`
   - `test_an_expired_lock_frees_itself` — advance `fakeredis` time / use a 1ms TTL; a dead holder never wedges refresh forever (D4).
   - `test_a_redis_error_on_lock_acquisition_returns_false` — the lock is a stampede optimization, never a correctness dependency.
-- [ ] 2.3 **GREEN** — implement `RedisSnapshotCache(client: redis.Redis, ttl_seconds: int, lock_ttl_seconds: int)` in `cache.py`: `get`/`put`/`try_acquire_refresh_lock` (`SET NX PX`) / `release_refresh_lock`. Every `redis.RedisError` is swallowed into `None`/`False`/no-op. **Verify:** `uv run pytest services/matcher/tests/unit/test_redis_cache.py` then `uv run pytest` → 4 failed (baseline).
+- [x] 2.3 **GREEN** — implement `RedisSnapshotCache(client: redis.Redis, ttl_seconds: int, lock_ttl_seconds: int)` in `cache.py`: `get`/`put`/`try_acquire_refresh_lock` (`SET NX PX`) / `release_refresh_lock`. Every `redis.RedisError` is swallowed into `None`/`False`/no-op. **Verify:** `uv run pytest services/matcher/tests/unit/test_redis_cache.py` → 21 passed; `uv run pytest` → 4 failed, 413 passed (baseline unchanged). *Applied refinements: (a) `lock_ttl_seconds: float` and `try_acquire_refresh_lock(ttl_seconds: float | None = None)` — the float admits a sub-second expiry so `test_an_expired_lock_frees_itself` can observe real `PX` self-healing in 100 ms instead of mocking the clock, and the default lets the caller use the configured value without restating it; the port still accepts an explicit ttl as D2 specifies. (b) The "Redis is down" harness is `FakeServer().connected = False`, **not** `FakeRedis(connected=False)` — the latter is silently ignored by fakeredis 2.37 and made two soft-failure tests pass vacuously. A guard test (`test_the_unreachable_harness_really_refuses_commands`) now pins that the harness really raises `redis.ConnectionError`.*
 
 ## WU-3: `SupabaseCatalogueSource` over `httpx.MockTransport` — PARALLEL with WU-2
 
