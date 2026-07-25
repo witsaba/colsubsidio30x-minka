@@ -16,17 +16,30 @@ import {
 } from '../../src/lib/catalogues';
 import { OPERATOR_PLANS, OPERATOR_SEED_PROGRESS, OPERATOR_SEED_RECORDS } from '../../src/fixtures/operatorSeed';
 
-/** The matcher's real tables and their row counts, verbatim. */
+/**
+ * The matcher's real tables and their row counts.
+ *
+ * These are the counts the LIVE service reports, verified against
+ * `GET http://localhost:8002/catalogues` on 2026-07-25 (total 1405).
+ *
+ * An earlier draft of this fixture carried each count one too high
+ * (total 1413). That figure came from a stale design note and would have
+ * printed "345 artículos" on the operator's plan card for a catalogue that
+ * actually holds 344. The service is the source of truth, not the note.
+ */
 const REAL_CATALOGUES: Record<string, number> = {
-  stock_almacen_ayb: 271,
-  stock_almacen_suministros: 297,
-  stock_kiosco_piscigiros_ayb: 57,
-  stock_kiosco_taquilla_ayb: 59,
-  stock_restaurante_fuentes_ayb: 345,
-  stock_restaurante_fuentes_sumin: 134,
-  zoologico: 56,
-  zoologico_suministros: 194,
+  stock_almacen_ayb: 270,
+  stock_almacen_suministros: 296,
+  stock_kiosco_piscigiros_ayb: 56,
+  stock_kiosco_taquilla_ayb: 58,
+  stock_restaurante_fuentes_ayb: 344,
+  stock_restaurante_fuentes_sumin: 133,
+  zoologico: 55,
+  zoologico_suministros: 193,
 };
+
+/** The matcher's own `/health` reports this total. */
+const REAL_TOTAL_ROWS = 1405;
 
 describe('REQ-OCF-8 — the 8 real catalogues', () => {
   it('exports exactly the 8 real catalogue ids, no more and no fewer', () => {
@@ -36,6 +49,10 @@ describe('REQ-OCF-8 — the 8 real catalogues', () => {
   it('carries the real row count for every catalogue', () => {
     const rows = Object.fromEntries(CATALOGUES.map((c) => [c.catalogueId, c.rows]));
     expect(rows).toEqual(REAL_CATALOGUES);
+  });
+
+  it('sums to the row total the matcher itself reports on /health', () => {
+    expect(CATALOGUES.reduce((n, c) => n + c.rows, 0)).toBe(REAL_TOTAL_ROWS);
   });
 
   it('maps a human-readable Colombian Spanish label 1:1 onto every real id', () => {

@@ -19,14 +19,14 @@ export interface Catalogue {
 
 /** Largest first: the biggest table gives the demo scripts the best match odds. */
 export const CATALOGUES: readonly Catalogue[] = [
-  { catalogueId: 'stock_restaurante_fuentes_ayb', label: 'Restaurante Fuentes · AyB', rows: 345 },
-  { catalogueId: 'stock_almacen_suministros', label: 'Almacén · Suministros', rows: 297 },
-  { catalogueId: 'stock_almacen_ayb', label: 'Almacén · AyB', rows: 271 },
-  { catalogueId: 'zoologico_suministros', label: 'Zoológico · Suministros', rows: 194 },
-  { catalogueId: 'stock_restaurante_fuentes_sumin', label: 'Restaurante Fuentes · Suministros', rows: 134 },
-  { catalogueId: 'stock_kiosco_taquilla_ayb', label: 'Kiosco Taquilla · AyB', rows: 59 },
-  { catalogueId: 'stock_kiosco_piscigiros_ayb', label: 'Kiosco Piscigiros · AyB', rows: 57 },
-  { catalogueId: 'zoologico', label: 'Zoológico · AyB', rows: 56 },
+  { catalogueId: 'stock_restaurante_fuentes_ayb', label: 'Restaurante Fuentes · AyB', rows: 344 },
+  { catalogueId: 'stock_almacen_suministros', label: 'Almacén · Suministros', rows: 296 },
+  { catalogueId: 'stock_almacen_ayb', label: 'Almacén · AyB', rows: 270 },
+  { catalogueId: 'zoologico_suministros', label: 'Zoológico · Suministros', rows: 193 },
+  { catalogueId: 'stock_restaurante_fuentes_sumin', label: 'Restaurante Fuentes · Suministros', rows: 133 },
+  { catalogueId: 'stock_kiosco_taquilla_ayb', label: 'Kiosco Taquilla · AyB', rows: 58 },
+  { catalogueId: 'stock_kiosco_piscigiros_ayb', label: 'Kiosco Piscigiros · AyB', rows: 56 },
+  { catalogueId: 'zoologico', label: 'Zoológico · AyB', rows: 55 },
 ] as const;
 
 /** Every real catalogue id, in the same size order as `CATALOGUES`. */
