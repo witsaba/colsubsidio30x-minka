@@ -80,6 +80,36 @@ New info (recorded, not fixed):
 - Re-A5: `main.py` http_exception_handler docstring documents the now-dead MultiPartException file-part path.
 - Re-A6: guard-level 413 rejections emit no log record (request_id exists only in the response body).
 
+## Round 2 scoped re-judgment (fix delta 66345ea..07c4dbc, tree f23764bd) — TERMINAL
+
+Both judges verified JD-6 and JD-7 genuinely resolved (deep checks: CancelledError
+propagation through the retry clauses, scope["state"] sharing into the exception
+handlers, 30 s per-call < 45 s total deadline). Judge B: zero findings. Judge A:
+zero severe; one WARNING + one SUGGESTION, recorded as info per protocol:
+
+- Re2-A1 (WARNING, deterministic): at shipped defaults (30 s per-call timeout, 2
+  primary attempts, 0.5 s backoff, 45 s total deadline) the failover attempt is
+  arithmetically unreachable for the HUNG-primary failure class — the deadline
+  fires ~14.5 s into primary attempt 2, before the fallback branch. Failover
+  still fires for fast transient failures (connection refused, 429, 5xx), which
+  is the common vendor-down mode. Operator guidance: set `STT_VENDOR_TIMEOUT_S=15`
+  (or raise `STT_TOTAL_DEADLINE_S`) if hung-primary failover matters more than a
+  45 s worst case. Design/README wording overclaims that the budget covers the
+  failover at default numbers.
+- Re2-A2 (SUGGESTION): `test_the_deadline_reports_the_vendor_that_was_in_flight`
+  couples to a 0.05 s deadline racing two mocked round trips; may flake on
+  loaded CI.
+
+Parent terminal runtime verification (Docker, rebuilt image at this tree): 7/7
+pass — healthy boot ~15 s; /health 200; guard 413 envelope in 2.5 ms; dummy-key
+502 in 0.6 s with exactly one upstream call (non-transient ⇒ no retry); all four
+resilience env knobs in effective compose config; INFO log hygiene intact.
+
+Full suite at terminal head: 95 passed.
+
+**Terminal state: approved.** Round budget exhausted (2 fix rounds, 2 scoped
+re-judgments); no severe finding remains.
+
 ## Round-1 authorization
 
 The user /goal ("adversarial review … make strong and resilient. Ensure it have a retry fallback and that will be up") is the standing maintainer directive for this correction round; the session is autonomous (Stop-hook goal active).
