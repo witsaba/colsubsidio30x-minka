@@ -116,11 +116,17 @@ empty. An unrecognised `STT_VENDOR` also fails startup.
 | `DEEPGRAM_BASE_URL` | `https://api.deepgram.com` | Override for testing |
 | `GROQ_BASE_URL` | `https://api.groq.com` | Override for testing |
 
-**`STT_MAX_UPLOAD_BYTES` is coupled to Starlette.** 1 MiB is also Starlette's
-`max_part_size` and its `SpooledTemporaryFile` spool threshold, which is what
-guarantees the upload never rolls over to disk. Raising the cap means revisiting
-that coupling, not just editing the number. 1 MiB of Opus is over five minutes
-of voice — far beyond any push-to-talk clip.
+**How `STT_MAX_UPLOAD_BYTES` keeps audio off the disk.** Starlette does *not*
+apply `max_part_size` to file parts — it streams them into a
+`SpooledTemporaryFile` that flushes to a real inode past its spool threshold,
+inside form parsing and therefore before any route code. `src/body_limit.py`
+closes that gap in two moves: an ASGI guard in front of the app answers `413`
+for any raw body over the cap (plus a 4 KiB multipart-envelope allowance),
+counting streamed chunks in memory when there is no `Content-Length`; and
+`MultiPartParser.spool_max_size` is raised to that same limit, so nothing the
+guard admits can reach the spool threshold either. Changing the cap needs no
+other edit. 1 MiB of Opus is over five minutes of voice — far beyond any
+push-to-talk clip.
 
 ## Vendors
 
@@ -142,6 +148,7 @@ makes the swap a function swap.
 services/stt/
 ├── src/
 │   ├── main.py            create_app(), shared AsyncClient, error envelope
+│   ├── body_limit.py      ASGI body guard: 413 before anything can spool to disk
 │   ├── transcribe.py      routes, vendor dispatch, evaluate_garbage
 │   ├── settings.py        boot-time configuration
 │   ├── logging_setup.py   stdlib logging

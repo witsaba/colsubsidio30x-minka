@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.formparsers import MultiPartException
 
+from src.body_limit import install_body_limit
 from src.logging_setup import configure_logging
 from src.settings import Settings
 from src.transcribe import error_response, router
@@ -32,6 +33,10 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Minka STT service", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
     app.include_router(router)
+
+    # Must be the outermost guard: it answers 413 before the multipart parser
+    # can spool an oversized upload to disk (JD-1, RNF-04).
+    install_body_limit(app, settings.stt_max_upload_bytes)
 
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request, exc: StarletteHTTPException):
