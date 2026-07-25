@@ -8,7 +8,7 @@ Frozen HTTP contract of the Module 1 STT service: `POST /transcribe`, `GET /heal
 
 ### Requirement: REQ-STT-1 Frozen transcribe response shape
 
-`POST /transcribe` SHALL accept `multipart/form-data` with a `file` field containing an audio blob and SHALL respond `200` with exactly these fields: `raw_transcript` (string), `is_garbage` (bool), `stt_confidence` (float), `audio_duration_ms` (int | null), `stt_vendor` (string), `request_id` (string, unique per request). No additional or missing top-level fields. `audio_duration_ms` SHALL be `null` when the vendor omits duration (chunked MediaRecorder webm often lacks a duration header); the service MUST NOT substitute `0`, since a forced `0` would falsely trigger the negligible-speech `is_garbage` path.
+`POST /transcribe` SHALL accept `multipart/form-data` with a `file` field containing an audio blob and SHALL respond `200` with exactly these fields: `raw_transcript` (string), `is_garbage` (bool), `stt_confidence` (float), `audio_duration_ms` (int | null), `stt_vendor` (string), `request_id` (string, unique per request). No additional or missing top-level fields. `audio_duration_ms` SHALL be `null` when the vendor omits duration (chunked MediaRecorder webm often lacks a duration header); the service MUST NOT substitute `0`, since a forced `0` would falsely trigger the negligible-speech `is_garbage` path. Final ratification of this shape happens at the 06:00 contract sync with Daniel.
 
 #### Scenario: Successful transcription
 

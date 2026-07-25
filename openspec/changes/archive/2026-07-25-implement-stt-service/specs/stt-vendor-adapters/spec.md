@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Deepgram, Groq, and ElevenLabs adapters — any of them primary or fallback — the `STT_VENDOR` runtime switch, failover selection, and boot-time configuration validation.
+Deepgram, Groq and ElevenLabs adapters — any of them primary or fallback — the `STT_VENDOR` runtime switch, failover selection, and boot-time configuration validation.
 
 ## Requirements
 
@@ -100,7 +100,7 @@ When the selected vendor exhausts its retry budget on transient failures, `STT_F
 - WHEN a clip is POSTed to `/transcribe`
 - THEN Groq is called once, authenticated with the Groq key
 - AND the response is `200` with `stt_vendor: "groq"`
-- AND the per-request INFO record reports `vendor: "groq"`
+- AND the per-request INFO record reports `vendor: "groq"` and carries no other fields beyond `request_id` and `duration_ms`
 
 #### Scenario: No fallback key means no failover
 

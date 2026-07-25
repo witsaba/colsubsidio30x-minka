@@ -36,12 +36,80 @@ Stateless FastAPI app in a self-contained `services/stt/` project. One route mod
 
 Audio path: `await file.read()` → forward → drop reference. No temp files, no `UploadFile.save()`.
 
+## File Changes
+
+| File | Action | Description |
+|------|--------|-------------|
+| `services/stt/pyproject.toml`, `uv.lock` | Create | fastapi, uvicorn, httpx, pydantic-settings; dev: pytest, pytest-asyncio, respx |
+| `services/stt/src/main.py` | Create | `create_app()` factory + lifespan (shared `AsyncClient`); `app = create_app()` for `src.main:app` |
+| `services/stt/src/settings.py` | Create | pydantic-settings; key for the ACTIVE vendor required at boot |
+| `services/stt/src/transcribe.py` | Create | `/transcribe`, `/health`, `evaluate_garbage`, error mapping |
+| `services/stt/src/vendors/{base,deepgram,groq}.py` | Create | Protocol + `TranscriptionResult`; two adapters |
+| `services/stt/src/logging_setup.py` | Create | stdlib logging config, `LOG_LEVEL` env |
+| `services/stt/Dockerfile`, `docker-compose.yml` | Create | Verbatim from spike 05 |
+| `services/stt/tests/*` | Create | See Testing Strategy |
+| `benchmarks/run.py`, `report.py`, `corpus/` | Create | Harness (below) |
+| `spikes/01-speech-to-text.md:137`, `spikes/README.md:29` | Modify | Stale `language=multi` doc-drift fix |
+
+## Interfaces / Contracts
+
+```python
+class TranscriptionResult(BaseModel):
+    raw_transcript: str
+    stt_confidence: float | None
+    audio_duration_ms: int | None
+
+class VendorAdapter(Protocol):
+    async def __call__(self, audio: bytes, content_type: str,
+                       settings: Settings, client: httpx.AsyncClient) -> TranscriptionResult: ...
+
+ADAPTERS = {"deepgram": deepgram.transcribe, "groq": groq.transcribe}
+```
+
+Vendor mapping:
+
+| | Deepgram | Groq |
+|---|---|---|
+| Request | `POST /v1/listen?model=nova-3&language=es&numerals=true&mip_opt_out=true`, raw bytes body + Content-Type | `POST /openai/v1/audio/transcriptions` multipart: `model=whisper-large-v3-turbo`, `language=es`, `response_format=verbose_json` |
+| transcript / confidence / duration | `channels[0].alternatives[0]` `.transcript` / `.confidence`; `metadata.duration` s→ms | `text`; mean `exp(avg_logprob)`; `duration` s→ms |
+
+`is_garbage` triggers (any): empty stripped transcript; `stt_confidence < STT_CONFIDENCE_FLOOR` (when confidence known); `audio_duration_ms < STT_MIN_SPEECH_MS` (default 300, only when duration known).
+
+Error shape `{"error": {"code", "message", "request_id"}}`:
+
+| Condition | HTTP | code |
+|---|---|---|
+| Missing/invalid multipart field | 422 | FastAPI default |
+| Upload > `STT_MAX_UPLOAD_BYTES` | 413 | `payload_too_large` |
+| Vendor rejects audio as undecodable (audio-related 4xx) | 400 | `invalid_audio` |
+| Vendor timeout (`STT_VENDOR_TIMEOUT_S` default 30) | 502 | `vendor_timeout` (REQ-STT-5 freezes 502) |
+| Vendor 5xx / auth / other 4xx | 502 | `vendor_error` |
+
+New settings beyond spike: `STT_MIN_SPEECH_MS=300`, `STT_MAX_UPLOAD_BYTES=1048576`, `STT_VENDOR_TIMEOUT_S=30`, `LOG_LEVEL=INFO`.
+
+Benchmark: `corpus/labels.csv` = `clip_id, condition(clean|noisy|spontaneous), transcript, items` (JSON string)`, is_garbage`. `garbage` is NOT a condition — a garbage clip carries a condition plus `is_garbage=true` (spike-05, REQ-BMK-1/6). `run.py`: asyncio + semaphore (default 4) against `BENCH_STT_URL`, writes `results.json` = `{run_at, vendor, base_url, clips:[{clip_id, condition, status, response, latency_ms, error}]}`. `report.py`: digit accuracy (numeric-token exact match) split by condition; hallucination rate over ALL garbage clips using the Decision 11 inventory-shaped detector; WER secondary; prints corpus-validity caveat.
+
+## Testing Strategy
+
+| Layer | What to Test | Approach |
+|-------|-------------|----------|
+| Unit | `evaluate_garbage` triggers incl. null duration; settings boot validation (missing key per vendor); Groq confidence mapping; WER fn | plain pytest |
+| Integration | Frozen `/transcribe` shape; `/health`; error taxonomy; 413; no-disk-write on the success path AND a second no-disk-write test on the vendor-timeout error path (REQ-PRV-1, second scenario) | httpx `ASGITransport` + respx vendor mocks |
+| Benchmark | `run.py` vs fake service; `report.py` metrics on fixture results.json | respx / tmp fixtures |
+| Manual DoD | Live keys: mip_opt_out billing, vendor swap, timeslice-webm clip | scripted checklist, not CI |
+
+Strict TDD ordering: contract test and both no-disk-write tests (success path + vendor-timeout error path) authored FAILING before any adapter code exists.
+
+## Threat Matrix
+
+N/A — no routing, shell, subprocess, VCS/PR automation, executable-file classification, or process-integration boundary. (Compose healthcheck `python -c` is spike-verbatim config, not designed here.)
+
 ## Migration / Rollout
 
 No migration. Additive; rollback = revert `feat/stt-service`.
 
 ## Open Questions
 
-- [x] Confirm nullable `audio_duration_ms` with Daniel at the 06:00 contract freeze — RATIFIED post-JD (pending T25 formal sync)
-- [x] Pin a Starlette version and verify `max_part_size`/spool behavior — CLOSED via range pin `>=0.41,<0.48` + RED test
-- [ ] `mip_opt_out=true` billing effect — live-key DoD check (T21), unresolvable at design time
+- [ ] Confirm nullable `audio_duration_ms` with Daniel at the 06:00 contract freeze.
+- [ ] Pin a Starlette version and verify `max_part_size`/spool behavior matches Decision 6 (RED test covers it either way).
+- [ ] `mip_opt_out=true` billing effect — live-key DoD check, unresolvable at design time.
