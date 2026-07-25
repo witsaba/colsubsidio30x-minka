@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Deepgram, Groq and ElevenLabs adapters — any of them primary or fallback — the `STT_VENDOR` runtime switch, failover selection, and boot-time configuration validation.
+Deepgram, Groq and ElevenLabs adapters — Deepgram or Groq as primary, any of the three as a failover target — the `STT_VENDOR` runtime switch, failover chain selection, and boot-time configuration validation.
 
 ## Requirements
 
@@ -30,7 +30,7 @@ When `STT_VENDOR=groq`, the service SHALL call Groq's OpenAI-compatible audio tr
 
 ### Requirement: REQ-VND-3 Runtime vendor switch
 
-Changing `STT_VENDOR` (values: `deepgram` | `groq` | `elevenlabs`) SHALL be the only action required to swap vendors — no code change, no other configuration edits. An unrecognised `STT_VENDOR` value MUST fail at startup.
+Changing `STT_VENDOR` (values: `deepgram` | `groq`) SHALL be the only action required to swap the primary vendor — no code change, no other configuration edits. An unrecognised `STT_VENDOR` value MUST fail at startup, as MUST a value naming a backup-only vendor (see REQ-VND-9).
 
 #### Scenario: One env var swaps the vendor
 
@@ -91,7 +91,7 @@ The service SHALL retry the selected vendor up to `STT_RETRY_ATTEMPTS` times in 
 
 ### Requirement: REQ-VND-7 Automatic failover to the configured fallback vendor
 
-When the selected vendor exhausts its retry budget on transient failures, `STT_FALLBACK_ENABLED` is true (default), and the other vendor's API key is configured, the service SHALL make one attempt against that other vendor. The response's `stt_vendor` field and the per-request log's `vendor` field MUST name the vendor that actually served the request. If the fallback also fails, or no fallback is available, the service SHALL report the selected vendor's failure class. A missing fallback key MUST NOT affect startup.
+When the selected vendor exhausts its retry budget on transient failures and `STT_FALLBACK_ENABLED` is true (default), the service SHALL make one attempt against each vendor in the failover chain (REQ-VND-9), in order, until one succeeds. The response's `stt_vendor` field and the per-request log's `vendor` field MUST name the vendor that actually served the request. If every vendor in the chain fails, or the chain is empty, the service SHALL report the selected vendor's failure class. A missing fallback key MUST NOT affect startup.
 
 #### Scenario: Exhausted primary fails over and the response names the real vendor
 
@@ -123,26 +123,42 @@ All vendor work for one request — every retry attempt, every backoff wait, and
 - AND the caller waits approximately the deadline, not the sum of the per-attempt timeouts
 - AND the per-request INFO record carries that same `request_id`
 
-### Requirement: REQ-VND-9 ElevenLabs adapter and fallback vendor selection
+### Requirement: REQ-VND-9 ElevenLabs as a backup-only vendor, and failover chain selection
 
-The service SHALL support ElevenLabs Scribe as a third vendor, selectable as primary through `STT_VENDOR=elevenlabs` and usable as a failover target, calling `POST /v1/speech-to-text` with the `xi-api-key` header, `model_id` from `STT_ELEVENLABS_MODEL` (default `scribe_v1`), `language_code` from `STT_LANGUAGE`, and `tag_audio_events=false`. It SHALL map `text` to `raw_transcript`, `language_probability` to `stt_confidence`, and `audio_duration_secs` to `audio_duration_ms`; a body without `text` MUST raise a vendor error.
+The service SHALL support ElevenLabs Scribe as a third vendor, calling `POST /v1/speech-to-text` with the `xi-api-key` header, `model_id` from `STT_ELEVENLABS_MODEL` (default `scribe_v1`), `language_code` from `STT_LANGUAGE`, and `tag_audio_events=false`. It SHALL map `text` to `raw_transcript`, `language_probability` to `stt_confidence`, and `audio_duration_secs` to `audio_duration_ms`; a body without `text` MUST raise a vendor error.
 
-The failover target SHALL be `STT_FALLBACK_VENDOR` when set, which MUST differ from `STT_VENDOR` and MUST have its API key configured — both validated at startup. When unset, the service SHALL select the first vendor other than the primary that has a configured key, in the fixed order `deepgram`, `groq`, `elevenlabs`, and SHALL perform no failover when none qualifies.
+ElevenLabs SHALL be usable **only as a failover target**. `STT_VENDOR=elevenlabs` MUST fail at startup with an error stating the reason and naming the permitted primaries. The rationale is RNF-04: ElevenLabs zero-retention is Enterprise-gated and documented as revocable at the vendor's discretion, so it cannot carry every clip. Reaching it after the primary has already failed is a bounded, deliberate exposure; making it the primary is not. Note the accepted trade-off — ElevenLabs precedes the zero-retention-capable Groq in the chain below because it is the stronger Spanish transcriber, so a deployment configuring all three keys prefers transcription quality over retention posture *at the point where a dictation would otherwise be lost*.
 
-#### Scenario: ElevenLabs serves as the primary vendor
+The failover chain SHALL be `STT_FALLBACK_VENDOR` alone when it is set, which MUST differ from `STT_VENDOR` and MUST have its API key configured — both validated at startup. When unset, the chain SHALL be every vendor other than the primary that has a configured key, in the fixed order `deepgram`, `elevenlabs`, `groq`. Each vendor in the chain SHALL receive exactly one attempt. The service SHALL perform no failover when the chain is empty.
+
+#### Scenario: ElevenLabs as the primary is rejected at boot
 
 - GIVEN `STT_VENDOR=elevenlabs` and `ELEVENLABS_API_KEY` set
+- WHEN the application starts
+- THEN startup fails with an error citing RNF-04, naming `deepgram` and `groq` as the permitted primaries, and pointing at `STT_FALLBACK_VENDOR=elevenlabs`
+
+#### Scenario: ElevenLabs serves as the automatic backup, ahead of Groq
+
+- GIVEN `STT_VENDOR=deepgram` with `DEEPGRAM_API_KEY`, `ELEVENLABS_API_KEY` and `GROQ_API_KEY` all set and `STT_FALLBACK_VENDOR` unset
+- AND Deepgram fails transiently on every attempt
 - WHEN a clip is POSTed to `/transcribe`
-- THEN the outbound request targets `/v1/speech-to-text` with the `xi-api-key` header, `model_id=scribe_v1` and `tag_audio_events=false`
+- THEN ElevenLabs is called once with the `xi-api-key` header and Groq is not called
 - AND the response reports `stt_vendor: "elevenlabs"` with the confidence taken from `language_probability`
 
-#### Scenario: An explicitly named fallback vendor is used
+#### Scenario: The chain continues to Groq when ElevenLabs also fails
+
+- GIVEN the same three-key configuration
+- AND both Deepgram and ElevenLabs fail transiently
+- WHEN a clip is POSTed to `/transcribe`
+- THEN Groq is called once and the response reports `stt_vendor: "groq"`
+
+#### Scenario: An explicitly named fallback vendor is the whole chain
 
 - GIVEN `STT_VENDOR=deepgram` with both `GROQ_API_KEY` and `ELEVENLABS_API_KEY` set
 - AND `STT_FALLBACK_VENDOR=elevenlabs`
-- WHEN Deepgram fails transiently on every attempt
-- THEN ElevenLabs is called once and Groq is not called
-- AND the response reports `stt_vendor: "elevenlabs"`
+- WHEN Deepgram fails transiently on every attempt and ElevenLabs then fails too
+- THEN ElevenLabs is called once and Groq is never called
+- AND the response is `502` carrying Deepgram's failure class
 
 #### Scenario: An explicit fallback without its key fails boot
 

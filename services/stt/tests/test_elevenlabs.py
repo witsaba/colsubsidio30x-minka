@@ -1,9 +1,16 @@
 """ElevenLabs Scribe adapter (REQ-VND-9).
 
-Third vendor, usable as primary or as fallback. Two things set it apart from
-the other two adapters: it authenticates with an `xi-api-key` header rather
-than `Authorization`, and it reports a transcript-level `language_probability`
-that we take as the confidence directly.
+Third vendor, usable as a failover target only - never as the primary, which
+RNF-04 forbids because ElevenLabs zero-retention is Enterprise-gated. Two
+things set it apart from the other two adapters: it authenticates with an
+`xi-api-key` header rather than `Authorization`, and it reports a
+transcript-level `language_probability` that we take as the confidence
+directly.
+
+Because it can no longer be the primary, `vendor_settings` configures it the
+way a real deployment does: a permitted primary plus an ElevenLabs key. The
+adapter reads `api_key_for("elevenlabs")`, so it never depended on being the
+selected vendor anyway.
 
 The local fixtures here are named `vendor_settings` / `http_client` rather
 than `settings` / `client` so they do not shadow conftest's ASGI `client` and
@@ -17,7 +24,12 @@ import respx
 from src.settings import Settings
 from src.vendors import elevenlabs
 from src.vendors.base import VendorBadResponse
-from tests.conftest import ELEVENLABS_URL, audio_upload, elevenlabs_payload
+from tests.conftest import (
+    DEEPGRAM_URL,
+    ELEVENLABS_URL,
+    audio_upload,
+    elevenlabs_payload,
+)
 
 AUDIO = b"OggS-fake-audio-bytes"
 
@@ -25,7 +37,8 @@ AUDIO = b"OggS-fake-audio-bytes"
 @pytest.fixture
 def vendor_settings(monkeypatch) -> Settings:
     monkeypatch.setitem(Settings.model_config, "env_file", None)
-    monkeypatch.setenv("STT_VENDOR", "elevenlabs")
+    monkeypatch.setenv("STT_VENDOR", "deepgram")
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "dg-key")
     monkeypatch.setenv("ELEVENLABS_API_KEY", "el-key")
     return Settings()
 
@@ -65,7 +78,8 @@ async def test_request_uses_the_speech_to_text_multipart_contract(
 @respx.mock
 async def test_the_model_is_configurable(monkeypatch, http_client):
     monkeypatch.setitem(Settings.model_config, "env_file", None)
-    monkeypatch.setenv("STT_VENDOR", "elevenlabs")
+    monkeypatch.setenv("STT_VENDOR", "deepgram")
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "dg-key")
     monkeypatch.setenv("ELEVENLABS_API_KEY", "el-key")
     monkeypatch.setenv("STT_ELEVENLABS_MODEL", "scribe_v2")
     route = respx.post(ELEVENLABS_URL).mock(
@@ -198,11 +212,21 @@ async def test_error_statuses_raise_an_http_status_error(
 # --- route level -------------------------------------------------------------
 
 
+async def test_elevenlabs_as_primary_is_rejected_at_boot(make_client):
+    """The whole point of REQ-VND-9: backup only, and the code says so."""
+    with pytest.raises(Exception) as excinfo:
+        await make_client(STT_VENDOR="elevenlabs", ELEVENLABS_API_KEY="el-key")
+
+    message = str(excinfo.value)
+    assert "RNF-04" in message
+    assert "STT_FALLBACK_VENDOR=elevenlabs" in message, "point at the supported use"
+
+
 @respx.mock
-async def test_elevenlabs_as_primary_serves_and_reports_itself(make_client):
-    client = await make_client(
-        STT_VENDOR="elevenlabs", ELEVENLABS_API_KEY="el-key", DEEPGRAM_API_KEY=None
-    )
+async def test_elevenlabs_serves_as_the_fallback_and_reports_itself(make_client):
+    """Deepgram is what the deployment selects; ElevenLabs is what saves it."""
+    client = await make_client(ELEVENLABS_API_KEY="el-key")
+    respx.post(DEEPGRAM_URL).mock(return_value=httpx.Response(503, text="unavailable"))
     route = respx.post(ELEVENLABS_URL).mock(
         return_value=httpx.Response(
             200, json=elevenlabs_payload(text="dos bultos de papa")
@@ -213,18 +237,26 @@ async def test_elevenlabs_as_primary_serves_and_reports_itself(make_client):
 
     assert response.status_code == 200
     body = response.json()
-    assert body["stt_vendor"] == "elevenlabs"
+    assert body["stt_vendor"] == "elevenlabs", "the response names who served it"
     assert body["raw_transcript"] == "dos bultos de papa"
     assert body["stt_confidence"] == 0.98
     assert body["audio_duration_ms"] == 4200
     assert body["is_garbage"] is False
     assert route.calls.last.request.headers["xi-api-key"] == "el-key"
-    assert (await client.get("/health")).json()["vendor"] == "elevenlabs"
+    assert (
+        await client.get("/health")
+    ).json()["vendor"] == "deepgram", "/health reports the configured primary"
 
 
 @respx.mock
-async def test_elevenlabs_auth_failure_is_not_retried(make_client, backoff_sleeps):
-    client = await make_client(STT_VENDOR="elevenlabs", ELEVENLABS_API_KEY="el-key")
+async def test_a_failing_elevenlabs_fallback_is_tried_once_and_not_retried(
+    make_client, backoff_sleeps
+):
+    """A fallback gets one attempt; the primary's failure stays the answer."""
+    client = await make_client(ELEVENLABS_API_KEY="el-key")
+    deepgram_route = respx.post(DEEPGRAM_URL).mock(
+        return_value=httpx.Response(503, text="unavailable")
+    )
     route = respx.post(ELEVENLABS_URL).mock(return_value=httpx.Response(401))
 
     response = await client.post("/transcribe", files=audio_upload())
@@ -232,35 +264,20 @@ async def test_elevenlabs_auth_failure_is_not_retried(make_client, backoff_sleep
     assert response.status_code == 502
     assert response.json()["error"]["code"] == "vendor_error"
     assert route.call_count == 1
-    assert backoff_sleeps == []
+    assert deepgram_route.call_count == 2, "the primary keeps its own retry budget"
+    assert backoff_sleeps == [0.5], "one backoff, between the primary's two attempts"
 
 
 @respx.mock
-async def test_elevenlabs_timeout_maps_to_502_vendor_timeout(make_client):
-    client = await make_client(STT_VENDOR="elevenlabs", ELEVENLABS_API_KEY="el-key")
-    respx.post(ELEVENLABS_URL).mock(side_effect=httpx.ReadTimeout("too slow"))
+async def test_a_malformed_elevenlabs_fallback_body_stays_on_the_envelope(make_client):
+    client = await make_client(ELEVENLABS_API_KEY="el-key")
+    respx.post(DEEPGRAM_URL).mock(side_effect=httpx.ReadTimeout("too slow"))
+    route = respx.post(ELEVENLABS_URL).mock(return_value=httpx.Response(200, json=[]))
 
     response = await client.post("/transcribe", files=audio_upload())
 
     assert response.status_code == 502
     error = response.json()["error"]
-    assert error["code"] == "vendor_timeout"
-    assert "elevenlabs" in error["message"]
-
-
-@respx.mock
-async def test_elevenlabs_malformed_2xx_maps_to_502_vendor_error(make_client):
-    client = await make_client(STT_VENDOR="elevenlabs", ELEVENLABS_API_KEY="el-key")
-    respx.post(ELEVENLABS_URL).mock(return_value=httpx.Response(200, json=[]))
-
-    response = await client.post("/transcribe", files=audio_upload())
-
-    assert response.status_code == 502
-    assert response.json()["error"]["code"] == "vendor_error"
-
-
-async def test_missing_elevenlabs_key_fails_boot_when_it_is_selected(make_client):
-    with pytest.raises(Exception) as excinfo:
-        await make_client(STT_VENDOR="elevenlabs", ELEVENLABS_API_KEY=None)
-
-    assert "ELEVENLABS_API_KEY" in str(excinfo.value)
+    assert error["code"] == "vendor_timeout", "the primary's failure class"
+    assert "deepgram" in error["message"]
+    assert route.call_count == 1

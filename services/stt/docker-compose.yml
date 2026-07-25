@@ -11,6 +11,8 @@ services:
       DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      # deepgram or groq. `elevenlabs` is backup-only and fails boot here
+      # (RNF-04); reach it through STT_FALLBACK_VENDOR or the auto chain.
       STT_VENDOR: ${STT_VENDOR:-deepgram}
       STT_ELEVENLABS_MODEL: ${STT_ELEVENLABS_MODEL:-scribe_v1}
       STT_LANGUAGE: es
@@ -24,7 +26,9 @@ services:
       STT_RETRY_ATTEMPTS: ${STT_RETRY_ATTEMPTS:-2}
       STT_RETRY_BACKOFF_S: ${STT_RETRY_BACKOFF_S:-0.5}
       STT_FALLBACK_ENABLED: ${STT_FALLBACK_ENABLED:-true}
-      # Empty means auto-select by priority; a blank reads as unset.
+      # Empty walks the priority chain deepgram -> elevenlabs -> groq, skipping
+      # vendors with no key; a blank reads as unset. Naming one makes it the
+      # whole chain.
       STT_FALLBACK_VENDOR: ${STT_FALLBACK_VENDOR:-}
       STT_TOTAL_DEADLINE_S: ${STT_TOTAL_DEADLINE_S:-45}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}

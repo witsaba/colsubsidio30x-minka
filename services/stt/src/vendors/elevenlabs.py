@@ -1,7 +1,13 @@
 """ElevenLabs Scribe adapter (REQ-VND-9).
 
-Usable as primary or as fallback, like the other two. It differs from them in
-two ways worth knowing before reading the code:
+A failover target only - `STT_VENDOR=elevenlabs` fails at boot. Its
+zero-retention guarantee is Enterprise-gated, so RNF-04 does not permit
+routing every clip through it; reaching it as a backup is a bounded exposure
+that only happens once the primary is already failing. See
+`FALLBACK_ONLY_VENDORS` in `src/settings.py`.
+
+It differs from the other two adapters in two ways worth knowing before
+reading the code:
 
 - it authenticates with its own `xi-api-key` header, not `Authorization`;
 - it reports `language_probability`, a transcript-level score in [0, 1], which

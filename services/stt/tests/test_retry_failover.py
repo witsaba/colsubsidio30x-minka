@@ -2,9 +2,10 @@
 
 A single vendor hiccup must not surface as a failed dictation. The service
 retries the primary vendor on failures that are plausibly transient, then -
-only if the other vendor's key is configured - tries the other vendor once.
-Failures that a retry cannot fix (bad credentials, rejected audio, an
-unparsable body) fail immediately: retrying them just burns the user's time.
+for each backup whose key is configured - tries that vendor once, in the
+order deepgram, elevenlabs, groq. Failures that a retry cannot fix (bad
+credentials, rejected audio, an unparsable body) fail immediately: retrying
+them just burns the user's time.
 """
 
 import logging
@@ -228,6 +229,101 @@ async def test_an_explicit_fallback_vendor_wins_over_the_priority_order(make_cli
 
 
 @respx.mock
+async def test_deepgram_fails_over_to_elevenlabs_before_groq(make_client):
+    """The sanctioned chain is deepgram -> elevenlabs -> groq.
+
+    With every key configured the second layer is ElevenLabs, not Groq: it is
+    the stronger Spanish transcriber, and the primary is already failing by
+    the time it is reached.
+    """
+    client = await make_client(**ALL_KEYS)
+    respx.post(DEEPGRAM_URL).mock(return_value=httpx.Response(503, text="unavailable"))
+    elevenlabs_route = respx.post(ELEVENLABS_URL).mock(
+        return_value=httpx.Response(
+            200, json=elevenlabs_payload(text="dos bultos de papa")
+        )
+    )
+    groq_route = respx.post(GROQ_URL).mock(
+        return_value=httpx.Response(200, json=groq_payload())
+    )
+
+    body = (await client.post("/transcribe", files=audio_upload())).json()
+
+    assert body["stt_vendor"] == "elevenlabs"
+    assert body["raw_transcript"] == "dos bultos de papa"
+    assert elevenlabs_route.call_count == 1
+    assert not groq_route.called, "groq is the third layer, not the second"
+    assert elevenlabs_route.calls[0].request.headers["xi-api-key"] == "el-key"
+
+
+@respx.mock
+async def test_the_chain_continues_to_groq_when_elevenlabs_also_fails(make_client):
+    """Three configured vendors mean three layers, not two."""
+    client = await make_client(**ALL_KEYS)
+    deepgram_route = respx.post(DEEPGRAM_URL).mock(
+        return_value=httpx.Response(503, text="unavailable")
+    )
+    elevenlabs_route = respx.post(ELEVENLABS_URL).mock(
+        return_value=httpx.Response(503, text="unavailable")
+    )
+    groq_route = respx.post(GROQ_URL).mock(
+        return_value=httpx.Response(200, json=groq_payload(text="cinco cajas de tomate"))
+    )
+
+    body = (await client.post("/transcribe", files=audio_upload())).json()
+
+    assert body["stt_vendor"] == "groq"
+    assert body["raw_transcript"] == "cinco cajas de tomate"
+    assert deepgram_route.call_count == 2, "the primary keeps its retry budget"
+    assert elevenlabs_route.call_count == 1, "each fallback gets a single attempt"
+    assert groq_route.call_count == 1
+
+
+@respx.mock
+async def test_when_the_whole_chain_fails_the_primary_failure_is_reported(make_client):
+    client = await make_client(**ALL_KEYS)
+    respx.post(DEEPGRAM_URL).mock(side_effect=httpx.ReadTimeout("too slow"))
+    elevenlabs_route = respx.post(ELEVENLABS_URL).mock(
+        return_value=httpx.Response(503, text="unavailable")
+    )
+    groq_route = respx.post(GROQ_URL).mock(
+        return_value=httpx.Response(503, text="unavailable")
+    )
+
+    response = await client.post("/transcribe", files=audio_upload())
+
+    assert response.status_code == 502
+    error = response.json()["error"]
+    assert error["code"] == "vendor_timeout", "the primary's failure class is the answer"
+    assert "deepgram" in error["message"]
+    assert elevenlabs_route.call_count == 1
+    assert groq_route.call_count == 1, "every layer was tried before giving up"
+
+
+@respx.mock
+async def test_an_explicit_fallback_is_the_whole_chain(make_client):
+    """Naming a fallback picks that vendor *instead of* the order.
+
+    An operator who names one has made a choice; walking past it to a vendor
+    they did not name would route audio somewhere they did not sanction.
+    """
+    client = await make_client(STT_FALLBACK_VENDOR="elevenlabs", **ALL_KEYS)
+    respx.post(DEEPGRAM_URL).mock(return_value=httpx.Response(503, text="unavailable"))
+    elevenlabs_route = respx.post(ELEVENLABS_URL).mock(
+        return_value=httpx.Response(503, text="unavailable")
+    )
+    groq_route = respx.post(GROQ_URL).mock(
+        return_value=httpx.Response(200, json=groq_payload())
+    )
+
+    response = await client.post("/transcribe", files=audio_upload())
+
+    assert response.status_code == 502
+    assert elevenlabs_route.call_count == 1
+    assert not groq_route.called, "an explicit fallback is a choice, not a start point"
+
+
+@respx.mock
 async def test_auto_selection_follows_the_priority_order(make_client):
     """Groq primary with two candidates configured: deepgram comes first."""
     client = await make_client(STT_VENDOR="groq", **ALL_KEYS)
@@ -303,24 +399,6 @@ async def test_the_switch_suppresses_an_explicit_fallback_too(make_client):
     assert response.status_code == 502
     assert response.json()["error"]["code"] == "vendor_error"
     assert not elevenlabs_route.called
-
-
-@respx.mock
-async def test_elevenlabs_as_primary_fails_over_too(make_client):
-    """The third vendor is a first-class primary, not fallback-only."""
-    client = await make_client(STT_VENDOR="elevenlabs", **ALL_KEYS)
-    elevenlabs_route = respx.post(ELEVENLABS_URL).mock(
-        return_value=httpx.Response(503, text="unavailable")
-    )
-    deepgram_route = respx.post(DEEPGRAM_URL).mock(
-        return_value=httpx.Response(200, json=deepgram_payload())
-    )
-
-    body = (await client.post("/transcribe", files=audio_upload())).json()
-
-    assert body["stt_vendor"] == "deepgram"
-    assert elevenlabs_route.call_count == 2
-    assert deepgram_route.call_count == 1
 
 
 @respx.mock
