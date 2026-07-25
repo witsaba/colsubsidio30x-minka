@@ -183,8 +183,12 @@ function withTimeout(timeoutMs: number, signal?: AbortSignal): AbortSignal {
  *
  * The success body is returned exactly as parsed — no defaulting, no field
  * rewriting — which is what keeps every nullable wire field intact.
+ *
+ * Exported so `lib/api/operational.ts` reuses this exact error taxonomy and
+ * timeout composition instead of growing a second, subtly different fetch path
+ * for the Supabase-backed routes (design "File Changes").
  */
-async function request<T>(url: string, init: RequestInit, timeoutMs: number, signal?: AbortSignal): Promise<T> {
+export async function request<T>(url: string, init: RequestInit, timeoutMs: number, signal?: AbortSignal): Promise<T> {
   let response: Response;
   try {
     response = await fetch(url, { ...init, signal: withTimeout(timeoutMs, signal) });
