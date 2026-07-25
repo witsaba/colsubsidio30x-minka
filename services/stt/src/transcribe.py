@@ -15,11 +15,14 @@ from fastapi.responses import JSONResponse
 
 from src.logging_setup import get_logger
 from src.settings import Settings
-from src.vendors import deepgram
+from src.vendors import deepgram, groq
 from src.vendors.base import TranscriptionResult, VendorAdapter, VendorAudioRejected
 
 #: Resolved once at boot; `STT_VENDOR` is the only switch (REQ-VND-3).
-ADAPTERS: dict[str, VendorAdapter] = {"deepgram": deepgram.transcribe}
+ADAPTERS: dict[str, VendorAdapter] = {
+    "deepgram": deepgram.transcribe,
+    "groq": groq.transcribe,
+}
 
 router = APIRouter()
 logger = get_logger()
