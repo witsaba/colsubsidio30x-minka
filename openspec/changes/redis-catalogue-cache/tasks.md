@@ -124,19 +124,19 @@ name. The new `Row`/`Snapshot`/Protocols therefore land in `ports.py`; at WU-5
 `catalogue.py` re-exports them, so the public import path `matcher.catalogue.Row` that
 D2 specifies is preserved. This keeps every commit green with no rename churn.
 
-- [ ] 1.1 **RED** — create `services/matcher/tests/unit/test_snapshot_codec.py`:
+- [x] 1.1 **RED** — create `services/matcher/tests/unit/test_snapshot_codec.py`:
   - `TestRowShape::test_the_row_carries_exactly_the_five_catalogue_fields` — assert `{f.name for f in fields(Row)} == {"warehouse_code","uid","articulo","unidad","nr_articulo"}`.
   - `TestRowShape::test_the_row_carries_no_stock_field` (REQ-CSS-2, REQ-ENG-2) — assert `not hasattr(row, "sd")` and `not hasattr(row, "theoretical_qty")`.
   - `TestRowShape::test_the_row_is_frozen` — `dataclasses.FrozenInstanceError` on assignment.
   - **Expected RED:** `ImportError: cannot import name 'Row' from 'matcher.ports'` (module does not exist → `ModuleNotFoundError: No module named 'matcher.ports'`).
-- [ ] 1.2 **RED** — same file, codec suite:
+- [x] 1.2 **RED** — same file, codec suite:
   - `TestCodecRoundTrip::test_encode_then_decode_returns_the_same_rows_and_loaded_at`
   - `TestCodecRoundTrip::test_a_different_schema_version_decodes_to_none` (REQ-RCC-1)
   - `TestCodecRoundTrip::test_malformed_json_decodes_to_none`
   - `TestCodecRoundTrip::test_a_missing_required_field_decodes_to_none`
   - `TestSnapshotContentSafety::test_the_encoded_bytes_name_no_stock_field` (REQ-RCC-5, RF-18) — assert `b'"sd"' not in payload` and `b"theoretical_qty" not in payload` on a payload built from rows whose text deliberately does **not** contain those substrings.
   - **Expected RED:** `ImportError: cannot import name 'encode_snapshot' from 'matcher.cache'`.
-- [ ] 1.3 **GREEN** — create `ports.py` (`Row`, `Snapshot(rows, loaded_at)`, `CatalogueSource` Protocol, `SnapshotCache` Protocol) and the codec half of `services/matcher/src/matcher/cache.py`: `SNAPSHOT_SCHEMA_VERSION = 1`, `SNAPSHOT_KEY = "matcher:catalogue:snapshot:v1"`, `REFRESH_LOCK_KEY = "matcher:catalogue:refresh-lock:v1"`, `encode_snapshot(snapshot) -> bytes`, `decode_snapshot(raw) -> Snapshot | None`. Version is a code constant, never a `Setting` (D3). **Verify:** `uv run pytest services/matcher/tests/unit/test_snapshot_codec.py` then `uv run pytest` → 4 failed (baseline).
+- [x] 1.3 **GREEN** — create `ports.py` (`Row`, `Snapshot(rows, loaded_at)`, `CatalogueSource` Protocol, `SnapshotCache` Protocol) and the codec half of `services/matcher/src/matcher/cache.py`: `SNAPSHOT_SCHEMA_VERSION = 1`, `SNAPSHOT_KEY = "matcher:catalogue:snapshot:v1"`, `REFRESH_LOCK_KEY = "matcher:catalogue:refresh-lock:v1"`, `encode_snapshot(snapshot) -> bytes`, `decode_snapshot(raw) -> Snapshot | None`. Version is a code constant, never a `Setting` (D3). **Verify:** `uv run pytest services/matcher/tests/unit/test_snapshot_codec.py` then `uv run pytest` → 4 failed (baseline). *Applied refinement: `SNAPSHOT_KEY`/`REFRESH_LOCK_KEY` are derived from `SNAPSHOT_SCHEMA_VERSION` (f-strings) rather than hand-written literals, so the key suffix can never desync from the parser version; a test pins both literal values anyway. The two Protocols are `@runtime_checkable` so WU-2/WU-3 can assert their real adapters satisfy the ports instead of relying on a comment.*
 
 ## WU-2: `RedisSnapshotCache` over `fakeredis` — PARALLEL with WU-3
 
