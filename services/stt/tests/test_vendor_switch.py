@@ -60,7 +60,17 @@ async def test_every_supported_vendor_has_an_adapter():
     from src.settings import VENDOR_KEY_ENV
     from src.transcribe import ADAPTERS
 
-    assert set(ADAPTERS) == set(VENDOR_KEY_ENV) == {"deepgram", "groq"}
+    assert (
+        set(ADAPTERS) == set(VENDOR_KEY_ENV) == {"deepgram", "groq", "elevenlabs"}
+    )
+
+
+async def test_the_fallback_priority_order_covers_every_vendor():
+    """A new adapter must be placed in the order, not silently left out."""
+    from src.transcribe import ADAPTERS, FALLBACK_PRIORITY
+
+    assert set(FALLBACK_PRIORITY) == set(ADAPTERS)
+    assert len(FALLBACK_PRIORITY) == len(ADAPTERS), "no duplicates in the order"
 
 
 async def test_missing_groq_key_fails_boot_when_groq_is_selected(make_client):

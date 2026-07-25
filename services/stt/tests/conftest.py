@@ -14,6 +14,7 @@ from src.settings import Settings
 
 DEEPGRAM_URL = "https://api.deepgram.com/v1/listen"
 GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
+ELEVENLABS_URL = "https://api.elevenlabs.io/v1/speech-to-text"
 
 BASE_ENV = {"STT_VENDOR": "deepgram", "DEEPGRAM_API_KEY": "dg-key"}
 
@@ -21,6 +22,8 @@ MANAGED_ENV_VARS = (
     "STT_VENDOR",
     "DEEPGRAM_API_KEY",
     "GROQ_API_KEY",
+    "ELEVENLABS_API_KEY",
+    "STT_ELEVENLABS_MODEL",
     "STT_LANGUAGE",
     "STT_MODEL",
     "STT_NUMERALS",
@@ -118,6 +121,19 @@ def deepgram_payload(
         "metadata": metadata,
         "results": {"channels": [{"alternatives": [alternative]}]},
     }
+
+
+def elevenlabs_payload(
+    text: str = "tres kilos de lechuga",
+    language_probability: float | None = 0.98,
+    duration_s: float | None = 4.2,
+) -> dict:
+    payload: dict = {"language_code": "es", "text": text, "words": []}
+    if language_probability is not None:
+        payload["language_probability"] = language_probability
+    if duration_s is not None:
+        payload["audio_duration_secs"] = duration_s
+    return payload
 
 
 def groq_payload(
