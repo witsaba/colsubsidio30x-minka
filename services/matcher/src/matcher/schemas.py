@@ -1,21 +1,27 @@
 """Request/response models for the HTTP surface (REQ-API-1/2/3).
 
 These models are the wire contract and nothing else: they carry no matching
-logic. `MatchRequest` does hold one guard -- a blank or whitespace-only
+logic. `MatchRequest` holds two guards. A blank or whitespace-only
 `spoken_name` is rejected by validation, so the request never reaches the
-matcher and can never be answered with a misleading `no_match`.
+matcher and can never be answered with a misleading `no_match`. Every string
+field also has an upper length bound, because this model is the only place
+untrusted text enters the process: an unbounded `spoken_name` would be
+buffered, trigram-expanded and scored against every catalogue row. The bounds
+are generous next to real dictation (a spoken product name is a handful of
+words) and next to the real identifiers (the longest stock table name is 31
+characters).
 """
 from __future__ import annotations
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class MatchRequest(BaseModel):
     """One spoken product name to resolve against one stock table."""
 
-    spoken_name: str
-    catalogue_id: str
-    unit: str | None = None
+    spoken_name: str = Field(max_length=300)
+    catalogue_id: str = Field(max_length=100)
+    unit: str | None = Field(default=None, max_length=50)
 
     @field_validator("spoken_name")
     @classmethod

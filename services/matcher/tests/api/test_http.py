@@ -152,6 +152,19 @@ class TestClientErrors:
         response = client.post("/match", json={"catalogue_id": CATALOGUE})
         assert response.status_code == 422
 
+    def test_oversized_spoken_name_is_422(self, client) -> None:
+        """An unbounded name would be buffered and trigram-expanded (JD-2)."""
+        assert post_match(client, spoken_name="a" * 301).status_code == 422
+
+    def test_spoken_name_at_the_limit_is_accepted(self, client) -> None:
+        assert post_match(client, spoken_name="a" * 300).status_code == 200
+
+    def test_oversized_catalogue_id_is_422_not_404(self, client) -> None:
+        assert post_match(client, catalogue_id="c" * 101).status_code == 422
+
+    def test_oversized_unit_is_422(self, client) -> None:
+        assert post_match(client, unit="u" * 51).status_code == 422
+
     def test_unrecognized_unit_is_not_an_error(self, client) -> None:
         response = post_match(client, unit="cucharadas soperas")
         assert response.status_code == 200
