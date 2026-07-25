@@ -34,6 +34,22 @@ class VendorAudioRejected(Exception):
     """The vendor rejected the audio itself as undecodable (maps to HTTP 400)."""
 
 
+class VendorBadResponse(Exception):
+    """The vendor answered 2xx with a body we cannot parse (maps to HTTP 502).
+
+    A success status is not a promise about the payload: a proxy can return
+    HTML, a vendor can ship a breaking change. Raising this keeps the answer on
+    the frozen error envelope instead of letting a parse error escape as a bare
+    500 (JD-3).
+    """
+
+
+#: What a response-shape mismatch looks like coming out of `response.json()`
+#: or an adapter's `_to_result`. Deliberately broad: any of them means the body
+#: was not the contract we coded against.
+BAD_RESPONSE_ERRORS = (ValueError, KeyError, IndexError, AttributeError, TypeError)
+
+
 def seconds_to_ms(duration_s: float | None) -> int | None:
     """Convert a vendor duration in seconds to milliseconds, preserving None.
 

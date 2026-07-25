@@ -13,8 +13,10 @@ import httpx
 
 from src.settings import Settings
 from src.vendors.base import (
+    BAD_RESPONSE_ERRORS,
     TranscriptionResult,
     VendorAudioRejected,
+    VendorBadResponse,
     seconds_to_ms,
 )
 
@@ -48,7 +50,10 @@ async def transcribe(
         raise VendorAudioRejected("vendor rejected the audio")
     response.raise_for_status()
 
-    return _to_result(response.json())
+    try:
+        return _to_result(response.json())
+    except BAD_RESPONSE_ERRORS as exc:
+        raise VendorBadResponse("groq returned an unparsable 2xx body") from exc
 
 
 def mean_segment_confidence(segments: list[dict]) -> float | None:
@@ -69,8 +74,11 @@ def mean_segment_confidence(segments: list[dict]) -> float | None:
 
 
 def _to_result(payload: dict) -> TranscriptionResult:
+    # `text` is mandatory on a Groq 2xx (verbose_json always carries it); its
+    # absence means the body is not a transcription. Segments and duration stay
+    # optional, so a vendor that omits them still yields a usable result.
     return TranscriptionResult(
-        raw_transcript=payload.get("text", ""),
+        raw_transcript=payload["text"],
         stt_confidence=mean_segment_confidence(payload.get("segments") or []),
         audio_duration_ms=seconds_to_ms(payload.get("duration")),
     )

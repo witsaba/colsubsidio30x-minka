@@ -8,8 +8,10 @@ import httpx
 
 from src.settings import Settings
 from src.vendors.base import (
+    BAD_RESPONSE_ERRORS,
     TranscriptionResult,
     VendorAudioRejected,
+    VendorBadResponse,
     seconds_to_ms,
 )
 
@@ -51,7 +53,10 @@ async def transcribe(
         raise VendorAudioRejected(_rejection_detail(response))
     response.raise_for_status()
 
-    return _to_result(response.json())
+    try:
+        return _to_result(response.json())
+    except BAD_RESPONSE_ERRORS as exc:
+        raise VendorBadResponse("deepgram returned an unparsable 2xx body") from exc
 
 
 def _rejection_detail(response: httpx.Response) -> str:
@@ -63,7 +68,11 @@ def _rejection_detail(response: httpx.Response) -> str:
 
 
 def _to_result(payload: dict) -> TranscriptionResult:
-    channels = payload.get("results", {}).get("channels") or []
+    # `results` is mandatory on a Deepgram 2xx: its absence means the body is
+    # not a transcription result at all, which is a vendor error rather than an
+    # empty transcript. Everything below it stays tolerant, because a missing
+    # confidence or duration is a legitimate answer (design Decision 5).
+    channels = payload["results"].get("channels") or []
     alternatives = channels[0].get("alternatives") if channels else None
     alternative = alternatives[0] if alternatives else {}
 

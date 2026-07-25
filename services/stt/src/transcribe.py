@@ -16,7 +16,12 @@ from fastapi.responses import JSONResponse
 from src.logging_setup import get_logger
 from src.settings import Settings
 from src.vendors import deepgram, groq
-from src.vendors.base import TranscriptionResult, VendorAdapter, VendorAudioRejected
+from src.vendors.base import (
+    TranscriptionResult,
+    VendorAdapter,
+    VendorAudioRejected,
+    VendorBadResponse,
+)
 
 #: Resolved once at boot; `STT_VENDOR` is the only switch (REQ-VND-3).
 ADAPTERS: dict[str, VendorAdapter] = {
@@ -117,6 +122,13 @@ async def transcribe(request: Request, file: UploadFile = File(...)) -> JSONResp
         except httpx.TimeoutException:
             return error_response(
                 502, "vendor_timeout", f"{vendor} timed out", request_id
+            )
+        except VendorBadResponse:
+            return error_response(
+                502,
+                "vendor_error",
+                f"{vendor} returned an unusable response",
+                request_id,
             )
         except (httpx.HTTPStatusError, httpx.RequestError):
             return error_response(

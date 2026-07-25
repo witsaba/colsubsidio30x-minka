@@ -55,6 +55,18 @@ def create_app() -> FastAPI:
             exc.status_code, "http_error", str(exc.detail), str(uuid4())
         )
 
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(request, exc: Exception):
+        """Last line of defence: nothing leaves this service off-envelope.
+
+        The message is deliberately fixed - an exception string can quote
+        payload data, and Module 2 has a request_id to correlate with the
+        traceback the server still logs (JD-3, REQ-PRV-2).
+        """
+        return error_response(
+            500, "internal_error", "unexpected internal error", str(uuid4())
+        )
+
     return app
 
 

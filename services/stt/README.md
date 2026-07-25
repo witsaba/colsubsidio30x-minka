@@ -92,6 +92,12 @@ Every failure uses one envelope:
 | Vendor rejects the audio as undecodable | 400 | `invalid_audio` |
 | Vendor timeout (`STT_VENDOR_TIMEOUT_S`) | 502 | `vendor_timeout` |
 | Vendor 5xx, auth failure, other 4xx | 502 | `vendor_error` |
+| Vendor answers 2xx with a body we cannot parse | 502 | `vendor_error` |
+| Anything unexpected inside the service | 500 | `internal_error` |
+
+A 2xx status is not a promise about the body. A proxy returning HTML, or a
+vendor shipping a breaking change, is a `vendor_error` — never a bare 500 and
+never an empty transcript passed off as a real one.
 
 ## Configuration
 
