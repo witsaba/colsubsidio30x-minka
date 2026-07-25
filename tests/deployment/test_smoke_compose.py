@@ -47,11 +47,15 @@ class TestPlan:
         assert result.returncode == 0, result.stderr
         assert "stt" in result.stdout
         assert "matcher" in result.stdout
+        assert "product_identification" in result.stdout
+        assert "frontend" in result.stdout
 
     def test_it_resolves_each_published_port_from_the_compose_file(self) -> None:
         result = run_smoke("--plan")
         assert "8001" in result.stdout
         assert "8002" in result.stdout
+        assert "8003" in result.stdout
+        assert "4321" in result.stdout
 
     def test_it_names_the_credential_that_would_skip_a_service(self) -> None:
         result = run_smoke(
@@ -85,9 +89,11 @@ class TestPlan:
         assert not re.search(r"^\s*stt\b", result.stdout, re.MULTILINE)
 
     def test_an_unknown_service_fails_loudly(self) -> None:
-        result = run_smoke("--plan", "frontend")
+        """The name must stay one the compose file does not define. `frontend`
+        used to serve here and stopped being unknown the moment it shipped."""
+        result = run_smoke("--plan", "nonexistent-service")
         assert result.returncode != 0
-        assert "frontend" in result.stderr
+        assert "nonexistent-service" in result.stderr
 
     def test_an_unknown_flag_fails_loudly(self) -> None:
         result = run_smoke("--wat")
