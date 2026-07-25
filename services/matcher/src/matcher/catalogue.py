@@ -66,13 +66,18 @@ def load_catalogue(db_path: Path) -> dict[str, list[Row]]:
                 cur.execute(
                     f'SELECT rowid, articulo, unidad, sd, nr_articulo FROM "{t}"'
                 )
+                # fetchall() belongs inside the same guard: sqlite only detects
+                # page-level corruption ("database disk image is malformed")
+                # while it streams rows, so a fetch-time failure must produce
+                # the same contextual error as a plan-time one.
+                rows_raw = cur.fetchall()
             except sqlite3.Error as exc:
                 raise CatalogueUnavailableError(
                     f"catalogue database '{db_path}' is unusable "
                     f"(table '{t}'): {exc}"
                 ) from exc
             rows = []
-            for rowid, articulo, unidad, sd, nr_articulo in cur.fetchall():
+            for rowid, articulo, unidad, sd, nr_articulo in rows_raw:
                 if articulo is None:
                     continue
                 rows.append(Row(t, rowid, articulo, unidad, sd, nr_articulo))

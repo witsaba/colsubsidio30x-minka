@@ -111,6 +111,78 @@ class TestLoadCatalogue:
         assert "absent.sqlite" in str(excinfo.value)
 
 
+class _FetchFailingConnection:
+    """A connection whose SELECT plans fine but blows up while streaming rows.
+
+    This is what page-level corruption looks like from Python: sqlite only
+    detects "database disk image is malformed" once it reads the damaged page,
+    which happens in `fetchall()`, not in `execute()`.
+    """
+
+    def __init__(self, message: str = "database disk image is malformed") -> None:
+        self.message = message
+        self.closed = False
+
+    def cursor(self) -> "_FetchFailingConnection":
+        return self
+
+    def execute(self, sql: str) -> "_FetchFailingConnection":
+        return self
+
+    def fetchall(self) -> list[object]:
+        raise sqlite3.DatabaseError(self.message)
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class TestFetchTimeCorruption:
+    """JD-4: a fetch-time sqlite error must not escape the loader raw."""
+
+    @pytest.fixture
+    def failing_connection(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> _FetchFailingConnection:
+        from matcher import catalogue as catalogue_module
+
+        con = _FetchFailingConnection()
+        monkeypatch.setattr(catalogue_module, "open_readonly", lambda _: con)
+        return con
+
+    def test_raises_catalogue_unavailable(
+        self, failing_connection: _FetchFailingConnection, tmp_path: Path
+    ) -> None:
+        with pytest.raises(CatalogueUnavailableError):
+            load_catalogue(tmp_path / "corrupt.sqlite")
+
+    def test_message_keeps_the_database_the_table_and_the_cause(
+        self, failing_connection: _FetchFailingConnection, tmp_path: Path
+    ) -> None:
+        with pytest.raises(CatalogueUnavailableError) as excinfo:
+            load_catalogue(tmp_path / "corrupt.sqlite")
+        message = str(excinfo.value)
+
+        assert "corrupt.sqlite" in message
+        assert f"(table '{STOCK_TABLES[0]}')" in message
+        assert "database disk image is malformed" in message
+
+    def test_the_original_sqlite_error_is_chained(
+        self, failing_connection: _FetchFailingConnection, tmp_path: Path
+    ) -> None:
+        with pytest.raises(CatalogueUnavailableError) as excinfo:
+            load_catalogue(tmp_path / "corrupt.sqlite")
+
+        assert isinstance(excinfo.value.__cause__, sqlite3.DatabaseError)
+
+    def test_the_connection_is_still_closed(
+        self, failing_connection: _FetchFailingConnection, tmp_path: Path
+    ) -> None:
+        with pytest.raises(CatalogueUnavailableError):
+            load_catalogue(tmp_path / "corrupt.sqlite")
+
+        assert failing_connection.closed
+
+
 class TestServiceStartup:
     def test_missing_database_fails_at_construction(self, tmp_path: Path) -> None:
         with pytest.raises(CatalogueUnavailableError):
