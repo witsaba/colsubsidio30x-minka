@@ -86,6 +86,36 @@ def test_invalid_vendor_fails_boot(monkeypatch):
     assert "whisper-cpp" in str(excinfo.value)
 
 
+def test_elevenlabs_as_primary_fails_boot(monkeypatch):
+    """RNF-04: ElevenLabs zero-retention is Enterprise-gated.
+
+    That is why it was never eligible to be the vendor a deployment routes
+    every clip to. It stays available as a failover target, where it is only
+    reached once the primary is already failing.
+    """
+    monkeypatch.setenv("STT_VENDOR", "elevenlabs")
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "el-key")
+
+    with pytest.raises(ValidationError) as excinfo:
+        Settings()
+
+    message = str(excinfo.value)
+    assert "STT_VENDOR" in message
+    assert "elevenlabs" in message
+    assert "RNF-04" in message, "the error must say why, not just that"
+
+
+def test_the_rejection_names_the_vendors_that_may_be_primary(monkeypatch):
+    monkeypatch.setenv("STT_VENDOR", "elevenlabs")
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "el-key")
+
+    with pytest.raises(ValidationError) as excinfo:
+        Settings()
+
+    message = str(excinfo.value)
+    assert "deepgram" in message and "groq" in message
+
+
 def test_defaults(monkeypatch):
     monkeypatch.setenv("DEEPGRAM_API_KEY", "dg-key")
 
