@@ -55,7 +55,7 @@ fit the 800-line session budget; only PR1 needs the documentation exception.
 
 - [x] **T6 — RED: `evaluate_garbage` unit tests.** Add `services/stt/tests/test_garbage.py`: empty stripped transcript → true; confidence `0.40` under floor `0.60` → true; normal clip → false; `audio_duration_ms` below `STT_MIN_SPEECH_MS` → true; **null duration alone does NOT flag garbage**; null confidence skips the floor trigger. Satisfies REQ-STT-3, REQ-STT-1 (null-duration scenario). **Verify:** `(cd services/stt && uv run pytest tests/test_garbage.py)` FAILS (no `evaluate_garbage`). **Rollback:** `git rm services/stt/tests/test_garbage.py`.
 
-- [ ] **T7 — GREEN: `TranscriptionResult` + `evaluate_garbage`.** Add `services/stt/src/vendors/__init__.py`, `services/stt/src/vendors/base.py` (`TranscriptionResult`, `VendorAdapter` Protocol) and `services/stt/src/transcribe.py` with the pure vendor-agnostic `evaluate_garbage` only (no routes yet). Satisfies REQ-STT-3, REQ-STT-1. **Verify:** `(cd services/stt && uv run pytest tests/test_garbage.py tests/test_settings.py)` passes. **Rollback:** `git rm -r services/stt/src/vendors services/stt/src/transcribe.py`.
+- [x] **T7 — GREEN: `TranscriptionResult` + `evaluate_garbage`.** Add `services/stt/src/vendors/__init__.py`, `services/stt/src/vendors/base.py` (`TranscriptionResult`, `VendorAdapter` Protocol) and `services/stt/src/transcribe.py` with the pure vendor-agnostic `evaluate_garbage` only (no routes yet). Satisfies REQ-STT-3, REQ-STT-1. **Verify:** `(cd services/stt && uv run pytest tests/test_garbage.py tests/test_settings.py)` passes. **Rollback:** `git rm -r services/stt/src/vendors services/stt/src/transcribe.py`.
 
 ## Phase 3: Frozen HTTP contract and privacy (TDD — tests before any vendor call)
 
