@@ -52,6 +52,34 @@ commit pair. Full suite after the round: 86 passed (from 59 at freeze).
 
 None. (Judge B's evidence claimed the no-disk design "correctly implemented and test-covered"; treated as a coverage miss, not a findings-level contradiction — parent repro settled it in favour of Judge A.)
 
+## Round 1 scoped re-judgment (fix delta 96afb84..66345ea, tree f2be0462)
+
+Both judges verified JD-1..JD-5 and GOAL-1..GOAL-3 genuinely resolved. Parent runtime
+verification: docker rebuild 5/5 (default boot healthy, Groq-only boot healthy,
+`--network none` boot serves /health with zero package resolution, start_period in
+effective config). Two fix-caused defects survive corroboration → final round 2:
+
+| ID | Sev | Status | Location | Claim | Corroboration |
+|----|-----|--------|----------|-------|---------------|
+| JD-6 | MAJOR | fixed | `services/stt/src/main.py:58-68` | Catch-all 500 handler mints a fresh `uuid4` request_id; envelope id never matches the route's logged request_id, defeating the correlation the handler exists for. | **Both judges** (B: MAJOR, A: WARNING — same deterministic defect; severity taken as MAJOR). |
+| JD-7 | MAJOR | fixed | `services/stt/src/transcribe.py:117-204` | No cumulative deadline in dispatch: defaults (30 s timeout, 2 primary attempts, 0.5 s backoff, 1 fallback attempt) allow ~90.5 s worst-case before the 502 (pre-fix ~30 s) — availability regression. | Judge A + parent arithmetic verification (30+0.5+30+30 from settings defaults). |
+
+### Round-2 correction record
+
+Final bounded round. Each unit is independently revertable at its commit pair.
+Full suite after the round: 95 passed (from 86 after round 1).
+
+| Unit | IDs | RED | GREEN | Runtime evidence |
+|------|-----|-----|-------|------------------|
+| 1 | JD-6 | `af57456` | `fab0cc1` | crash after the INFO record: envelope id `f9e19d13…` ≠ logged `ff404a0b…` → equal |
+| 2 | JD-7 | `b5c7baf` | `b99482d` | `tests/test_total_deadline.py`: 92.45 s / 8 failing → full suite 95 passed in 4.09 s |
+
+New info (recorded, not fixed):
+- Re-A3: `install_body_limit` mutates class-global `MultiPartParser.spool_max_size` with no teardown; docstring overclaims per-instance bounding; value leaks across tests in-process.
+- Re-A4: stale comment in `settings.py:36-38` still states the disproved Decision-6 invariant.
+- Re-A5: `main.py` http_exception_handler docstring documents the now-dead MultiPartException file-part path.
+- Re-A6: guard-level 413 rejections emit no log record (request_id exists only in the response body).
+
 ## Round-1 authorization
 
 The user /goal ("adversarial review … make strong and resilient. Ensure it have a retry fallback and that will be up") is the standing maintainer directive for this correction round; the session is autonomous (Stop-hook goal active).
