@@ -1,0 +1,122 @@
+[
+  {
+    "id": 1,
+    "name": "Conteo básico de cocina",
+    "transcription": "Hola, registremos el inventario de hoy: tenemos 15 kilogramos de arroz, 8 litros de aceite de girasol, 25 unidades de huevos y 12 porciones de pastel de pollo.",
+    "expected_min_items": 4
+  },
+  {
+    "id": 2,
+    "name": "Transcripción informal con números en palabras",
+    "transcription": "Anota por favor en la bodega tres kilos de azúcar, diez litros de leche entera, cincuenta unidades de servilletas y ocho porciones de ensalada.",
+    "expected_min_items": 4
+  },
+  {
+    "id": 3,
+    "name": "Fracciones y decimales en voz",
+    "transcription": "Ingresaron dos punto cinco kilogramos de café molido, uno punto cinco litros de crema de leche y cuatro unidades de quesos madurados.",
+    "expected_min_items": 3
+  },
+  {
+    "id": 4,
+    "name": "Múltiples fluidos en litros",
+    "transcription": "En el refrigerador hay 50 litros de agua mineral, 20 litros de jugo de naranja y 5 litros de leche de almendras.",
+    "expected_min_items": 3
+  },
+  {
+    "id": 5,
+    "name": "Gramaje que debe convertirse a KILOGRAMO",
+    "transcription": "Recibimos 5000 gramos de carne molida de res y 2500 gramos de pechuga de pollo.",
+    "expected_min_items": 2
+  },
+  {
+    "id": 6,
+    "name": "Empaques diversos a UNIDAD",
+    "transcription": "Llegaron 10 latas de atún, 5 paquetes de harina, 2 cajas de galletas y 30 bolsas de detergente.",
+    "expected_min_items": 4
+  },
+  {
+    "id": 7,
+    "name": "Voz rápida con conectores coloquiales",
+    "transcription": "Bueno a ver... anota ahí rápido 12 porciones de lasagna, también 4 kilogramos de queso mozarella, ah y se me olvidaba 6 litros de salsa de tomate.",
+    "expected_min_items": 3
+  },
+  {
+    "id": 8,
+    "name": "Insumos de panadería",
+    "transcription": "Inventario de la mañana: 50 kilogramos de harina de trigo, 10 kilogramos de levadura seca, 5 litros de esencia de vainilla y 100 unidades de moldes de papel.",
+    "expected_min_items": 4
+  },
+  {
+    "id": 9,
+    "name": "Porciones de restaurante",
+    "transcription": "Quedan en cocina 15 porciones de sancocho, 8 porciones de carne asada y 20 porciones de puré de papa.",
+    "expected_min_items": 3
+  },
+  {
+    "id": 10,
+    "name": "Artículos de limpieza e insumos",
+    "transcription": "En el depósito contamos con 12 litros de desinfectante, 30 unidades de esponjas de cocina y 5 kilogramos de jabón en polvo.",
+    "expected_min_items": 3
+  },
+  {
+    "id": 11,
+    "name": "Stock de barra y bebidas",
+    "transcription": "Revisando el stock de barra: 24 unidades de cerveza, 6 litros de ron añejo, 3 litros de jarabe de goma y 40 unidades de vasos de vidrio.",
+    "expected_min_items": 4
+  },
+  {
+    "id": 12,
+    "name": "Frutas y verduras",
+    "transcription": "En el área de frutería entraron 18 kilogramos de tomate chonto, 12 kilogramos de cebolla cabezona, 30 unidades de limones y 5 kilogramos de aguacates.",
+    "expected_min_items": 4
+  },
+  {
+    "id": 13,
+    "name": "Volúmenes industriales de carga",
+    "transcription": "Recibo de camión: 500 kilogramos de papa sabanera, 200 litros de aceite vegetal y 1000 unidades de empaques plásticos.",
+    "expected_min_items": 3
+  },
+  {
+    "id": 14,
+    "name": "Conversiones expresadas en voz",
+    "transcription": "Tenemos una docena de manzanas que serían 12 unidades, medio kilo de pimienta o sea 0.5 kilogramos y 4 porciones de postre de natas.",
+    "expected_min_items": 3
+  },
+  {
+    "id": 15,
+    "name": "Materiales de empaque y logística",
+    "transcription": "Contamos con 500 unidades de cajas de cartón pequeñas, 200 unidades de rollos de cinta adhesiva y 50 unidades de etiquetas impresas.",
+    "expected_min_items": 3
+  },
+  {
+    "id": 16,
+    "name": "Cortes de carnicería",
+    "transcription": "Reporte de carnicería: 25 kilogramos de lomo fino, 14 kilogramos de costilla de cerdo y 10 porciones de hamburguesa artesanal.",
+    "expected_min_items": 3
+  },
+  {
+    "id": 17,
+    "name": "Productos lácteos",
+    "transcription": "En lácteos tenemos 40 litros de leche descremada, 15 kilogramos de mantequilla sin sal y 8 porciones de yogur griego.",
+    "expected_min_items": 3
+  },
+  {
+    "id": 18,
+    "name": "Caso simple de un solo ítem",
+    "transcription": "Solo quedan 3 kilogramos de sal marina en la estantería principal.",
+    "expected_min_items": 1
+  },
+  {
+    "id": 19,
+    "name": "Menaje y utensilios de cocina",
+    "transcription": "Llegó la orden: 4 unidades de sartenes antiadherentes, 2 litros de vinagre blanco y 6 porciones de tarta de manzana.",
+    "expected_min_items": 3
+  },
+  {
+    "id": 20,
+    "name": "Cierre nocturno de inventario consolidado",
+    "transcription": "Cierre de turno nocturno: 10 kilogramos de lentejas, 15 litros de jugo de mora, 80 unidades de cubiertos desechables y 14 porciones de sopa de verduras.",
+    "expected_min_items": 4
+  }
+]
