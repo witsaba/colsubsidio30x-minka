@@ -50,10 +50,11 @@ async def test_deepgram_vendor_routes_to_deepgram(make_client):
 
 
 async def test_unknown_vendor_fails_at_boot(make_client):
+    """`elevenlabs` used to be the unknown value here - it is a vendor now."""
     with pytest.raises(Exception) as excinfo:
-        await make_client(STT_VENDOR="elevenlabs")
+        await make_client(STT_VENDOR="whisper-cpp")
 
-    assert "elevenlabs" in str(excinfo.value)
+    assert "whisper-cpp" in str(excinfo.value)
 
 
 async def test_every_supported_vendor_has_an_adapter():

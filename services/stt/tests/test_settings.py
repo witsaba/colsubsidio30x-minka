@@ -76,13 +76,14 @@ def test_active_api_key_follows_the_vendor_switch(monkeypatch):
 
 
 def test_invalid_vendor_fails_boot(monkeypatch):
-    monkeypatch.setenv("STT_VENDOR", "elevenlabs")
+    """`elevenlabs` used to be the unknown value here - it is a vendor now."""
+    monkeypatch.setenv("STT_VENDOR", "whisper-cpp")
     monkeypatch.setenv("DEEPGRAM_API_KEY", "dg-key")
 
     with pytest.raises(ValidationError) as excinfo:
         Settings()
 
-    assert "elevenlabs" in str(excinfo.value)
+    assert "whisper-cpp" in str(excinfo.value)
 
 
 def test_defaults(monkeypatch):

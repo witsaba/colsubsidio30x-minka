@@ -64,11 +64,16 @@ def is_transient(exc: Exception) -> bool:
 def fallback_vendor(settings: Settings) -> str | None:
     """The vendor to fail over to, or None when there is nowhere to go.
 
-    Failover needs both the switch and a usable key: the non-active vendor's
-    key is optional at boot (REQ-VND-5), so it is often simply absent.
+    An explicitly named `STT_FALLBACK_VENDOR` wins: boot already proved it
+    differs from the primary and has a key, so there is nothing left to check
+    here. Otherwise the choice is automatic, and needs both the switch and a
+    usable key - a non-active vendor's key is optional at boot (REQ-VND-5), so
+    it is often simply absent (REQ-VND-9).
     """
     if not settings.stt_fallback_enabled:
         return None
+    if settings.stt_fallback_vendor:
+        return settings.stt_fallback_vendor
     for name in FALLBACK_PRIORITY:
         if name != settings.stt_vendor and settings.api_key_for(name):
             return name

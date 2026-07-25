@@ -7,7 +7,7 @@ request. `STT_VENDOR` is the only switch needed to change vendor.
 
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 VendorName = Literal["deepgram", "groq", "elevenlabs"]
@@ -53,9 +53,14 @@ class Settings(BaseSettings):
     stt_retry_attempts: int = Field(default=2, ge=1)
     #: Base backoff between primary attempts; doubles each time (0.5s, 1s, ...).
     stt_retry_backoff_s: float = Field(default=0.5, ge=0.0)
-    #: Automatic failover to the other vendor once the primary is exhausted.
-    #: Only takes effect when the other vendor's key is configured.
+    #: Automatic failover to another vendor once the primary is exhausted.
+    #: Only takes effect when the chosen vendor's key is configured.
     stt_fallback_enabled: bool = True
+    #: Which vendor to fail over to. `None` means auto: the first vendor other
+    #: than the primary with a configured key, in `FALLBACK_PRIORITY` order.
+    #: With three vendors "the other one" is no longer a definition, so an
+    #: operator can name it (REQ-VND-9).
+    stt_fallback_vendor: VendorName | None = None
     #: Ceiling on ALL vendor work for one request - every attempt, every
     #: backoff, and the failover together. Without it the defaults above
     #: multiply out to 30 + 0.5 + 30 + 30 s of waiting before a 502
@@ -82,11 +87,45 @@ class Settings(BaseSettings):
         """API key of the currently selected vendor."""
         return getattr(self, f"{self.stt_vendor}_api_key")
 
+    @field_validator("stt_fallback_vendor", mode="before")
+    @classmethod
+    def _blank_fallback_is_unset(cls, value: object) -> object:
+        """`STT_FALLBACK_VENDOR: ${STT_FALLBACK_VENDOR:-}` sends an empty string.
+
+        Compose has no way to omit a variable it declares, so treat a blank as
+        "not configured" rather than rejecting the deployment's own default.
+        """
+        return None if value == "" else value
+
     @model_validator(mode="after")
     def _require_active_vendor_key(self) -> "Settings":
         if not getattr(self, f"{self.stt_vendor}_api_key", None):
             raise ValueError(
                 f"{VENDOR_KEY_ENV[self.stt_vendor]} is required when "
                 f"STT_VENDOR={self.stt_vendor}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_explicit_fallback(self) -> "Settings":
+        """An explicitly named fallback must be usable, or boot fails.
+
+        Auto selection silently skips a vendor with no key, which is the right
+        behaviour for a default. Naming one and leaving it keyless is a
+        different thing: the operator asked for a safety net that would never
+        fire, and would only find out during an outage.
+        """
+        fallback = self.stt_fallback_vendor
+        if fallback is None:
+            return self
+        if fallback == self.stt_vendor:
+            raise ValueError(
+                f"STT_FALLBACK_VENDOR={fallback} must differ from "
+                f"STT_VENDOR={self.stt_vendor}"
+            )
+        if not self.api_key_for(fallback):
+            raise ValueError(
+                f"{VENDOR_KEY_ENV[fallback]} is required when "
+                f"STT_FALLBACK_VENDOR={fallback}"
             )
         return self

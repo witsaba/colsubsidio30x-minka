@@ -102,12 +102,13 @@ never an empty transcript passed off as a real one.
 ## Configuration
 
 Loaded by pydantic-settings at boot. A missing API key **for the selected
-vendor** fails startup before the first request; the other vendor's key may stay
-empty. An unrecognised `STT_VENDOR` also fails startup.
+vendor**, or for an explicitly named `STT_FALLBACK_VENDOR`, fails startup before
+the first request; the remaining vendors' keys may stay empty. An unrecognised
+`STT_VENDOR` also fails startup.
 
 That check lives in `src/settings.py` and nowhere else — `docker-compose.yml`
-passes both keys through without requiring either, so a Groq-only deployment
-(`STT_VENDOR=groq`, no Deepgram key) comes up:
+passes every key through without requiring any, so a single-vendor deployment
+(for example `STT_VENDOR=groq` with no Deepgram or ElevenLabs key) comes up:
 
 ```bash
 env -u DEEPGRAM_API_KEY STT_VENDOR=groq GROQ_API_KEY=... \
@@ -116,9 +117,11 @@ env -u DEEPGRAM_API_KEY STT_VENDOR=groq GROQ_API_KEY=... \
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `STT_VENDOR` | `deepgram` | `deepgram` \| `groq`. The only change needed to swap vendor |
-| `DEEPGRAM_API_KEY` | — | Required when Deepgram is active |
-| `GROQ_API_KEY` | — | Required when Groq is active |
+| `STT_VENDOR` | `deepgram` | `deepgram` \| `groq` \| `elevenlabs`. The only change needed to swap vendor |
+| `DEEPGRAM_API_KEY` | — | Required when Deepgram is active or the explicit fallback |
+| `GROQ_API_KEY` | — | Required when Groq is active or the explicit fallback |
+| `ELEVENLABS_API_KEY` | — | Required when ElevenLabs is active or the explicit fallback |
+| `STT_ELEVENLABS_MODEL` | `scribe_v1` | `scribe_v1` \| `scribe_v2` |
 | `STT_LANGUAGE` | `es` | Dedicated Spanish model; never `multi` |
 | `STT_MODEL` | `nova-3` | Deepgram model |
 | `STT_NUMERALS` | `true` | Deepgram numeral handling |
@@ -129,7 +132,8 @@ env -u DEEPGRAM_API_KEY STT_VENDOR=groq GROQ_API_KEY=... \
 | `STT_VENDOR_TIMEOUT_S` | `30` | Vendor call timeout |
 | `STT_RETRY_ATTEMPTS` | `2` | Total attempts against the primary vendor, initial call included. `1` disables retry; `0` fails startup |
 | `STT_RETRY_BACKOFF_S` | `0.5` | Base wait between primary attempts; doubles each time (0.5s, 1s, …) |
-| `STT_FALLBACK_ENABLED` | `true` | Automatic failover to the other vendor. Needs that vendor's key to be set |
+| `STT_FALLBACK_ENABLED` | `true` | Automatic failover to another vendor. Needs that vendor's key to be set |
+| `STT_FALLBACK_VENDOR` | — (auto) | Which vendor takes over. Empty selects automatically; naming one makes its key required at boot |
 | `STT_TOTAL_DEADLINE_S` | `45` | Ceiling on **all** vendor work for one request: every attempt, every backoff and the failover together. Must be > 0 |
 | `LOG_LEVEL` | `INFO` | Standard logging level |
 | `DEEPGRAM_BASE_URL` | `https://api.deepgram.com` | Override for testing |
@@ -149,21 +153,43 @@ push-to-talk clip.
 
 ## Vendors
 
-| | Deepgram (primary) | Groq (fallback) |
-|---|---|---|
-| Request | `POST /v1/listen?model=nova-3&language=es&numerals=true&mip_opt_out=true`, raw bytes | `POST /openai/v1/audio/transcriptions`, multipart, `whisper-large-v3-turbo`, `verbose_json` |
-| Confidence | Vendor-reported | Derived: clamped mean of `exp(avg_logprob)` over segments |
+Three vendors, any of them usable as primary or as fallback. `STT_VENDOR`
+picks the primary; nothing else changes.
+
+| | Deepgram (default) | Groq | ElevenLabs |
+|---|---|---|---|
+| Request | `POST /v1/listen?model=nova-3&language=es&numerals=true&mip_opt_out=true`, raw bytes | `POST /openai/v1/audio/transcriptions`, multipart, `whisper-large-v3-turbo`, `verbose_json` | `POST /v1/speech-to-text`, multipart, `scribe_v1`, `language_code=es`, `tag_audio_events=false` |
+| Auth | `Authorization: Token …` | `Authorization: Bearer …` | `xi-api-key: …` |
+| Confidence | Vendor-reported | Derived: clamped mean of `exp(avg_logprob)` over segments | Vendor-reported `language_probability` |
 
 Groq's confidence is an **uncalibrated proxy**. It exists so the `is_garbage`
-confidence trigger keeps working on the fallback vendor; it is not comparable to
-Deepgram's number and must not be presented as one.
+confidence trigger keeps working there; it is not comparable to Deepgram's
+number and must not be presented as one.
+
+ElevenLabs sends `tag_audio_events=false` deliberately: annotations such as
+`[laughter]` would otherwise land inside `raw_transcript`, and Module 2 reads
+that text as an inventory line. Its `422` is a generic validation error, not
+"bad audio", so it maps to `vendor_error` rather than `invalid_audio` — a
+rejected `model_id` is our bug, not the caller's.
 
 ### Retry and failover
 
 A vendor hiccup should not cost the speaker a dictation, so the primary vendor
 gets `STT_RETRY_ATTEMPTS` tries with an exponential backoff, and then — if
-`STT_FALLBACK_ENABLED` is on and the other vendor's key is configured — the
-other vendor gets exactly one.
+`STT_FALLBACK_ENABLED` is on and the chosen vendor's key is configured — that
+vendor gets exactly one.
+
+Which vendor takes over is either named or derived:
+
+- **Explicit**: set `STT_FALLBACK_VENDOR`. It must differ from `STT_VENDOR` and
+  its key must be present, both checked at boot. Naming a fallback you have no
+  key for is a safety net that would never fire, and you would find out during
+  an outage; the service refuses to start instead.
+- **Auto** (`STT_FALLBACK_VENDOR` empty): the first vendor other than the
+  primary that has a key, in the fixed order `deepgram`, `groq`, `elevenlabs`.
+  A vendor with no key is skipped silently — that is the right default, and it
+  is why the explicit form is stricter. If nothing qualifies there is no
+  failover, exactly as before.
 
 Only failures a retry could plausibly fix are eligible: timeouts, connection
 errors, and HTTP 429/500/502/503/504. A 400, 401 or 403, audio the vendor
@@ -181,10 +207,10 @@ the budget runs out the answer is the same `502 vendor_timeout` as a single
 vendor timeout, because that is what it is, and the request log names the
 vendor that was in flight when it expired.
 
-Failover needs the fallback vendor's key to be present; a missing one is still
-tolerated at boot, so the feature switches itself off rather than blocking
-startup. `docker-compose.yml` passes both keys through without requiring
-either, which is what makes a Groq-only deployment possible.
+Auto failover needs the chosen vendor's key to be present; a missing one is
+still tolerated at boot, so the feature switches itself off rather than
+blocking startup. `docker-compose.yml` passes every key through without
+requiring any, which is what makes a single-vendor deployment possible.
 
 Calls go through `httpx` only — no vendor SDK is a dependency, which is what
 makes the swap a function swap.
@@ -199,7 +225,7 @@ services/stt/
 │   ├── transcribe.py      routes, vendor dispatch, evaluate_garbage
 │   ├── settings.py        boot-time configuration
 │   ├── logging_setup.py   stdlib logging
-│   └── vendors/           base protocol + deepgram + groq adapters
+│   └── vendors/           base protocol + deepgram, groq, elevenlabs adapters
 ├── tests/                 contract, privacy, adapters, settings, vendor switch
 └── docs/dod-live-checks.md  live-key checks that need real credentials
 ```
