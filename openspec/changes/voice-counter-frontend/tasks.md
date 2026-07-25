@@ -107,12 +107,12 @@ Parallel groups: **P-A** = T4→T5→T6 (extraction/units chain) · **P-B** = T7
   GREEN: `src/pages/api/{transcribe,match,catalogues}.ts` (`prerender=false`, `AbortSignal.timeout` 50 s / 10 s).
   Requirements: REQ-PRX-1..5, RNF-04. Deps: T1. **Verify no file under `services/` is touched.**
 
-- [ ] **T11 — `createRecorder` audio capture.**
+- [x] **T11 — `createRecorder` audio capture.**
   RED: `tests/audio/capture.test.ts` using the T2 `FakeMediaRecorder` + `vi.useFakeTimers()` — mime chain: `ogg;codecs=opus` unsupported + `webm;codecs=opus` supported → constructed with webm, and neither supported → constructed with **no** mimeType option while the result still exposes the recorder's actual `mimeType`; options always carry `audioBitsPerSecond` with `24000 ≤ v ≤ 32000`; advancing 20 000 ms auto-stops without a `pointerup`; a `1_048_577`-byte blob is refused before any request is issued; `onTick` elapsed comes from the local timer and is unaffected by STT nulls.
   GREEN: `src/lib/audio/capture.ts` (constants `MAX_DURATION_MS = 20_000 // [TEAM]`, `AUDIO_BITS_PER_SECOND = 28_000`, `MAX_BLOB_BYTES = 1_048_576` — one named constant each).
   Requirements: REQ-VC-1..4, REQ-VC-6, REQ-VC-8, D10. Deps: T2, T3.
 
-- [ ] **T12 — Real catalogues + operator seed.**
+- [x] **T12 — Real catalogues + operator seed.**
   RED: `tests/catalogues.test.ts` — exports exactly the 8 real `catalogue_id`s with their friendly labels; the demo plan card labelled "Cocina Principal" carries `catalogueId:'stock_restaurante_fuentes_ayb'`; every plan's id is one of the 8.
   GREEN: `src/lib/catalogues.ts`, `src/fixtures/operatorSeed.ts` (3 seed rows, progress 45/107).
   Requirements: REQ-OCF-8, D13. Deps: T3.
@@ -129,7 +129,7 @@ Parallel groups: **P-A** = T4→T5→T6 (extraction/units chain) · **P-B** = T7
   GREEN: `src/styles/tokens.css` (keyframes copied **verbatim** from the design contract), `src/styles/global.css` (reset, Manrope/JetBrains Mono stacks, `tabular-nums` on `.qty`, focus-visible).
   Requirements: design §4, D12. Deps: T1. **Sole owner of `src/styles/`.**
 
-- [ ] **T15 — Layouts and root route.**
+- [x] **T15 — Layouts and root route.**
   Creates: `src/layouts/OperatorLayout.astro` (fluid single column, `max-width:430px`, Google Fonts CDN `<link>`), `src/layouts/AuditorLayout.astro` (grid `94px 286px 1fr 352px` at `min-width:1024px`; below that the static notice "Usa una tablet o un computador para la revisión"), `src/pages/index.astro` (`prerender=false`, `Astro.redirect('/conteo', 302)`).
   Proof: `npm run build` succeeds and `/` redirects under `npm run preview`.
   Requirements: design §4, §5, D12. Deps: T14.
