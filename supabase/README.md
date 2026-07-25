@@ -25,8 +25,8 @@ normally 20 to 40", the band is copied onto the anomaly row; the theoretical
 figure behind it goes to `anomaly_evidence`, which is staff-only.
 
 **RF-07 — plan-scoped access.** An operator reaches a plan only through a row in
-`plan_operators`. `public.has_plan_access(uuid)` is the single expression of
-this and every plan-scoped policy calls it.
+`plan_operators` whose profile is still active. `private.has_plan_access(uuid)`
+is the single expression of this and every plan-scoped policy calls it.
 
 Both are proven, not asserted — see [Verifying the guarantees](#verifying-the-guarantees).
 
@@ -351,10 +351,15 @@ warehouse is renamed.
 | Auditor decisions | read own | read | insert |
 | Export | — | — | full |
 
-New users default to `operator`; a trigger on `auth.users` creates the profile.
-Promote by updating `profiles.role` as an auditor. Note there is deliberately no
-"update own profile" policy — `role` is a column on that table, so a self-update
+Every new account is an `operator` — a trigger on `auth.users` creates the
+profile, and it ignores whatever the signup sent as metadata. Promote by
+updating `profiles.role` as an auditor. There is deliberately no "update own
+profile" policy either: `role` is a column on that table, so a self-update
 policy would be a self-promotion policy.
+
+Deactivating a profile (`is_active = false`) revokes access immediately —
+`has_plan_access` checks it, so the assignment rows can stay for the audit
+trail.
 
 Set `counter_code` (e.g. `PABLO.R`) on each profile: it is what the Oracle export
 writes in its `COUNTER` column.
@@ -363,26 +368,33 @@ writes in its `COUNTER` column.
 
 ## Verifying the guarantees
 
-The RLS rules are testable without a running app. This runs as an operator and
-should report zeros in the first two columns:
+`supabase/tests/rls_guarantees.sql` proves all of it. It runs in a transaction
+that rolls back, so it is safe against a loaded database:
 
-```sql
-begin;
-set local role authenticated;
-set local request.jwt.claims = '{"sub":"<operator-uuid>","role":"authenticated"}';
-
-select
-  (select count(*) from public.warehouse_stock_balances) as theoretical_visible,  -- 0
-  (select count(*) from public.product_count_ranges)     as ranges_visible,       -- 0
-  (select count(*) from public.warehouse_products)       as catalogue_visible,    -- their warehouse
-  (select count(*) from public.audit_plans)              as plans_visible;        -- their plans
-rollback;
+```sh
+psql "$DATABASE_URL" -f supabase/tests/rls_guarantees.sql
 ```
 
-Verified on this project: an operator assigned to one plan sees 0 theoretical
-rows, 0 ranges, 55 catalogue rows and 1 plan; an auditor sees 1 405 / 1 405 /
-1 405 and every plan. An operator UPDATE changing a quantity raises
-`restrict_violation`; the soft delete succeeds.
+Eight checks, each corresponding to a defect that was actually present at some
+point and was found by probing rather than by reading:
+
+1. signup metadata cannot confer a role;
+2. an operator reaches no theoretical figure (RF-18);
+3. an operator sees only their plan and its catalogue (RF-07);
+4. an operator can neither approve their own count nor file against another
+   warehouse;
+5. voice creates only — quantity edits and self-promotion raise, soft delete
+   succeeds (RF-20/21);
+6. deactivating a profile revokes access immediately;
+7. an auditor retains full visibility;
+8. the audit trail has no UPDATE/DELETE path under RLS *and* refuses one from a
+   privileged caller.
+
+Run it after any change to policies, roles or the helper functions. It raises on
+the first failure; `ALL RLS GUARANTEES HOLD` means everything passed.
+
+**Run it whenever you add a table.** A new table with RLS enabled and no policy
+is safe; a new table without RLS is readable by every signed-in user.
 
 ---
 
@@ -397,22 +409,57 @@ npx supabase gen types typescript --project-id blvdxsoaopcvtzawvgbt > src/lib/da
 
 ---
 
-## Known advisor output
+## The `private` schema
 
-Two families of lint remain, both intentional:
+`current_app_role`, `is_staff`, `is_auditor` and `has_plan_access` live in
+`private`, not `public`. PostgREST only exposes the schemas it is configured
+with, so this is what keeps them off `/rest/v1/rpc/...` while leaving them fully
+usable inside policies. `authenticated` holds USAGE on the schema and EXECUTE on
+those four; `anon` and `PUBLIC` hold nothing.
 
-- **`rls_enabled_no_policy` (INFO) on the four `source.*` tables.** RLS on with
-  no policy is deny-all, which is the intent. Adding a policy would weaken it.
-- **`authenticated_security_definer_function_executable` (WARN) on
-  `is_staff`, `is_auditor`, `current_app_role`, `has_plan_access`.** Policy
-  expressions are evaluated as the querying role, so `authenticated` must hold
-  EXECUTE or every policy calling them fails. Each returns only facts about the
-  caller, which the caller already knows. `anon` and `PUBLIC` have been revoked.
+The trigger functions (`handle_new_user`, `guard_count_record_update`,
+`forbid_mutation`) are there too, with EXECUTE revoked from everyone — a trigger
+does not consult EXECUTE, so nothing needs it.
+
+Add new helpers to `private`, not `public`.
+
+## Security notes
+
+Four defects were found by probing the live schema and fixed in
+`20260725121100_security_hardening.sql`. They are recorded here because each one
+is a mistake worth not repeating:
+
+- **Never derive a role from `raw_user_meta_data`.** That column is written
+  verbatim by `supabase.auth.signUp({ options: { data } })` — it is client
+  input. The original `handle_new_user` read `role` from it, so anyone who could
+  sign up could become an auditor and read every theoretical balance. Every new
+  account is now an `operator`; promotion is an explicit auditor action.
+- **`is_active` has to be checked in the access helper**, not just displayed.
+  Deactivating a profile previously left the `plan_operators` row intact and the
+  operator kept working.
+- **An operator could set `status = 'verified'`**, which put the record straight
+  into `v_oracle_export_preview`. Status is now constrained on insert by policy
+  and on update by trigger.
+- **Coherence is enforced by composite foreign key, not by policy.**
+  `count_records(plan_id, warehouse_id)` references
+  `audit_plans(id, warehouse_id)`, and `(warehouse_id, product_id)` references
+  `warehouse_products`. A policy would only bind whoever it is evaluated for; a
+  constraint binds the service role too.
+
+One more worth knowing: **Postgres grants `EXECUTE` to `PUBLIC` by default.**
+`revoke ... from anon` does not remove it, because `anon` inherits from
+`PUBLIC`. Revoke from `PUBLIC` explicitly.
+
+### Known advisor output
+
+One family of lint remains, and it is intentional:
+`rls_enabled_no_policy` (INFO) on the four `source.*` tables. RLS enabled with no
+policy is deny-all, which is the intent — the schema is service-role only and is
+not in the exposed API list. A policy there would weaken it.
 
 Everything else the linter raised has been fixed: `PUBLIC` EXECUTE on the
-SECURITY DEFINER helpers (revoking from `anon` alone does not do it — Postgres
-grants EXECUTE to `PUBLIC` by default), overlapping permissive policies, and the
-foreign keys worth indexing.
+SECURITY DEFINER helpers, those helpers being reachable as RPC endpoints,
+overlapping permissive policies, and the foreign keys worth indexing.
 
 ---
 
