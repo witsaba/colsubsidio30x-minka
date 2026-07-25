@@ -49,7 +49,7 @@ fit the 800-line session budget; only PR1 needs the documentation exception.
 
 ## Phase 2: Configuration and pure policy (TDD)
 
-- [ ] **T4 — RED: settings boot validation tests.** Add `services/stt/tests/test_settings.py`: missing key for the ACTIVE vendor raises at boot; non-selected vendor key optional; invalid `STT_VENDOR` fails boot; defaults `STT_MIN_SPEECH_MS=300`, `STT_MAX_UPLOAD_BYTES=1048576`, `STT_VENDOR_TIMEOUT_S=30`, `LOG_LEVEL=INFO`, `STT_CONFIDENCE_FLOOR`. Satisfies REQ-VND-3, REQ-VND-5. **Verify:** `(cd services/stt && uv run pytest tests/test_settings.py)` FAILS on missing `src.settings`. **Rollback:** `git rm services/stt/tests/test_settings.py`.
+- [x] **T4 — RED: settings boot validation tests.** Add `services/stt/tests/test_settings.py`: missing key for the ACTIVE vendor raises at boot; non-selected vendor key optional; invalid `STT_VENDOR` fails boot; defaults `STT_MIN_SPEECH_MS=300`, `STT_MAX_UPLOAD_BYTES=1048576`, `STT_VENDOR_TIMEOUT_S=30`, `LOG_LEVEL=INFO`, `STT_CONFIDENCE_FLOOR`. Satisfies REQ-VND-3, REQ-VND-5. **Verify:** `(cd services/stt && uv run pytest tests/test_settings.py)` FAILS on missing `src.settings`. **Rollback:** `git rm services/stt/tests/test_settings.py`.
 
 - [ ] **T5 — GREEN: settings and logging.** Add `services/stt/src/settings.py` (pydantic-settings, active-vendor key required) and `services/stt/src/logging_setup.py` (stdlib logging, `LOG_LEVEL`). Satisfies REQ-VND-3, REQ-VND-5, REQ-PRV-3. **Verify:** `(cd services/stt && uv run pytest tests/test_settings.py)` passes. **Rollback:** `git rm services/stt/src/settings.py services/stt/src/logging_setup.py`.
 
