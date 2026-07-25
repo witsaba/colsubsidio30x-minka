@@ -151,7 +151,7 @@ Parallel groups: **P-A** = T4→T5→T6 (extraction/units chain) · **P-B** = T7
   GREEN: `src/components/operator/ProcessingSheet.tsx`, `ConfirmSheet.tsx`.
   Requirements: REQ-OCF-3, REQ-OCF-7, REQ-OCF-12. Deps: T7, T14.
 
-- [ ] **T19 — Anomaly and manual-search sheets.**
+- [x] **T19 — Anomaly and manual-search sheets.**
   RED: `tests/components/search-sheet.test.tsx` — a `no_match` opens the sheet with copy `No encontré “{query}” en esta bodega. ¿Cuál es?`, an `ambiguous` opens the **same** sheet with adjusted copy and the matcher's candidates listed, the real `<input>` re-queries `match()` as the user types, picking a candidate makes the item confirmable, and "Ninguno · volver a dictar" drops the item. `tests/components/anomaly-sheet.test.tsx` — orange flag state, both resolutions ("Eliminar y volver a dictar", "Es correcto · dejar nota al auditor"), and the mic stays blocked until one is chosen.
   GREEN: `src/components/operator/AnomalySheet.tsx`, `SearchSheet.tsx`.
   Requirements: REQ-OCF-5, REQ-OCF-6, D8. Deps: T7, T9, T14.
