@@ -17,6 +17,7 @@ ALL_SETTING_ENV_VARS = (
     "STT_MIN_SPEECH_MS",
     "STT_MAX_UPLOAD_BYTES",
     "STT_VENDOR_TIMEOUT_S",
+    "STT_TOTAL_DEADLINE_S",
     "STT_RETRY_ATTEMPTS",
     "STT_RETRY_BACKOFF_S",
     "STT_FALLBACK_ENABLED",
@@ -99,6 +100,7 @@ def test_defaults(monkeypatch):
     assert settings.stt_retry_attempts == 2
     assert settings.stt_retry_backoff_s == 0.5
     assert settings.stt_fallback_enabled is True
+    assert settings.stt_total_deadline_s == 45.0
 
 
 def test_resilience_settings_are_read_from_the_environment(monkeypatch):
@@ -106,12 +108,26 @@ def test_resilience_settings_are_read_from_the_environment(monkeypatch):
     monkeypatch.setenv("STT_RETRY_ATTEMPTS", "4")
     monkeypatch.setenv("STT_RETRY_BACKOFF_S", "0.25")
     monkeypatch.setenv("STT_FALLBACK_ENABLED", "false")
+    monkeypatch.setenv("STT_TOTAL_DEADLINE_S", "12.5")
 
     settings = Settings()
 
     assert settings.stt_retry_attempts == 4
     assert settings.stt_retry_backoff_s == 0.25
     assert settings.stt_fallback_enabled is False
+    assert settings.stt_total_deadline_s == 12.5
+
+
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_a_non_positive_total_deadline_is_rejected(monkeypatch, value):
+    """A zero budget would time every request out before it started."""
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "dg-key")
+    monkeypatch.setenv("STT_TOTAL_DEADLINE_S", value)
+
+    with pytest.raises(ValidationError) as excinfo:
+        Settings()
+
+    assert "stt_total_deadline_s" in str(excinfo.value).lower()
 
 
 def test_a_retry_budget_below_one_is_rejected(monkeypatch):
