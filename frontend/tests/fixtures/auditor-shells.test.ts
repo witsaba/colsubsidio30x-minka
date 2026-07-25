@@ -148,6 +148,41 @@ describe('/auditor/base — Base de datos y equipo', () => {
   });
 });
 
+describe('/auditor — the review page that hosts the island', () => {
+  const index = read('pages/auditor/index.astro');
+
+  it('is prerendered and mounts the island with client:load', () => {
+    expect(index).toMatch(/export const prerender = true;/);
+    expect(index).toMatch(/<AuditorReview client:load/);
+  });
+
+  it('mounts the shared nav rail marked as the review view', () => {
+    expect(index).toMatch(/<AuditorRail[^>]*active="review"/);
+  });
+
+  it('carries the same document shell contract as the layouts', () => {
+    expect(index).toMatch(/<html[^>]*lang="es-CO"/);
+    expect(index).toContain('fonts.googleapis.com/css2');
+    expect(index).toContain('href="#contenido"');
+  });
+
+  it('explains why it does not use AuditorLayout', () => {
+    expect(index).toMatch(/AuditorLayout/);
+  });
+
+  it('withholds the three-pane grid below the tablet breakpoint, like the layout', () => {
+    expect(index).toContain('Usa una tablet o un computador para la revisión');
+    expect(index).toMatch(/@media \(max-width: 1023\.98px\)/);
+  });
+
+  it('hardcodes no hex colour in its styles', () => {
+    // `<meta name="theme-color">` is exempt: it takes a literal, exactly as the
+    // two layouts already do. Everything else resolves through the tokens.
+    const styles = index.slice(index.indexOf('<style'));
+    expect(styles).not.toMatch(/#[0-9a-fA-F]{6}\b/);
+  });
+});
+
 describe('compliance — the shells never contradict the shipped product', () => {
   const all = [cierre, base];
 

@@ -168,7 +168,7 @@ Parallel groups: **P-A** = T4→T5→T6 (extraction/units chain) · **P-B** = T7
   GREEN: `src/fixtures/auditorSeed.ts` (8 verbatim records, warehouses, Oracle export rows), `src/pages/auditor/cierre.astro` + `base.astro` (zero-JS shells; the `base` view states the RF-11 bodega→catalogue limitation verbatim).
   Requirements: REQ-AUD-1, REQ-AUD-3. Deps: T14, T15.
 
-- [ ] **T22 — `AuditorReview` island: filters, actions, trace, corrected export gate.**
+- [x] **T22 — `AuditorReview` island: filters, actions, trace, corrected export gate.**
   RED: `tests/components/auditor-review.test.tsx` — chip "Requieren mirada · 3" filters to exactly the 3 alerted records; "Aprobar registro" flips the badge to "Verificado", **decrements the header pill from "3 alertas abiertas" to "2 alertas abiertas"**, and appends a trace entry with user + time + action; the detail pane shows "Contado" vs "Sistema" (auditor may see stock, C6); with alerts open "Exportar a Oracle" is disabled and shows the blocked modal, where **"Ver los pendientes" navigates to the filtered pending list, "Cancelar" dismisses, and no "Exportar de todos modos" control exists in the DOM**; with zero alerts the export modal "Generar archivo de carga" opens.
   GREEN: `src/components/auditor/{AuditorReview,WarehouseList,RecordList,DetailPane,Modal}.tsx`, `src/pages/auditor/index.astro`.
   Requirements: REQ-AUD-1..5. Deps: T21, T14, T3.
