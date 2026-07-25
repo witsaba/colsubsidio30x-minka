@@ -26,4 +26,7 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
+      # Failures during startup do not count against `retries`, so a slow boot
+      # is not mistaken for an unhealthy service (GOAL-3).
+      start_period: 15s
     restart: unless-stopped
