@@ -2,8 +2,9 @@
 
 Stateless FastAPI service that turns a push-to-talk audio clip into a verbatim
 es-CO transcript. It is an independent deploy unit: its own `pyproject.toml`,
-its own lockfile, its own `docker-compose.yml`. It shares no process, datastore
-or deployment unit with Module 3.
+its own lockfile, its own image. It shares no process, datastore or runtime
+dependency with Module 3 — only the repository's single Compose file, which
+starts each service on its own (`docker compose up stt`).
 
 Two rules define this service more than any feature:
 
@@ -22,16 +23,17 @@ Two rules define this service more than any feature:
 (cd services/stt && uv run pytest)
 
 # local server
-cd services/stt && cp .env.example .env   # then fill in DEEPGRAM_API_KEY
+./scripts/setup-env.sh                    # asks for DEEPGRAM_API_KEY
 uv run --project services/stt --directory services/stt \
   uvicorn src.main:app --port 8001
 
-# container
-docker compose -f services/stt/docker-compose.yml up --build
+# container — from the repository root, one Compose file for every service
+docker compose up --build stt
 curl localhost:8001/health
 ```
 
-`.env` is gitignored and must stay that way.
+The root `.env` is gitignored and must stay that way. `docs/deployment.md` is
+the deployment guide for the whole repository.
 
 ## API
 
@@ -106,13 +108,13 @@ vendor**, or for an explicitly named `STT_FALLBACK_VENDOR`, fails startup before
 the first request; the remaining vendors' keys may stay empty. An unrecognised
 `STT_VENDOR` also fails startup.
 
-That check lives in `src/settings.py` and nowhere else — `docker-compose.yml`
-passes every key through without requiring any, so a single-vendor deployment
-(for example `STT_VENDOR=groq` with no Deepgram or ElevenLabs key) comes up:
+That check lives in `src/settings.py` and nowhere else — the root
+`docker-compose.yml` passes every key through without requiring any, so a
+single-vendor deployment (for example `STT_VENDOR=groq` with no Deepgram or
+ElevenLabs key) comes up:
 
 ```bash
-env -u DEEPGRAM_API_KEY STT_VENDOR=groq GROQ_API_KEY=... \
-  docker compose -f services/stt/docker-compose.yml up
+env -u DEEPGRAM_API_KEY STT_VENDOR=groq GROQ_API_KEY=... docker compose up stt
 ```
 
 | Variable | Default | Meaning |
@@ -221,8 +223,8 @@ vendor that was in flight when it expired.
 
 Auto failover needs the chosen vendor's key to be present; a missing one is
 still tolerated at boot, so the feature switches itself off rather than
-blocking startup. `docker-compose.yml` passes every key through without
-requiring any, which is what makes a single-vendor deployment possible.
+blocking startup. The root `docker-compose.yml` passes every key through
+without requiring any, which is what makes a single-vendor deployment possible.
 
 Calls go through `httpx` only — no vendor SDK is a dependency, which is what
 makes the swap a function swap.

@@ -29,9 +29,9 @@ backend services: Module 1 — speech-to-text — under `services/stt/` and Modu
   loaded into memory at startup; built from the workbook with **pandas** + **openpyxl**. Audio is never
   persisted (RNF-04).
 - Architecture: root **uv workspace** — root project (data build) plus the installable `matcher` workspace
-  member with a `src/` layout, served as `matcher.main:app` and containerized via
-  `services/matcher/docker-compose.yml`. `services/stt` is a **standalone uv project** (own `pyproject.toml`
-  and `uv.lock`) with its own docker compose.
+  member with a `src/` layout, served as `matcher.main:app`. `services/stt` is a **standalone uv project**
+  (own `pyproject.toml` and `uv.lock`). Both are deployed from the single root `docker-compose.yml` with a
+  single root `.env`; see `docs/deployment.md`.
 - Existing conventions: `from __future__ import annotations`, type hints on public functions, frozen dataclasses
   for value objects, pure functions kept free of I/O, tests mirroring the module they cover; technical SDD
   artifacts default to English
@@ -52,14 +52,16 @@ backend services: Module 1 — speech-to-text — under `services/stt/` and Modu
 | Type checker | No | — |
 | Formatter | No | — |
 
-`testpaths` is pinned to `services/matcher/tests` in the root `pyproject.toml`, so `uv run pytest` from the repo
-root collects the matcher suite; the STT suite runs from `services/stt/` with its own environment. Strict TDD is
+`testpaths` is pinned to `services/matcher/tests` and `tests/deployment` in the root `pyproject.toml`, so
+`uv run pytest` from the repo root collects the matcher suite plus the daemon-free deployment contracts; the
+STT suite runs from `services/stt/` with its own environment. Strict TDD is
 enabled: every change lands RED first, and promoted spike code is covered by characterization tests written
 before the file is promoted.
 
 ## Runtime
 
 - Matcher local: `uv run uvicorn matcher.main:app --port 8002`
-- Matcher container: `cd services/matcher && docker compose up -d` (build context is the repo root; the
-  catalogue is mounted `../../data:/data:ro`)
-- STT container: `cd services/stt && docker compose up -d` (port 8001; vendor keys via environment)
+- Whole stack: `./scripts/setup-env.sh` once, then `docker compose up -d` from the repository root
+- Matcher container: `docker compose up -d matcher` (build context is the repo root; the catalogue is
+  mounted `./data:/data:ro`)
+- STT container: `docker compose up -d stt` (port 8001; vendor keys come from the root `.env`)

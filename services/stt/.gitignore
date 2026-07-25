@@ -1,8 +1,0 @@
-# Vendor credentials never enter git (spike 05: ".env stays out of git").
-.env
-
-# Python and uv build artefacts
-__pycache__/
-*.pyc
-.venv/
-.pytest_cache/
