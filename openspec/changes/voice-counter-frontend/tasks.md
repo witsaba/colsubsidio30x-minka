@@ -175,7 +175,7 @@ Parallel groups: **P-A** = T4→T5→T6 (extraction/units chain) · **P-B** = T7
 
 ## Phase 6 — Integration and verification
 
-- [ ] **T23 — Run documentation.** `frontend/README.md` + `frontend/.env.example` finalized: how to start STT `:8001` and matcher `:8002`, `STT_BASE_URL`/`MATCHER_BASE_URL`, `npm run dev` → `http://localhost:4321`, and the documented constraint that `getUserMedia` needs a secure context so **the demo must browse on the laptop itself, not a LAN IP**. Deps: T10, T20.
+- [x] **T23 — Run documentation.** `frontend/README.md` + `frontend/.env.example` finalized: how to start STT `:8001` and matcher `:8002`, `STT_BASE_URL`/`MATCHER_BASE_URL`, `npm run dev` → `http://localhost:4321`, and the documented constraint that `getUserMedia` needs a secure context so **the demo must browse on the laptop itself, not a LAN IP**. Deps: T10, T20.
 
 - [ ] **T24 — FINAL end-to-end demo verification (the acceptance bar). ⭐ MUST COMPLETE**
   1. `cd frontend && npx vitest run` — every suite green.
