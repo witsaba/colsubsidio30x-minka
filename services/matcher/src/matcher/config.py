@@ -13,9 +13,7 @@ re-measurement on real dictation.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,8 +22,27 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(case_sensitive=False, extra="ignore")
 
-    catalogue_db: Path = Path("data/bodegas-y-stock.sqlite")
-    """SQLite catalogue, always opened through a `mode=ro` URI."""
+    supabase_url: str
+    """PostgREST base URL. Required: no default can be correct, and a missing
+    one is a permanent misconfiguration that must abort startup, not retry."""
+
+    supabase_key: str
+    """Least-privilege API key, sent as `apikey` and as a bearer token. Never
+    logged and never included in an exception message (REQ-API-8)."""
+
+    supabase_timeout_seconds: float = Field(default=10.0, gt=0)
+    """Per-request timeout for the catalogue read."""
+
+    redis_url: str = "redis://localhost:6379/0"
+    """Snapshot cache. A *soft* dependency: unreachable Redis only costs a
+    Supabase read at startup and never affects `POST /match` (REQ-RCC-3)."""
+
+    catalogue_cache_ttl_seconds: int = Field(default=10_800, ge=60)
+    """Snapshot freshness window, and the base of the jittered refresh period.
+    Floored at a minute: a tiny TTL turns the cache into a Supabase hammer."""
+
+    catalogue_refresh_lock_ttl_seconds: int = Field(default=60, ge=1)
+    """Expiry of the cross-replica `SET NX PX` refresh lock (design D4)."""
 
     match_accept_score: float = Field(default=0.50, ge=0.0, le=1.0)
     """Below this raw trigram similarity the decision is `no_match`."""
@@ -53,3 +70,25 @@ class Settings(BaseSettings):
 
     startup_retry_delay_seconds: float = Field(default=2.0, ge=0)
     """Wait between catalogue-load attempts, in seconds."""
+
+    @field_validator("supabase_url")
+    @classmethod
+    def _normalize_url(cls, value: str) -> str:
+        """Reject a blank URL and strip the trailing slash exactly once.
+
+        Compose interpolates `${SUPABASE_URL:-}`, so an unset variable arrives
+        as an empty string rather than as a missing one; without this it would
+        pass validation and fail much later as an unroutable request.
+        """
+        url = value.strip().rstrip("/")
+        if not url:
+            raise ValueError("SUPABASE_URL must not be empty")
+        return url
+
+    @field_validator("supabase_key", "redis_url")
+    @classmethod
+    def _require_non_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("must not be empty")
+        return stripped

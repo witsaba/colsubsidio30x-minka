@@ -210,7 +210,38 @@ until WU-5): `make_rows(...)` and `FakeCatalogueSource(rows, fail_times=0)` expo
 This commit rewires the service and deletes the SQLite path. The suite is green on both
 sides of it. Do the sub-steps in order; commit once at the end.
 
-- [ ] 5.1 **RED** — `services/matcher/tests/unit/test_config.py`:
+**Applied deviations across WU-5** (each also noted on its task):
+1. **`_build_adapters` is patched alongside the service factory** in `test_startup_retry.py`
+   (task 5.7). The retry loop builds the adapters once and then constructs the service per
+   attempt, so the attempt that finally *succeeds* would otherwise dial the real
+   `supabase.invalid`. `_install_service_factory` now installs the fake pair too; the loop
+   assertions (attempt counts, `sleeps`, log text, `app.state.service`) are unchanged.
+2. **The flaky factory's error text changed** from `cannot open catalogue database
+   '<path>': unable to open database file` to `the Supabase catalogue is unavailable:
+   connection refused`, and the one assertion reading it moved from
+   `"unable to open database file"` to `"connection refused"`. Keeping a SQLite-shaped
+   message after deleting SQLite would have been a lie in the test that documents the
+   operator-visible retry log.
+3. **Test doubles are imported from `conftest`** (`from conftest import ...`). Under
+   pytest's default prepend import mode the tests directory is on `sys.path`, so the
+   already-loaded `conftest` module is importable; this keeps `make_rows` /
+   `FakeCatalogueSource` / `make_cache` as plain callables usable at module scope
+   (fixture parameters cannot be used to build module-level constants).
+4. **A fixture catalogue replaced the real database's query provenance.**
+   `conftest.FIXTURE_CATALOGUE` (3 warehouses, 9 rows) reproduces all three decision
+   statuses: `ACEITE DE OLIVA` + `ACEITE DE OLIVA EXTRA VIRGEN` are the deliberate near
+   duplicates that keep `"aceite de oliva"` `ambiguous`. Hard-coded counts (`catalogues=8`,
+   `rows>0`) became `len(FIXTURE_WAREHOUSES)` / `FIXTURE_ROW_COUNT`.
+5. **`test_schemas.py::test_every_real_catalogue_id_fits_the_limit`** imported
+   `STOCK_TABLES`, which 5.8 deletes; it now measures the fixture warehouse codes. Not
+   listed in any task, found by the deletion.
+6. **`_startup_line()` in `test_logging.py` reads the LAST startup record, not the first**
+   — `caplog` retains every propagated record for the whole test, so the warm-start test
+   (which starts the app twice) was asserting against the first start's line. Caught as a
+   real RED: `assert 'source=redis-snapshot' in 'catalogue loaded catalogues=3 rows=9
+   source=supabase'`.
+
+- [x] 5.1 **RED** — `services/matcher/tests/unit/test_config.py`:
   - `TestDefaults::test_the_supabase_and_redis_settings_carry_their_documented_defaults` — `redis_url == "redis://localhost:6379/0"`, `supabase_timeout_seconds == 10.0`, `catalogue_cache_ttl_seconds == 10800`, `catalogue_refresh_lock_ttl_seconds == 60`.
   - `TestDefaults::test_catalogue_db_no_longer_exists` — `assert not hasattr(settings, "catalogue_db")`.
   - `TestDefaults::test_a_trailing_slash_on_the_supabase_url_is_normalized_away`
@@ -218,15 +249,28 @@ sides of it. Do the sub-steps in order; commit once at the end.
   - `TestInvalidValuesFailFast::test_a_ttl_below_sixty_seconds_is_rejected`
   - **Expected RED:** `AssertionError: hasattr(settings, 'catalogue_db') is True` and `Failed: DID NOT RAISE ValidationError`.
   - **GREEN:** rewrite `services/matcher/src/matcher/config.py` per D6; remove `catalogue_db`.
-- [ ] 5.2 **RED** — `services/matcher/tests/unit/test_service.py::TestAtomicIndex::test_the_service_holds_one_immutable_catalogue_index` — construct `MatcherService(settings, source, cache)`; assert `service._index` is a frozen `CatalogueIndex` bundling both `catalogue` and a built `TrigramSimilarityMatcher`. **Expected RED:** `TypeError: MatcherService.__init__() takes 2 positional arguments but 4 were given`. **GREEN:** add `CatalogueIndex` (frozen dataclass) and the three-arg constructor calling `load_index`.
-- [ ] 5.3 **RED** — `test_service.py::TestServiceMatch` migrated to warehouse codes: `test_an_unknown_warehouse_code_raises_unknown_catalogue`, `test_catalogues_reports_each_warehouse_code_with_its_row_count`, `test_match_reads_the_index_once_at_entry`. **Expected RED:** `UnknownCatalogueError: unknown catalogue_id 'BOD-01'` on the happy-path test, because the fixture still builds SQLite table names. **GREEN:** driven by 5.4.
-- [ ] 5.4 **Migrate** `services/matcher/tests/conftest.py` (D7 table): DELETE `catalogue_db_path`, `make_synthetic_db`, `StockRow`, and the `sqlite3` import. REPLACE `settings` with `Settings(supabase_url="http://supabase.invalid", supabase_key="test", redis_url="redis://localhost:6379/0")` — constructed, never dialed. REPLACE `service` with `MatcherService(settings, FakeCatalogueSource(fixture_rows), RedisSnapshotCache(FakeRedis(), ...))`. REPLACE `client` with a `monkeypatch` of `main._build_adapters` returning the fake pair, keeping the real `TestClient` lifespan.
-- [ ] 5.5 **RED** — `services/matcher/tests/api/test_http.py`: `TestCatalogues::test_it_lists_warehouse_codes_with_row_counts` (REQ-API-2), and every `catalogue_id` literal across `TestMatchResponseShape` / `TestAllThreeStatusesReachable` / `TestClientErrors` swapped from stock-table names to fixture warehouse codes. **Expected RED:** HTTP 4xx `UnknownCatalogueError` on requests that previously matched. **GREEN:** fixture data only — the route code is unchanged.
-- [ ] 5.6 **RED** — `services/matcher/tests/api/test_logging.py::TestStartupLogging::test_it_reports_which_source_the_catalogue_came_from` — assert the INFO line matches `catalogue loaded catalogues=%d rows=%d source=%s` with `source` in `{redis-snapshot, supabase, redis-snapshot-stale}`, and that no `db=` fragment survives. The existing `"catalogue loaded"` substring assertion must keep passing (D5). **Expected RED:** `AssertionError: 'source=' not in 'catalogue loaded catalogues=8 rows=1405 db=/data/...'`. **GREEN:** edit the `logger.info` call in `main.lifespan` (currently `main.py:105-110`).
-- [ ] 5.7 **RED** — `services/matcher/tests/api/test_startup_retry.py`: swap the `CATALOGUE_DB` env manipulation for `SUPABASE_URL=http://127.0.0.1:9/` and `REDIS_URL=redis://127.0.0.1:9/0` (closed localhost ports → connection refused locally, **no external network**). `TestRetryRecoversFromATransientFailure`, `TestExhaustedRetriesFailFast`, and `TestTheProcessActuallyExitsThree` keep their factory-monkeypatch structure and their assertions verbatim. **Expected RED:** `AttributeError: 'Settings' object has no attribute 'catalogue_db'` from the old env setup. **GREEN:** add module-level `_build_adapters(settings) -> tuple[CatalogueSource, SnapshotCache]` in `main.py`, called by `_load_service_with_retry` — the monkeypatch seam.
-- [ ] 5.8 **DELETE** — from `services/matcher/src/matcher/catalogue.py`: `STOCK_TABLES`, `open_readonly`, `load_catalogue`, the legacy `Row`, and the `sqlite3`/`Path` imports. Keep `CatalogueUnavailableError` and `load_index`; re-export `Row`, `Snapshot`, `CatalogueSource`, `SnapshotCache` from `matcher.ports` so `matcher.catalogue.Row` resolves as D2 specifies. From `services/matcher/tests/unit/test_service.py`: delete `TestReadOnlyConnection`, `TestLoadCatalogue`, `_FetchFailingConnection`, `TestFetchTimeCorruption` (REQ-API-5 is REMOVED by the spec delta — these tests retire with the loader they cover).
-- [ ] 5.9 **Fix the coupled container test** — `services/matcher/tests/unit/test_container.py::TestCompose::test_compose_env_defaults_match_the_settings_defaults` constructs `Settings(catalogue_db=Path("/data/bodegas-y-stock.sqlite"))` at line 168. Drop that kwarg (supply `supabase_url`/`supabase_key` instead). **Leave `test_mounts_the_catalogue_read_only` alone in this commit** — the compose mount still exists until WU-8, so it stays green here.
-- [ ] 5.10 **SEQUENCING HAZARD — read carefully.** `services/matcher/tests/eval/test_eval_accuracy.py` consumes the `service` fixture and `case["table"]`/`case["gold_rowid"]`, both of which die in this commit. Add a module-level `pytestmark = pytest.mark.skip(reason="eval set remapped to warehouse identities in WU-6; see openspec/changes/redis-catalogue-cache/tasks.md")`. **This skip is intentional and MUST live for exactly one commit** — WU-6 removes it. `sdd-verify` must confirm no `skip`/`xfail` marker survives in `services/matcher/tests/eval/` at the end of the change. **Verify WU-5:** `uv run pytest` → **1 failed** (credential test only), eval suite reported as skipped.
+- [x] 5.2 **RED** — `services/matcher/tests/unit/test_service.py::TestAtomicIndex::test_the_service_holds_one_immutable_catalogue_index` — construct `MatcherService(settings, source, cache)`; assert `service._index` is a frozen `CatalogueIndex` bundling both `catalogue` and a built `TrigramSimilarityMatcher`. **Expected RED:** `TypeError: MatcherService.__init__() takes 2 positional arguments but 4 were given`. **GREEN:** add `CatalogueIndex` (frozen dataclass) and the three-arg constructor calling `load_index`.
+- [x] 5.3 **RED** — `test_service.py::TestServiceMatch` migrated to warehouse codes: `test_an_unknown_warehouse_code_raises_unknown_catalogue`, `test_catalogues_reports_each_warehouse_code_with_its_row_count`, `test_match_reads_the_index_once_at_entry`. **Expected RED:** `UnknownCatalogueError: unknown catalogue_id 'BOD-01'` on the happy-path test, because the fixture still builds SQLite table names. **GREEN:** driven by 5.4.
+- [x] 5.4 **Migrate** `services/matcher/tests/conftest.py` (D7 table): DELETE `catalogue_db_path`, `make_synthetic_db`, `StockRow`, and the `sqlite3` import. REPLACE `settings` with `Settings(supabase_url="http://supabase.invalid", supabase_key="test", redis_url="redis://localhost:6379/0")` — constructed, never dialed. REPLACE `service` with `MatcherService(settings, FakeCatalogueSource(fixture_rows), RedisSnapshotCache(FakeRedis(), ...))`. REPLACE `client` with a `monkeypatch` of `main._build_adapters` returning the fake pair, keeping the real `TestClient` lifespan.
+- [x] 5.5 **RED** — `services/matcher/tests/api/test_http.py`: `TestCatalogues::test_it_lists_warehouse_codes_with_row_counts` (REQ-API-2), and every `catalogue_id` literal across `TestMatchResponseShape` / `TestAllThreeStatusesReachable` / `TestClientErrors` swapped from stock-table names to fixture warehouse codes. **Expected RED:** HTTP 4xx `UnknownCatalogueError` on requests that previously matched. **GREEN:** fixture data only — the route code is unchanged.
+- [x] 5.6 **RED** — `services/matcher/tests/api/test_logging.py::TestStartupLogging::test_it_reports_which_source_the_catalogue_came_from` — assert the INFO line matches `catalogue loaded catalogues=%d rows=%d source=%s` with `source` in `{redis-snapshot, supabase, redis-snapshot-stale}`, and that no `db=` fragment survives. The existing `"catalogue loaded"` substring assertion must keep passing (D5). **Expected RED:** `AssertionError: 'source=' not in 'catalogue loaded catalogues=8 rows=1405 db=/data/...'`. **GREEN:** edit the `logger.info` call in `main.lifespan` (currently `main.py:105-110`).
+- [x] 5.7 **RED** — `services/matcher/tests/api/test_startup_retry.py`: swap the `CATALOGUE_DB` env manipulation for `SUPABASE_URL=http://127.0.0.1:9/` and `REDIS_URL=redis://127.0.0.1:9/0` (closed localhost ports → connection refused locally, **no external network**). `TestRetryRecoversFromATransientFailure`, `TestExhaustedRetriesFailFast`, and `TestTheProcessActuallyExitsThree` keep their factory-monkeypatch structure and their assertions verbatim. **Expected RED:** `AttributeError: 'Settings' object has no attribute 'catalogue_db'` from the old env setup. **GREEN:** add module-level `_build_adapters(settings) -> tuple[CatalogueSource, SnapshotCache]` in `main.py`, called by `_load_service_with_retry` — the monkeypatch seam.
+- [x] 5.8 **DELETE** — from `services/matcher/src/matcher/catalogue.py`: `STOCK_TABLES`, `open_readonly`, `load_catalogue`, the legacy `Row`, and the `sqlite3`/`Path` imports. Keep `CatalogueUnavailableError` and `load_index`; re-export `Row`, `Snapshot`, `CatalogueSource`, `SnapshotCache` from `matcher.ports` so `matcher.catalogue.Row` resolves as D2 specifies. From `services/matcher/tests/unit/test_service.py`: delete `TestReadOnlyConnection`, `TestLoadCatalogue`, `_FetchFailingConnection`, `TestFetchTimeCorruption` (REQ-API-5 is REMOVED by the spec delta — these tests retire with the loader they cover).
+- [x] 5.9 *Applied deviation: `test_container.py` had **two** `Settings(catalogue_db=...)` constructions, not one — line 168 and line 210 (`test_pins_the_startup_retry_knobs`). Both were switched to `Settings(supabase_url=..., supabase_key=...)`; leaving the second would have failed collection for a reason this task did not predict. `test_mounts_the_catalogue_read_only` was left untouched as instructed and is still green.* **Fix the coupled container test** — `services/matcher/tests/unit/test_container.py::TestCompose::test_compose_env_defaults_match_the_settings_defaults` constructs `Settings(catalogue_db=Path("/data/bodegas-y-stock.sqlite"))` at line 168. Drop that kwarg (supply `supabase_url`/`supabase_key` instead). **Leave `test_mounts_the_catalogue_read_only` alone in this commit** — the compose mount still exists until WU-8, so it stays green here.
+- [x] 5.10 **SEQUENCING HAZARD — read carefully.** `services/matcher/tests/eval/test_eval_accuracy.py` consumes the `service` fixture and `case["table"]`/`case["gold_rowid"]`, both of which die in this commit. Add a module-level `pytestmark = pytest.mark.skip(reason="eval set remapped to warehouse identities in WU-6; see openspec/changes/redis-catalogue-cache/tasks.md")`. **This skip is intentional and MUST live for exactly one commit** — WU-6 removes it. `sdd-verify` must confirm no `skip`/`xfail` marker survives in `services/matcher/tests/eval/` at the end of the change. **Verify WU-5:** `uv run pytest` → **1 failed** (credential test only), eval suite reported as skipped.
+
+> **CORRECTION, measured at WU-5 (not a regression).** The "1 failed after WU-5"
+> expectation in this task is **wrong**, and it contradicts the §"Definition of green"
+> table above, which already routes pre-existing failures #1-#3 to **WU-8**. Measured
+> after the cutover commit: **4 failed, 443 passed, 15 skipped** — the same four
+> pre-existing failures as every prior work unit, byte-identical. None of them is
+> reachable from this commit: #1/#2 assert the compose service set is exactly
+> `{"stt","matcher"}` (PR #12's `product_identification` drift — fixed by tasks 8.1/8.2)
+> and #3 is `services/product_identification/README.md` pointing at a service-local
+> compose file (fixed by task 8.4). Removing `Settings.catalogue_db` does not touch any
+> of them: they read `docker-compose.yml` and a README, never `Settings`. The suite
+> reaches 1 failed at **WU-8**, exactly as the table says. No test was adjusted to fit
+> the wrong number.
 
 ## WU-6: Eval fixture + offline remap + baseline re-pin — PARALLEL with WU-7
 

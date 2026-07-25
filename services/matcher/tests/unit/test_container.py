@@ -165,7 +165,7 @@ class TestCompose:
         """A drifting compose default would silently change production."""
         from matcher.config import Settings
 
-        defaults = Settings(catalogue_db=Path("/data/bodegas-y-stock.sqlite"))
+        defaults = Settings(supabase_url="http://supabase.invalid", supabase_key="test")
         assert (
             "MATCH_ACCEPT_SCORE: "
             f"${{MATCH_ACCEPT_SCORE:-{defaults.match_accept_score:.2f}}}"
@@ -207,7 +207,7 @@ class TestCompose:
         # Read the code defaults, not whatever the harness exported.
         monkeypatch.delenv("STARTUP_RETRIES", raising=False)
         monkeypatch.delenv("STARTUP_RETRY_DELAY_SECONDS", raising=False)
-        defaults = Settings(catalogue_db=Path("/data/bodegas-y-stock.sqlite"))
+        defaults = Settings(supabase_url="http://supabase.invalid", supabase_key="test")
         assert (
             f"STARTUP_RETRIES: ${{STARTUP_RETRIES:-{defaults.startup_retries}}}"
             in compose

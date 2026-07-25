@@ -1,22 +1,33 @@
-"""Read-only catalogue loading (REQ-API-5, design D2).
+"""Catalogue resolution at startup (REQ-CSS-1/5, design D2/D5).
 
-Promoted from `spikes/matching/catalogue.py` with exactly the two design-D2
-edits: the connection is opened through a `mode=ro` URI, and the database path
-is a required parameter instead of a module-level default. Everything else --
-the stock table list, the `Row` shape, the null-`articulo` skip -- is unchanged.
+The catalogue no longer comes from a SQLite file: it is read from Supabase
+through a `CatalogueSource` and cached as a versioned snapshot behind a
+`SnapshotCache`. `load_index` is the fallback chain between the two.
 
-The whole catalogue is read into memory once at startup, so no connection
-outlives the load and the service never writes.
+`Row`, `Snapshot` and the two Protocols live in `ports.py` and are re-exported
+here, so the public `matcher.catalogue.Row` import path design D2 specifies
+keeps resolving. The SQLite loader (`STOCK_TABLES`, `open_readonly`,
+`load_catalogue` and the old stock-carrying `Row`) is deleted with the
+requirement it served: REQ-API-5 is REMOVED by this change's spec delta, and
+under REQ-CSS-4 stock is now never even loaded.
 """
 from __future__ import annotations
 
 import logging
-import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
 
-from matcher.ports import CatalogueSource, Row as CatalogueRow, Snapshot, SnapshotCache
+from matcher.ports import CatalogueSource, Row, Snapshot, SnapshotCache
+
+__all__ = [
+    "CatalogueSource",
+    "CatalogueUnavailableError",
+    "LoadedCatalogue",
+    "Row",
+    "Snapshot",
+    "SnapshotCache",
+    "load_index",
+]
 
 logger = logging.getLogger("matcher")
 
@@ -24,96 +35,28 @@ SOURCE_REDIS_SNAPSHOT = "redis-snapshot"
 SOURCE_REDIS_SNAPSHOT_STALE = "redis-snapshot-stale"
 SOURCE_SUPABASE = "supabase"
 
-STOCK_TABLES = [
-    "stock_almacen_ayb",
-    "stock_almacen_suministros",
-    "stock_kiosco_piscigiros_ayb",
-    "stock_kiosco_taquilla_ayb",
-    "stock_restaurante_fuentes_ayb",
-    "stock_restaurante_fuentes_sumin",
-    "zoologico",
-    "zoologico_suministros",
-]
-
 
 class CatalogueUnavailableError(RuntimeError):
     """The catalogue cannot be loaded: startup must abort, never serve empty."""
-
-
-@dataclass
-class Row:
-    table: str
-    rowid: int
-    articulo: str
-    unidad: str | None
-    sd: float | None
-    nr_articulo: str | None
-
-    @property
-    def uid(self) -> str:
-        return f"{self.table}#{self.rowid}"
-
-
-def open_readonly(db_path: Path) -> sqlite3.Connection:
-    """Open the catalogue strictly read-only; a missing file is never created."""
-    return sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-
-
-def load_catalogue(db_path: Path) -> dict[str, list[Row]]:
-    """Load every stock table into memory, or raise `CatalogueUnavailableError`."""
-    try:
-        con = open_readonly(db_path)
-    except sqlite3.Error as exc:
-        raise CatalogueUnavailableError(
-            f"cannot open catalogue database '{db_path}': {exc}"
-        ) from exc
-
-    try:
-        cur = con.cursor()
-        out: dict[str, list[Row]] = {}
-        for t in STOCK_TABLES:
-            try:
-                cur.execute(
-                    f'SELECT rowid, articulo, unidad, sd, nr_articulo FROM "{t}"'
-                )
-                # fetchall() belongs inside the same guard: sqlite only detects
-                # page-level corruption ("database disk image is malformed")
-                # while it streams rows, so a fetch-time failure must produce
-                # the same contextual error as a plan-time one.
-                rows_raw = cur.fetchall()
-            except sqlite3.Error as exc:
-                raise CatalogueUnavailableError(
-                    f"catalogue database '{db_path}' is unusable "
-                    f"(table '{t}'): {exc}"
-                ) from exc
-            rows = []
-            for rowid, articulo, unidad, sd, nr_articulo in rows_raw:
-                if articulo is None:
-                    continue
-                rows.append(Row(t, rowid, articulo, unidad, sd, nr_articulo))
-            out[t] = rows
-        return out
-    finally:
-        con.close()
 
 
 @dataclass(frozen=True)
 class LoadedCatalogue:
     """The catalogue plus where it came from, for the startup log line."""
 
-    catalogue: dict[str, list[CatalogueRow]]
+    catalogue: dict[str, list[Row]]
     source: str
 
 
-def _group(rows: list[CatalogueRow]) -> dict[str, list[CatalogueRow]]:
+def _group(rows: list[Row]) -> dict[str, list[Row]]:
     """Rebuild the per-warehouse grouping from a flat snapshot payload."""
-    grouped: dict[str, list[CatalogueRow]] = {}
+    grouped: dict[str, list[Row]] = {}
     for row in rows:
         grouped.setdefault(row.warehouse_code, []).append(row)
     return grouped
 
 
-def _flatten(catalogue: dict[str, list[CatalogueRow]]) -> list[CatalogueRow]:
+def _flatten(catalogue: dict[str, list[Row]]) -> list[Row]:
     return [row for rows in catalogue.values() for row in rows]
 
 

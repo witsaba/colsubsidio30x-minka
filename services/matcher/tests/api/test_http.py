@@ -1,25 +1,36 @@
 """HTTP surface smoke suite (REQ-API-1/2/3/4, design §HTTP contract).
 
 These tests exercise the real FastAPI app through `fastapi.testclient`, with
-the app's own lifespan loading the committed catalogue read-only. They prove
-the wire contract, not the engine: engine semantics are already pinned by the
-unit suite, so what matters here is that every field survives serialization,
-that all three statuses are reachable by a caller, and that the two client
-error paths (unknown catalogue, blank name) never masquerade as a `no_match`.
+the app's own lifespan resolving the catalogue through the real `load_index`
+over the fixture adapters. They prove the wire contract, not the engine:
+engine semantics are already pinned by the unit suite, so what matters here is
+that every field survives serialization, that all three statuses are reachable
+by a caller, and that the two client error paths (unknown catalogue, blank
+name) never masquerade as a `no_match`.
 
-Query provenance (measured against `data/bodegas-y-stock.sqlite`):
-  - "achiote molido"  -> matched   (top 1.0, margin 0.65)
-  - "aceite de oliva" -> ambiguous (wide trigram margin, crowded token_set_ratio)
-  - "zzzzqqq xkcd"    -> no_match  (top 0.048)
+**BREAKING (REQ-API-2)**: `catalogue_id` is a `warehouses.code`, not one of the
+eight retired SQLite stock-table names.
+
+Query provenance (measured against `conftest.FIXTURE_CATALOGUE`):
+  - "achiote molido"  -> matched   (a single close row)
+  - "aceite de oliva" -> ambiguous (two near-identical olive-oil rows)
+  - "zzzzqqq xkcd"    -> no_match  (nothing above the accept score)
 """
 from __future__ import annotations
 
 import uuid
-from pathlib import Path
 
 import pytest
+from conftest import (
+    FIXTURE_CATALOGUE_ID,
+    FIXTURE_ROW_COUNT,
+    FIXTURE_WAREHOUSES,
+    FakeCatalogueSource,
+    make_cache,
+)
 
-CATALOGUE = "stock_almacen_ayb"
+CATALOGUE = FIXTURE_CATALOGUE_ID
+UNKNOWN_CATALOGUE = "BOD-99"
 
 MATCHED_QUERY = "achiote molido"
 AMBIGUOUS_QUERY = "aceite de oliva"
@@ -27,6 +38,17 @@ NO_MATCH_QUERY = "zzzzqqq xkcd"
 
 CANDIDATE_FIELDS = {"nr_articulo", "articulo", "unidad", "unidad_display", "score"}
 RESPONSE_FIELDS = {"status", "candidates", "top_score", "margin", "request_id"}
+
+
+def _install_failing_adapters(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Both legs of the D5 chain dead: an empty cache and a failing source."""
+    from matcher import main as main_module
+
+    monkeypatch.setattr(
+        main_module,
+        "_build_adapters",
+        lambda _settings: (FakeCatalogueSource(fail_times=99), make_cache()),
+    )
 
 
 def post_match(client, **overrides) -> object:
@@ -132,14 +154,14 @@ class TestAllThreeStatusesReachable:
 
 class TestClientErrors:
     def test_unknown_catalogue_is_404(self, client) -> None:
-        assert post_match(client, catalogue_id="not_a_table").status_code == 404
+        assert post_match(client, catalogue_id=UNKNOWN_CATALOGUE).status_code == 404
 
     def test_unknown_catalogue_detail_names_the_id(self, client) -> None:
-        detail = post_match(client, catalogue_id="not_a_table").json()["detail"]
-        assert "not_a_table" in detail
+        detail = post_match(client, catalogue_id=UNKNOWN_CATALOGUE).json()["detail"]
+        assert UNKNOWN_CATALOGUE in detail
 
     def test_unknown_catalogue_is_never_a_no_match(self, client) -> None:
-        body = post_match(client, catalogue_id="not_a_table").json()
+        body = post_match(client, catalogue_id=UNKNOWN_CATALOGUE).json()
         assert "status" not in body
 
     def test_blank_spoken_name_is_422(self, client) -> None:
@@ -175,15 +197,23 @@ class TestCatalogues:
     def test_returns_200(self, client) -> None:
         assert client.get("/catalogues").status_code == 200
 
-    def test_lists_the_eight_stock_tables(self, client) -> None:
+    def test_it_lists_warehouse_codes_with_row_counts(self, client) -> None:
+        """REQ-API-2: one entry per warehouse, keyed by `warehouses.code`."""
         entries = client.get("/catalogues").json()["catalogues"]
-        assert len(entries) == 8
 
-    def test_ids_match_the_stock_table_names(self, client) -> None:
-        from matcher.catalogue import STOCK_TABLES
+        assert sorted(e["catalogue_id"] for e in entries) == sorted(
+            FIXTURE_WAREHOUSES
+        )
+        assert sum(e["rows"] for e in entries) == FIXTURE_ROW_COUNT
 
+    def test_no_stock_table_name_is_listed_any_more(self, client) -> None:
+        """BREAKING: the eight SQLite table names are gone (REQ-CSS-1)."""
         entries = client.get("/catalogues").json()["catalogues"]
-        assert [e["catalogue_id"] for e in entries] == STOCK_TABLES
+
+        assert not any(
+            e["catalogue_id"].startswith(("stock_", "zoologico"))
+            for e in entries
+        )
 
     def test_every_entry_has_a_positive_row_count(self, client) -> None:
         entries = client.get("/catalogues").json()["catalogues"]
@@ -209,8 +239,8 @@ class TestHealth:
 
     def test_reports_catalogue_and_row_totals(self, client) -> None:
         body = client.get("/health").json()
-        assert body["catalogues"] == 8
-        assert body["rows"] > 0
+        assert body["catalogues"] == len(FIXTURE_WAREHOUSES)
+        assert body["rows"] == FIXTURE_ROW_COUNT
 
     def test_row_total_equals_the_sum_of_catalogue_rows(self, client) -> None:
         entries = client.get("/catalogues").json()["catalogues"]
@@ -221,42 +251,56 @@ class TestHealth:
 
 
 class TestStartupFailsFast:
-    def test_missing_database_aborts_startup(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    def test_an_unavailable_catalogue_aborts_startup(
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """REQ-CSS-5: no catalogue means no service, never an empty one."""
         from fastapi.testclient import TestClient
 
         from matcher.catalogue import CatalogueUnavailableError
         from matcher.main import app
 
-        monkeypatch.setenv("CATALOGUE_DB", str(tmp_path / "absent.sqlite"))
+        _install_failing_adapters(monkeypatch)
         with pytest.raises(CatalogueUnavailableError):
             with TestClient(app):
                 pass
 
     def test_invalid_threshold_aborts_startup(
-        self, catalogue_db_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         from fastapi.testclient import TestClient
         from pydantic import ValidationError
 
         from matcher.main import app
 
-        monkeypatch.setenv("CATALOGUE_DB", str(catalogue_db_path))
         monkeypatch.setenv("MATCH_ACCEPT_SCORE", "not-a-number")
         with pytest.raises(ValidationError):
             with TestClient(app):
                 pass
 
+    def test_a_missing_supabase_url_aborts_startup(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """REQ-API-4: a missing credential is permanent, never retried."""
+        from fastapi.testclient import TestClient
+        from pydantic import ValidationError
+
+        from matcher.main import app
+
+        monkeypatch.delenv("SUPABASE_URL", raising=False)
+        with pytest.raises(ValidationError):
+            with TestClient(app):
+                pass
+
     def test_no_service_is_left_behind_after_a_failed_startup(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         from fastapi.testclient import TestClient
 
         from matcher.catalogue import CatalogueUnavailableError
         from matcher.main import app
 
-        monkeypatch.setenv("CATALOGUE_DB", str(tmp_path / "absent.sqlite"))
+        _install_failing_adapters(monkeypatch)
         with pytest.raises(CatalogueUnavailableError):
             with TestClient(app):
                 pass

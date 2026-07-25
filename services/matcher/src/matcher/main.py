@@ -2,7 +2,7 @@
 
 The app owns exactly one piece of state: a `MatcherService` built during the
 lifespan startup. Configuration parsing and catalogue loading both happen
-there, so an invalid threshold (`ValidationError`) or an unreadable database
+there, so an invalid threshold (`ValidationError`) or an unresolvable catalogue
 (`CatalogueUnavailableError`) aborts startup and uvicorn exits non-zero -- the
 service never serves an empty or misconfigured catalogue, and the compose
 healthcheck therefore never passes on a broken deployment.
@@ -26,10 +26,14 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
+import httpx
+import redis
 from fastapi import Depends, FastAPI, HTTPException, Request
 
+from matcher.cache import RedisSnapshotCache
 from matcher.catalogue import CatalogueUnavailableError
 from matcher.config import Settings
+from matcher.ports import CatalogueSource, SnapshotCache
 from matcher.schemas import (
     CatalogueEntry,
     CataloguesResponse,
@@ -38,6 +42,7 @@ from matcher.schemas import (
     MatchResponse,
 )
 from matcher.service import MatcherService, UnknownCatalogueError
+from matcher.supabase_source import SupabaseCatalogueSource
 
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 
@@ -62,19 +67,40 @@ def configure_logging() -> None:
 configure_logging()
 
 
+def _build_adapters(settings: Settings) -> tuple[CatalogueSource, SnapshotCache]:
+    """Construct the two ports the service composes (design D2).
+
+    Neither client dials anything here: `httpx.Client` and `redis.Redis` both
+    connect lazily, so construction cannot fail on a cold network and every
+    real I/O failure stays inside the bounded startup retry below. This is also
+    the seam the lifespan tests monkeypatch to run the real app over fakes.
+    """
+    http_client = httpx.Client(timeout=settings.supabase_timeout_seconds)
+    source = SupabaseCatalogueSource(
+        http_client, settings.supabase_url, settings.supabase_key
+    )
+    cache = RedisSnapshotCache(
+        redis.Redis.from_url(settings.redis_url),
+        ttl_seconds=settings.catalogue_cache_ttl_seconds,
+        lock_ttl_seconds=settings.catalogue_refresh_lock_ttl_seconds,
+    )
+    return source, cache
+
+
 def _load_service_with_retry(settings: Settings) -> MatcherService:
     """Build the service, retrying a bounded number of times.
 
     Two retry layers, deliberately: this loop absorbs the seconds-long cold
-    start race (catalogue volume not mounted yet, file mid-copy), and Docker's
-    `restart: unless-stopped` absorbs everything longer once the process exits.
-    Exhaustion is always an abort -- the service must never come up serving an
-    empty catalogue.
+    start race (Supabase or Redis not reachable yet, a transient 5xx), and
+    Docker's `restart: unless-stopped` absorbs everything longer once the
+    process exits. Exhaustion is always an abort -- the service must never come
+    up serving an empty catalogue.
     """
+    source, cache = _build_adapters(settings)
     attempts = settings.startup_retries + 1
     for attempt in range(1, attempts + 1):
         try:
-            return MatcherService(settings)
+            return MatcherService(settings, source, cache)
         except CatalogueUnavailableError as exc:
             if attempt == attempts:
                 # Startup aborts (uvicorn exits 3). Leave the reason in the log
@@ -102,11 +128,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = Settings()
     service = _load_service_with_retry(settings)
     loaded = service.catalogues()
+    # `source` records which leg of the D5 fallback chain actually served this
+    # start: an outage is diagnosable from the log alone, and a replica quietly
+    # running on a stale snapshot is visible instead of indistinguishable.
     logger.info(
-        "catalogue loaded catalogues=%d rows=%d db=%s",
+        "catalogue loaded catalogues=%d rows=%d source=%s",
         len(loaded),
         sum(rows for _, rows in loaded),
-        settings.catalogue_db,
+        service.source,
     )
     app.state.service = service
     try:
@@ -132,7 +161,7 @@ def match(
     payload: MatchRequest,
     service: MatcherService = Depends(get_service),
 ) -> MatchResponse:
-    """Resolve one spoken product name against one stock table."""
+    """Resolve one spoken product name against one warehouse catalogue."""
     # Minted here so the 404 path below is correlatable too, not only the
     # answered request that carries it back in the response body.
     request_id = str(uuid.uuid4())
@@ -174,11 +203,11 @@ def match(
 def catalogues(
     service: MatcherService = Depends(get_service),
 ) -> CataloguesResponse:
-    """List the loadable `catalogue_id` values with their row counts."""
+    """List the loaded warehouse codes with their row counts (REQ-API-2)."""
     return CataloguesResponse(
         catalogues=[
-            CatalogueEntry(catalogue_id=table, rows=rows)
-            for table, rows in service.catalogues()
+            CatalogueEntry(catalogue_id=code, rows=rows)
+            for code, rows in service.catalogues()
         ]
     )
 
