@@ -228,6 +228,34 @@ async def test_an_explicit_fallback_vendor_wins_over_the_priority_order(make_cli
 
 
 @respx.mock
+async def test_deepgram_fails_over_to_elevenlabs_before_groq(make_client):
+    """The sanctioned chain is deepgram -> elevenlabs -> groq.
+
+    With every key configured the second layer is ElevenLabs, not Groq: it is
+    the stronger Spanish transcriber, and the primary is already failing by
+    the time it is reached.
+    """
+    client = await make_client(**ALL_KEYS)
+    respx.post(DEEPGRAM_URL).mock(return_value=httpx.Response(503, text="unavailable"))
+    elevenlabs_route = respx.post(ELEVENLABS_URL).mock(
+        return_value=httpx.Response(
+            200, json=elevenlabs_payload(text="dos bultos de papa")
+        )
+    )
+    groq_route = respx.post(GROQ_URL).mock(
+        return_value=httpx.Response(200, json=groq_payload())
+    )
+
+    body = (await client.post("/transcribe", files=audio_upload())).json()
+
+    assert body["stt_vendor"] == "elevenlabs"
+    assert body["raw_transcript"] == "dos bultos de papa"
+    assert elevenlabs_route.call_count == 1
+    assert not groq_route.called, "groq is the third layer, not the second"
+    assert elevenlabs_route.calls[0].request.headers["xi-api-key"] == "el-key"
+
+
+@respx.mock
 async def test_auto_selection_follows_the_priority_order(make_client):
     """Groq primary with two candidates configured: deepgram comes first."""
     client = await make_client(STT_VENDOR="groq", **ALL_KEYS)
