@@ -4,7 +4,11 @@ services:
     ports:
       - "8001:8001"
     environment:
-      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:?set it in .env}
+      # Neither key is required here: only the ACTIVE vendor's key is, and the
+      # boot validator in src/settings.py already fails fast with a message
+      # naming the missing variable (REQ-VND-5). Demanding both at the compose
+      # layer only blocked Groq-only deployments (JD-4).
+      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       STT_VENDOR: ${STT_VENDOR:-deepgram}
       STT_LANGUAGE: es

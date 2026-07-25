@@ -105,6 +105,15 @@ Loaded by pydantic-settings at boot. A missing API key **for the selected
 vendor** fails startup before the first request; the other vendor's key may stay
 empty. An unrecognised `STT_VENDOR` also fails startup.
 
+That check lives in `src/settings.py` and nowhere else — `docker-compose.yml`
+passes both keys through without requiring either, so a Groq-only deployment
+(`STT_VENDOR=groq`, no Deepgram key) comes up:
+
+```bash
+env -u DEEPGRAM_API_KEY STT_VENDOR=groq GROQ_API_KEY=... \
+  docker compose -f services/stt/docker-compose.yml up
+```
+
 | Variable | Default | Meaning |
 |---|---|---|
 | `STT_VENDOR` | `deepgram` | `deepgram` \| `groq`. The only change needed to swap vendor |
