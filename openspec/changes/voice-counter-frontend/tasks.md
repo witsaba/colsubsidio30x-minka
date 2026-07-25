@@ -64,7 +64,7 @@ T21–T22 (auditor) run fully in parallel and must land before T24 (demo step 8)
 
 ## Phase 1 — Type & seam contracts (SEQUENTIAL · timebox 30 min)
 
-- [ ] **T3 — Freeze the shared type surface so parallel agents never collide.** Declarations only; no behavior, therefore no RED cycle (verified by `npx astro check` exiting 0).
+- [x] **T3 — Freeze the shared type surface so parallel agents never collide.** Declarations only; no behavior, therefore no RED cycle (verified by `npx astro check` exiting 0).
   Creates: `src/lib/api/types.ts` (`TranscribeResponse`, `ServiceError`, `MatchRequest`, `Candidate`, `MatchResponse`, `CatalogueInfo`, `UiErrorCode`, `UiError` — nullable fields exactly as design §8), `src/lib/extraction/adapter.ts` (`ExtractedItem`, `ExtractionAdapter`), `src/lib/anomaly/engine.ts` (`Anomaly`, `AnomalyEngine`), `src/lib/session/types.ts` (`Screen`, `Overlay`, `SessionState`, `SessionEvent` — the FULL event union from design §6 table, `CountRecord`), `src/lib/pipeline.ts` (`ConfirmableItem`, `QueueEntry`, `PipelineOutcome`, `PipelineDeps` + `runPipeline` stub that throws `new Error('not implemented')`).
   Requirements: REQ-EXT-1, REQ-OCF-1, REQ-OCF-7. Deps: T1.
 
