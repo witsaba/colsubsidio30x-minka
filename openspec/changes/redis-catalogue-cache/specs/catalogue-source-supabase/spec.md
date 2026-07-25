@@ -54,9 +54,13 @@ The catalogue SHALL include only rows where `warehouses.is_active`, `products.is
 - WHEN the catalogue is loaded
 - THEN its code is absent from the catalogue and from `GET /catalogues`
 
-### Requirement: Stock-data isolation and least privilege (REQ-CSS-4)
+### Requirement: Stock-data isolation (REQ-CSS-4)
 
-The matcher MUST NOT query `warehouse_stock_balances` under any circumstance: `theoretical_qty` is RF-18 / RLS-protected and MUST NOT reach an operator-facing service. The Supabase credential used by the matcher SHALL be least-privilege, with read access to only `warehouses`, `products`, `warehouse_products`, and `units`. (Extends REQ-ENG-2: stock is never a matching prior — now it is never even loaded.)
+The matcher MUST NOT query `warehouse_stock_balances` under any circumstance: `theoretical_qty` is RF-18 / RLS-protected and MUST NOT reach an operator-facing service, nor enter the Redis snapshot. (Extends REQ-ENG-2: stock is never a matching prior — now it is never even loaded.)
+
+Isolation SHALL be enforced in the service, not by the credential. The matcher authenticates with the Supabase `service_role` key, which bypasses RLS: a least-privilege alternative was investigated and is not available today, because the `anon` role holds no `GRANT` on any catalogue table (PostgREST returns HTTP 401 `42501`) and every read policy targets the `authenticated` role, with `warehouse_products_read` further requiring `private.is_staff()`. The credential is therefore *capable* of reading stock balances and MUST NOT be relied on as the control. Restoring a genuinely least-privilege catalogue-reader role is recorded as a follow-up for the Data Engineer.
+
+Because the credential is not the control, the following two controls are load-bearing and MUST both hold.
 
 #### Scenario: No stock query is ever issued
 
@@ -64,11 +68,17 @@ The matcher MUST NOT query `warehouse_stock_balances` under any circumstance: `t
 - WHEN the service starts and completes a refresh cycle
 - THEN the set of queried tables is exactly the four catalogue tables and never `warehouse_stock_balances`
 
-#### Scenario: Credential cannot read stock balances
+#### Scenario: The snapshot never carries stock data
 
-- GIVEN the matcher's Supabase credential
-- WHEN a read of `warehouse_stock_balances` is attempted with it
-- THEN the request is denied
+- GIVEN a snapshot encoded from any catalogue
+- WHEN its stored payload is inspected
+- THEN the payload carries exactly the five `Row` fields and no `theoretical_qty` or `sd` key
+
+#### Scenario: The credential never leaks through an error path
+
+- GIVEN a Supabase request that fails
+- WHEN the resulting exception is rendered
+- THEN its message contains no part of `SUPABASE_KEY`
 
 ### Requirement: Startup abort when no source can supply a catalogue (REQ-CSS-5)
 

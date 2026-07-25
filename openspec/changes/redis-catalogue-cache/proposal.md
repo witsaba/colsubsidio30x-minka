@@ -20,19 +20,23 @@ Catalogue data must come from the live source of truth (Supabase) without paying
 
 ## Key Decisions (design tensions, positions taken)
 
-1. **`catalogue_id` becomes `warehouses.code` — clean break, no compatibility mapping.** Breaking API change on `POST /match` and `GET /catalogues`: 8 SQLite table names → 56 warehouse codes. The 8→56 shapes don't map 1:1, and the only consumers are the service's own tests (services/matcher/tests/api/test_http.py) and the unmerged `feat/voice-counter-frontend` branch, which can adopt the new IDs before merge. A shim would preserve a dead identifier scheme.
-2. **`Row.sd` is DROPPED.** Verified unused by matching: scoring.py:9 ("Stock level (`sd`) is never a matching prior"), `decide()`'s `RowLike` (decision.py:38-44) reads only `articulo/unidad/nr_articulo`, and tests/unit/test_scoring.py:127-129 asserts REQ-ENG-2 (`sd` must never influence ranking). Dropping it means the matcher never reads `warehouse_stock_balances` (RF-18/RLS-protected `theoretical_qty`), needs no privileged key, and the Redis snapshot never holds RF-18-restricted data. Least-privilege Supabase key with read access to only the four catalogue tables.
-3. **Identity**: `Row.uid` (`table#rowid`, zero external consumers) → `warehouse_products.id` (uuid). Row fields become: `warehouse_code`, `uid`, `articulo` = `products.name`, `unidad` = `unit_code`, `nr_articulo` = `products.sku`.
-4. **Redis and Supabase are SOFT dependencies of `/match`.** `/match` reads only the in-process index — zero I/O per request; p95 ~1.8ms is a hard non-regression constraint. Redis down never degrades `/match` availability.
-5. **Stampede control**: TTL jitter + per-process single-flight + Redis `SET NX` refresh lock; serve current in-process index while revalidating (stale-while-refresh). Data is ~1.4k rows; simple is correct.
-6. **Startup with Supabase AND Redis unreachable: abort.** Preserve `CatalogueUnavailableError` + `_load_service_with_retry` (main.py:65-92) philosophy — never serve an empty catalogue. Redis-only-down at startup: proceed via Supabase.
-7. **Config**: all tunables in `Settings` (config.py convention): `SUPABASE_URL`, `SUPABASE_KEY`, `REDIS_URL`, `CATALOGUE_CACHE_TTL_SECONDS`, snapshot key/version; `catalogue_db` removed.
-8. **Compose**: `redis` block added but no `depends_on` — Redis is a soft dependency, so the "services are deliberately independent" promise (docs/deployment.md, docker-compose.yml:10) survives with a documented nuance.
+1. **`catalogue_id` becomes `warehouses.code` — clean break, no compatibility mapping.** Breaking API change on `POST /match` and `GET /catalogues`. The only consumers are the service's own tests (services/matcher/tests/api/test_http.py) and the unmerged `feat/voice-counter-frontend` branch, which can adopt the new IDs before merge. A shim would preserve a dead identifier scheme.
+
+   **Corrected after live inspection** (this proposal originally assumed 8 → 56): `warehouses` holds 56 rows, but only **8** carry any `warehouse_products`, and those 8 correspond 1:1 to the legacy SQLite tables, differing only by upper-casing — with one trap. `zoologico_suministros` maps to `ZOOLOGICO_SUMINISTROS_2`, not `ZOOLOGICO_SUMINISTROS` (a load-time code collision), so a naive `upper()` remap silently drops 193 rows. Row totals also differ: 1,405 in Supabase against 1,461 in SQLite, most likely `products.name_normalized` UNIQUE deduping. The break is therefore far smaller than first assessed, but the eval remap must handle the `_2` case and account for the 56 missing rows explicitly rather than letting coverage quietly fall.
+2. **Credential — corrected after live inspection.** This proposal assumed a least-privilege Supabase key scoped to the four catalogue tables. That is not available today: the `anon` role holds no `GRANT` on any catalogue table (PostgREST answers HTTP 401 `42501`), every read policy targets the `authenticated` role, and `warehouse_products_read` further demands `private.is_staff()`. Per the user's decision the matcher uses the **`service_role` key**, which bypasses RLS. Stock isolation is therefore enforced by the service and its tests — the source never issues a `warehouse_stock_balances` query and the snapshot never carries stock fields — not by the credential. A scoped catalogue-reader role remains a worthwhile follow-up for the Data Engineer. See REQ-CSS-4.
+
+3. **`Row.sd` is DROPPED.** Verified unused by matching: scoring.py:9 ("Stock level (`sd`) is never a matching prior"), `decide()`'s `RowLike` (decision.py:38-44) reads only `articulo/unidad/nr_articulo`, and tests/unit/test_scoring.py:127-129 asserts REQ-ENG-2 (`sd` must never influence ranking). Dropping it means the matcher never reads `warehouse_stock_balances` (RF-18/RLS-protected `theoretical_qty`) and the Redis snapshot never holds RF-18-restricted data. (The original claim that this also removed the need for a privileged key did not survive contact with the live project — see decision 2.)
+4. **Identity**: `Row.uid` (`table#rowid`, zero external consumers) → `warehouse_products.id` (uuid). Row fields become: `warehouse_code`, `uid`, `articulo` = `products.name`, `unidad` = `unit_code`, `nr_articulo` = `products.sku`.
+5. **Redis and Supabase are SOFT dependencies of `/match`.** `/match` reads only the in-process index — zero I/O per request; p95 ~1.8ms is a hard non-regression constraint. Redis down never degrades `/match` availability.
+6. **Stampede control**: TTL jitter + per-process single-flight + Redis `SET NX` refresh lock; serve current in-process index while revalidating (stale-while-refresh). Data is ~1.4k rows; simple is correct.
+7. **Startup with Supabase AND Redis unreachable: abort.** Preserve `CatalogueUnavailableError` + `_load_service_with_retry` (main.py:65-92) philosophy — never serve an empty catalogue. Redis-only-down at startup: proceed via Supabase.
+8. **Config**: all tunables in `Settings` (config.py convention): `SUPABASE_URL`, `SUPABASE_KEY`, `REDIS_URL`, `CATALOGUE_CACHE_TTL_SECONDS`, snapshot key/version; `catalogue_db` removed.
+9. **Compose**: `redis` block added but no `depends_on` — Redis is a soft dependency, so the "services are deliberately independent" promise (docs/deployment.md, docker-compose.yml:10) survives with a documented nuance.
 
 ## Capabilities
 
 ### New Capabilities
-- `catalogue-source-supabase`: matcher catalogue loading from Supabase (tables, identity, least-privilege access, active-row filtering, startup abort semantics).
+- `catalogue-source-supabase`: matcher catalogue loading from Supabase (tables, identity, stock-data isolation, active-row filtering, startup abort semantics).
 - `catalogue-redis-cache`: Redis snapshot cache with TTL refresh, soft-dependency guarantees, stampede control.
 
 ### Modified Capabilities
@@ -84,7 +88,7 @@ Single revert of the feature branch/PR chain restores the SQLite path; `data/bod
 - [ ] `POST /match` accuracy tests pass unchanged (scoring/decide untouched); p95 in-process latency preserved (no per-request I/O).
 - [ ] Startup: cold Redis + live Supabase → loads and writes snapshot; warm Redis → no Supabase call; both down → abort non-zero.
 - [ ] Kill Redis while running: `/match` unaffected; refresh logs a warning, index keeps serving.
-- [ ] `GET /catalogues` returns 56 warehouse codes with `warehouse_products` counts; no SQLite/`CATALOGUE_DB` reference remains in matcher or compose.
+- [ ] `GET /catalogues` returns the 8 warehouse codes that carry rows, with `warehouse_products` counts; no SQLite/`CATALOGUE_DB` reference remains in matcher or compose.
 - [ ] Redis snapshot contains no `theoretical_qty`/`sd` data; matcher credential cannot read `warehouse_stock_balances`.
 - [ ] `uv run pytest` green from repo root, including updated `tests/deployment/*`.
 

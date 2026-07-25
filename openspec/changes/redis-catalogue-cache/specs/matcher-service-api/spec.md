@@ -6,7 +6,7 @@ Base: `openspec/specs/matcher-service-api/spec.md` (rev 4). Breaking change: `ca
 
 ### Requirement: POST /match contract (REQ-API-1)
 
-`POST /match` SHALL accept `{"spoken_name": str, "catalogue_id": str, "unit": str|null}` where `catalogue_id` is a warehouse code (`warehouses.code`, e.g. one of the 56 active codes — no longer a SQLite stock-table name), and SHALL respond with `{"status", "candidates", "top_score", "margin", "request_id"}` where `status` is exactly one of `matched`, `ambiguous`, `no_match` and each candidate carries `nr_articulo`, `articulo`, `unidad`, `score`. A caller MUST be able to distinguish all three statuses from the response body. An unknown `catalogue_id` SHALL yield an HTTP 4xx client error via the existing `UnknownCatalogueError` path, never a `no_match`. Every request string field SHALL carry an upper length bound — `spoken_name` max 300, `catalogue_id` max 100, `unit` max 50 characters — and a request exceeding any bound SHALL yield HTTP 422; a blank or whitespace-only `spoken_name` is likewise rejected with HTTP 422 before the request reaches the matcher (unchanged).
+`POST /match` SHALL accept `{"spoken_name": str, "catalogue_id": str, "unit": str|null}` where `catalogue_id` is a warehouse code (`warehouses.code` — no longer a SQLite stock-table name; 8 codes carry a catalogue on the real project), and SHALL respond with `{"status", "candidates", "top_score", "margin", "request_id"}` where `status` is exactly one of `matched`, `ambiguous`, `no_match` and each candidate carries `nr_articulo`, `articulo`, `unidad`, `score`. A caller MUST be able to distinguish all three statuses from the response body. An unknown `catalogue_id` SHALL yield an HTTP 4xx client error via the existing `UnknownCatalogueError` path, never a `no_match`. Every request string field SHALL carry an upper length bound — `spoken_name` max 300, `catalogue_id` max 100, `unit` max 50 characters — and a request exceeding any bound SHALL yield HTTP 422; a blank or whitespace-only `spoken_name` is likewise rejected with HTTP 422 before the request reaches the matcher (unchanged).
 (Previously: `catalogue_id` identified one of the 8 SQLite stock tables.)
 
 #### Scenario: Matched response shape
@@ -35,7 +35,7 @@ Base: `openspec/specs/matcher-service-api/spec.md` (rev 4). Breaking change: `ca
 
 ### Requirement: GET /catalogues (REQ-API-2)
 
-`GET /catalogues` SHALL return the list of loadable catalogue ids — the active, non-merged warehouse codes (`warehouses.code`; 56 on the real catalogue) — each with its `warehouse_products` row count.
+`GET /catalogues` SHALL return the list of loadable catalogue ids — the active, non-merged warehouse codes (`warehouses.code`) that actually carry rows — each with its `warehouse_products` row count. On the real project this is 8 codes over 1,405 rows: `warehouses` holds 56 rows, but only 8 have any `warehouse_products`, and a warehouse with no rows is not a loadable catalogue.
 (Previously: returned the 8 SQLite stock-table names.)
 
 #### Scenario: Catalogue listing
