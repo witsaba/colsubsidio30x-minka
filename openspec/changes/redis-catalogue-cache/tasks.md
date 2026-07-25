@@ -188,21 +188,22 @@ Add to `services/matcher/tests/conftest.py` (additive only — legacy SQLite fix
 until WU-5): `make_rows(...)` and `FakeCatalogueSource(rows, fail_times=0)` exposing a
 `calls: int` counter and a `queried_tables: set[str]` record.
 
-- [ ] 4.1 **RED — THE CORE REQUIREMENT** — create `services/matcher/tests/unit/test_load_index.py`, `TestWarmStart`:
+- [x] 4.1 **RED — THE CORE REQUIREMENT** — create `services/matcher/tests/unit/test_load_index.py`, `TestWarmStart`:
   - `test_a_fresh_snapshot_performs_zero_supabase_calls` — seed a `RedisSnapshotCache` over `fakeredis` with a snapshot whose `loaded_at` is `now - 1s` and `ttl = 10800`; call `load_index(source, cache, ttl_seconds=10800)`; **assert `source.calls == 0`** and the index holds the snapshot's rows. This is the user's stated core requirement (REQ-RCC-1, "Warm start performs zero Supabase calls").
   - **Expected RED (step 1):** `ImportError: cannot import name 'load_index' from 'matcher.catalogue'`. **Expected RED (step 2, if an implementation reaches for Supabase unconditionally):** `AssertionError: assert 1 == 0` — i.e. `expected 0 supabase calls, got 1`.
   - `test_the_reported_source_is_redis_snapshot` — `load_index` returns/logs `source="redis-snapshot"`.
-- [ ] 4.2 **RED** — `TestColdStart`:
+- [x] 4.2 **RED** — `TestColdStart`:
   - `test_an_empty_cache_fetches_supabase_exactly_once` — `source.calls == 1`.
   - `test_a_cold_start_writes_the_snapshot_back` — `cache.get()` after the call returns a snapshot with the same rows.
   - `test_a_failing_cache_put_does_not_fail_startup` (REQ-RCC-1, best effort) — cache whose `put` raises; `load_index` still returns an index.
   - `test_the_reported_source_is_supabase`
-- [ ] 4.3 **RED** — `TestDegradedPaths`:
+- [x] 4.3 **RED** — `TestDegradedPaths`:
   - `test_a_stale_snapshot_triggers_a_supabase_fetch` — `loaded_at = now - 2*ttl`; `source.calls == 1`.
   - `test_a_stale_snapshot_serves_when_supabase_fails` (D5 step 3) — assert the stale rows are served, source reported as `redis-snapshot-stale`, and a WARNING is emitted on logger `matcher`.
   - `test_an_incompatible_snapshot_version_is_treated_as_a_miss` (REQ-RCC-1)
-  - `test_redis_unreachable_but_supabase_up_still_loads_and_warns` (REQ-CSS-5 second scenario)
-- [ ] 4.4 **RED then GREEN** — `TestBothUnavailable::test_no_snapshot_and_a_failing_source_raises_catalogue_unavailable` (REQ-CSS-5). **GREEN:** add `load_index(source, cache, ttl_seconds)` to `services/matcher/src/matcher/catalogue.py` implementing the D5 four-step order. **The legacy SQLite loader is untouched in this commit** — new and old coexist, old suite still green. **Verify:** `uv run pytest services/matcher/tests/unit/test_load_index.py` then `uv run pytest` → 4 failed (baseline).
+  - `test_redis_unreachable_but_supabase_up_still_loads_and_warns` (REQ-CSS-5 second scenario). *Applied deviation, split in two: `test_redis_unreachable_but_supabase_up_still_loads` drives the **real** `RedisSnapshotCache` over a disconnected `FakeServer` and asserts `source.calls == 1` / `source="supabase"` — but it deliberately does **not** assert a warning, because the adapter swallows every `redis.RedisError` by design (REQ-RCC-3), so `load_index` cannot distinguish a dead Redis from a cold one and a warning there would be a lie. The warning contract is covered by `test_a_cache_that_raises_on_read_is_survived_with_a_warning`, where the failure is actually observable to `load_index`.*
+  - *Added beyond the list: `test_an_empty_snapshot_is_never_served` (a zero-row snapshot is a miss, REQ-CSS-5 — otherwise a warm start could serve an empty catalogue), `test_the_written_snapshot_is_immediately_fresh` (the cold-start write-back must make the next start a warm one), `test_a_snapshot_just_inside_the_ttl_is_still_fresh` (the freshness boundary), and `test_the_snapshot_rows_are_regrouped_by_warehouse_code` (the payload is flat; grouping is rebuilt in-process).*
+- [x] 4.4 **RED then GREEN** — `TestBothUnavailable::test_no_snapshot_and_a_failing_source_raises_catalogue_unavailable` (REQ-CSS-5). **GREEN:** add `load_index(source, cache, ttl_seconds)` to `services/matcher/src/matcher/catalogue.py` implementing the D5 four-step order. **The legacy SQLite loader is untouched in this commit** — new and old coexist, old suite still green. **Verify:** `uv run pytest services/matcher/tests/unit/test_load_index.py` → 17 passed; `uv run pytest` → 4 failed, 452 passed (baseline unchanged). *Applied refinement: `load_index` returns a frozen `LoadedCatalogue(catalogue, source)` rather than a bare dict, so the D5 provenance label reaches the WU-5 startup log line as data instead of being re-derived. `CatalogueIndex` (which bundles a built matcher) stays in `service.py` at WU-5 — `catalogue.py` must not import `scoring`. The zero-Supabase-call guarantee was verified by mutation: disabling the fresh-snapshot branch turns 5 tests red, including `test_a_fresh_snapshot_performs_zero_supabase_calls` with `assert 1 == 0`.*
 
 ## WU-5: CUTOVER — one commit, single writer, no parallel work
 
