@@ -69,23 +69,28 @@ def is_transient(exc: Exception) -> bool:
     return isinstance(exc, httpx.RequestError)
 
 
-def fallback_vendor(settings: Settings) -> str | None:
-    """The vendor to fail over to, or None when there is nowhere to go.
+def fallback_chain(settings: Settings) -> tuple[str, ...]:
+    """The vendors to try in order once the primary is exhausted, if any.
 
-    An explicitly named `STT_FALLBACK_VENDOR` wins: boot already proved it
-    differs from the primary and has a key, so there is nothing left to check
-    here. Otherwise the choice is automatic, and needs both the switch and a
-    usable key - a non-active vendor's key is optional at boot (REQ-VND-5), so
-    it is often simply absent (REQ-VND-9).
+    An explicitly named `STT_FALLBACK_VENDOR` is the *whole* chain, not its
+    first entry: an operator who names a vendor has sanctioned that one, and
+    walking past it to another would send audio somewhere they did not choose.
+    Boot already proved it differs from the primary and has a key, so there is
+    nothing left to check here.
+
+    Otherwise the chain is automatic: every other vendor with a usable key, in
+    `FALLBACK_PRIORITY` order. A non-active vendor's key is optional at boot
+    (REQ-VND-5), so absent ones simply drop out (REQ-VND-9).
     """
     if not settings.stt_fallback_enabled:
-        return None
+        return ()
     if settings.stt_fallback_vendor:
-        return settings.stt_fallback_vendor
-    for name in FALLBACK_PRIORITY:
-        if name != settings.stt_vendor and settings.api_key_for(name):
-            return name
-    return None
+        return (settings.stt_fallback_vendor,)
+    return tuple(
+        name
+        for name in FALLBACK_PRIORITY
+        if name != settings.stt_vendor and settings.api_key_for(name)
+    )
 
 
 def evaluate_garbage(result: TranscriptionResult, settings: Settings) -> bool:
@@ -184,14 +189,14 @@ async def dispatch(
     client: httpx.AsyncClient,
     request_id: str,
 ) -> tuple[TranscriptionResult, str]:
-    """Transcribe with the primary vendor, falling over to the other one.
+    """Transcribe with the primary vendor, falling over down the chain.
 
     Returns the result together with the vendor that actually produced it, so
     the response and the request log name the truth rather than the
     configuration (REQ-VND-7).
 
     The whole of it runs under one deadline. Attempts, backoffs and the
-    failover otherwise add up to a wait no single setting expresses, and the
+    failovers otherwise add up to a wait no single setting expresses, and the
     caller is a person holding a push-to-talk button (REQ-VND-8).
     """
     primary = settings.stt_vendor
@@ -211,28 +216,34 @@ async def dispatch(
             )
             return result, primary
         except Exception as primary_error:
-            fallback = fallback_vendor(settings)
-            if fallback is None or not is_transient(primary_error):
+            chain = fallback_chain(settings)
+            if not chain or not is_transient(primary_error):
                 raise
 
-            logger.debug(
-                "primary vendor exhausted, failing over",
-                extra={
-                    "request_id": request_id,
-                    "vendor": primary,
-                    "fallback_vendor": fallback,
-                },
-            )
-            in_flight = fallback
-            try:
-                result = await call_vendor(
-                    fallback, audio, content_type, settings, client, 1, request_id
+            for fallback in chain:
+                logger.debug(
+                    "vendor exhausted, failing over",
+                    extra={
+                        "request_id": request_id,
+                        "vendor": in_flight,
+                        "fallback_vendor": fallback,
+                    },
                 )
-            except Exception:
-                # Both vendors are down; the primary's failure is the honest
-                # diagnosis for the caller.
-                raise primary_error from None
-            return result, fallback
+                in_flight = fallback
+                try:
+                    result = await call_vendor(
+                        fallback, audio, content_type, settings, client, 1, request_id
+                    )
+                except Exception:
+                    # This layer is down too; keep going. A fallback gets one
+                    # attempt each, so the chain costs at most one call per
+                    # vendor and stays inside the deadline below.
+                    continue
+                return result, fallback
+
+            # Every vendor is down; the primary's failure is the honest
+            # diagnosis for the caller.
+            raise primary_error from None
 
     try:
         async with _asyncio_timeout(settings.stt_total_deadline_s):
