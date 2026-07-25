@@ -23,8 +23,15 @@ import type { ConfirmableItem, PipelineOutcome, QueueEntry } from '../pipeline';
  *  `count` (REQ-OCF-1). */
 export type Screen = 'permiso' | 'plans' | 'count' | 'done';
 
-/** S8 exclusion reasons — stretch scope (S1 in the task list). */
-export type ExcludeReason = 'vencido' | 'roto' | 'descompuesto' | 'otro';
+/**
+ * S8 "excluir del conteo" was stretch scope (S1 in the task list) and was CUT.
+ * Its `ExcludeReason` type, its `exclude` overlay variant and its four
+ * `EXCLUDE_*` events were removed rather than left half-wired: the reducer
+ * could open an `exclude` overlay that `CountSession` renders nothing for, and
+ * an open overlay both blocks the mic and disables «Terminar conteo» — a state
+ * with no way out. `tests/session/no-soft-lock.test.ts` explores the reducer
+ * and fails if any overlay without a sheet is reintroduced.
+ */
 
 export type Overlay =
   /** S4. `transcript` fills in progressively as STT resolves; null until then. */
@@ -35,8 +42,6 @@ export type Overlay =
   | { kind: 'anomaly'; item: ConfirmableItem; anomaly: Anomaly; queue: QueueEntry[] }
   /** S7. Serves `no_match` AND `ambiguous` (D8). */
   | { kind: 'search'; item: ExtractedItem; candidates: Candidate[]; query: string; queue: QueueEntry[] }
-  /** S8, stretch. */
-  | { kind: 'exclude'; reason: ExcludeReason | null }
   | null;
 
 /* -------------------------------------------------------------------------- */
@@ -173,12 +178,6 @@ export type SessionEvent =
   | { type: 'SEARCH_PICKED'; candidate: Candidate }
   /** "Ninguno · volver a dictar" — drops the item, advances the queue. */
   | { type: 'SEARCH_DISMISSED' }
-
-  /* --- S8 exclude (stretch) --------------------------------------------- */
-  | { type: 'EXCLUDE_OPENED' }
-  | { type: 'EXCLUDE_REASON_PICKED'; reason: ExcludeReason }
-  | { type: 'EXCLUDE_CONFIRMED' }
-  | { type: 'EXCLUDE_DISMISSED' }
 
   /* --- records ---------------------------------------------------------- */
   /**

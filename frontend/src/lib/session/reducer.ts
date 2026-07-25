@@ -53,11 +53,6 @@ export function blocked(state: SessionState): boolean {
   return state.overlay?.kind === 'anomaly' || state.records.some((r) => r.state === 'anom_open');
 }
 
-/** REQ-OCF-1: overlays live only over the count screen. */
-function canOverlay(state: SessionState): boolean {
-  return state.screen === 'count';
-}
-
 /* -------------------------------------------------------------------------- */
 /* Queue advance                                                              */
 /* -------------------------------------------------------------------------- */
@@ -303,24 +298,6 @@ export function sessionReducer(state: SessionState, event: SessionEvent): Sessio
       if (state.overlay?.kind !== 'search') return state;
       // "Ninguno · volver a dictar": the item is dropped, the queue advances.
       return { ...state, overlay: openNext(state.overlay.queue, state.lastTranscript ?? '') };
-
-    /* --- S8 exclude (stretch) ------------------------------------------ */
-
-    case 'EXCLUDE_OPENED':
-      if (!canOverlay(state) || state.overlay !== null) return state;
-      return { ...state, overlay: { kind: 'exclude', reason: null } };
-
-    case 'EXCLUDE_REASON_PICKED':
-      if (state.overlay?.kind !== 'exclude') return state;
-      return { ...state, overlay: { kind: 'exclude', reason: event.reason } };
-
-    case 'EXCLUDE_CONFIRMED':
-      if (state.overlay?.kind !== 'exclude' || state.overlay.reason === null) return state;
-      return { ...state, overlay: null };
-
-    case 'EXCLUDE_DISMISSED':
-      if (state.overlay?.kind !== 'exclude') return state;
-      return { ...state, overlay: null };
 
     /* --- records: touch-only deletion (REQ-OCF-4, RF-21) --------------- */
 

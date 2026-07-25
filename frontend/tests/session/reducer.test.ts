@@ -128,7 +128,6 @@ describe('S1 consent gate', () => {
   test('no overlay can be opened from permiso or done (REQ-OCF-1)', () => {
     for (const screen of ['permiso', 'done'] as const) {
       const s = { ...initialSessionState, screen };
-      expect(sessionReducer(s, { type: 'EXCLUDE_OPENED' }).overlay).toBeNull();
       expect(sessionReducer(s, { type: 'REC_STARTED' }).overlay).toBeNull();
       expect(sessionReducer(s, { type: 'REC_STOPPED', audio }).overlay).toBeNull();
     }
@@ -493,26 +492,6 @@ describe('S7 manual search', () => {
 });
 
 /* -------------------------------------------------------------------------- */
-/* S8 — exclude (stretch)                                                     */
-/* -------------------------------------------------------------------------- */
-
-describe('S8 exclude', () => {
-  test('the exclude overlay opens, picks a reason, and closes', () => {
-    const opened = sessionReducer(counting(), { type: 'EXCLUDE_OPENED' });
-    expect(opened.overlay).toEqual({ kind: 'exclude', reason: null });
-    const picked = sessionReducer(opened, { type: 'EXCLUDE_REASON_PICKED', reason: 'vencido' });
-    expect(picked.overlay).toEqual({ kind: 'exclude', reason: 'vencido' });
-    expect(sessionReducer(picked, { type: 'EXCLUDE_CONFIRMED' }).overlay).toBeNull();
-    expect(sessionReducer(picked, { type: 'EXCLUDE_DISMISSED' }).overlay).toBeNull();
-  });
-
-  test('EXCLUDE_CONFIRMED without a reason is a no-op', () => {
-    const opened = sessionReducer(counting(), { type: 'EXCLUDE_OPENED' });
-    expect(sessionReducer(opened, { type: 'EXCLUDE_CONFIRMED' })).toBe(opened);
-  });
-});
-
-/* -------------------------------------------------------------------------- */
 /* Records — voice creates only (REQ-OCF-4, RF-20, RF-21)                      */
 /* -------------------------------------------------------------------------- */
 
@@ -543,7 +522,6 @@ describe('voice creates only', () => {
       { type: 'COUNT_FINISHED' },
       { type: 'BACK_TO_PLANS' },
       { type: 'ERROR_DISMISSED' },
-      { type: 'EXCLUDE_OPENED' },
     ];
 
     for (const event of events) {
@@ -669,7 +647,6 @@ describe('S9 finish count', () => {
       { kind: 'confirm', transcript: 't', items: [confirmable()] },
       { kind: 'anomaly', item: confirmable(), anomaly, queue: [] },
       { kind: 'search', item: extracted(), candidates: [], query: '', queue: [] },
-      { kind: 'exclude', reason: null },
     ];
     for (const overlay of overlays) {
       const s = counting({ overlay });
@@ -729,10 +706,6 @@ describe('the reducer is total', () => {
     { type: 'SEARCH_RESULTS', candidates: [] },
     { type: 'SEARCH_PICKED', candidate: candidate() },
     { type: 'SEARCH_DISMISSED' },
-    { type: 'EXCLUDE_OPENED' },
-    { type: 'EXCLUDE_REASON_PICKED', reason: 'roto' },
-    { type: 'EXCLUDE_CONFIRMED' },
-    { type: 'EXCLUDE_DISMISSED' },
     { type: 'RECORD_DELETED', id: 'r-seed-1' },
     { type: 'COUNT_FINISHED' },
     { type: 'BACK_TO_PLANS' },
@@ -748,7 +721,6 @@ describe('the reducer is total', () => {
     counting({ overlay: { kind: 'confirm', transcript: 't', items: [confirmable()] } }),
     counting({ overlay: { kind: 'anomaly', item: confirmable(), anomaly, queue: [] } }),
     counting({ overlay: { kind: 'search', item: extracted(), candidates: [], query: '', queue: [] } }),
-    counting({ overlay: { kind: 'exclude', reason: 'otro' } }),
     counting({ records: [record({ state: 'anom_open' })] }),
     { ...counting({ records: [record()] }), screen: 'done' },
   ];
