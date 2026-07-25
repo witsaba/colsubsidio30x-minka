@@ -102,7 +102,7 @@ Parallel groups: **P-A** = T4→T5→T6 (extraction/units chain) · **P-B** = T7
   GREEN: `src/lib/api/client.ts` (`transcribe` timeout 50 000 ms, `match`/`getCatalogues` 10 000 ms).
   Requirements: REQ-PRX-2, REQ-PRX-3, REQ-OCF-7, REQ-VC-6. Deps: T3.
 
-- [ ] **T10 — Astro proxy endpoints (no CORS on `services/`).**
+- [x] **T10 — Astro proxy endpoints (no CORS on `services/`).**
   RED: `tests/api/proxy.test.ts` with stubbed `fetch` — upstream 413/400/502 status **and** body pass through untouched; the upstream base always derives from `STT_BASE_URL`/`MATCHER_BASE_URL` and **never** from request data (SSRF guard); a thrown `fetch` produces `502 {"error":{"code":"proxy_unreachable"}}` in the STT envelope shape; the audio body is streamed, never written to disk.
   GREEN: `src/pages/api/{transcribe,match,catalogues}.ts` (`prerender=false`, `AbortSignal.timeout` 50 s / 10 s).
   Requirements: REQ-PRX-1..5, RNF-04. Deps: T1. **Verify no file under `services/` is touched.**
