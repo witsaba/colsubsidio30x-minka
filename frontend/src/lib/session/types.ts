@@ -95,6 +95,23 @@ export interface SessionState {
    * request needs it, so it is authored into the state here.
    */
   catalogueId: string | null;
+  /**
+   * The transcript of the utterance currently being resolved; null before the
+   * first one.
+   *
+   * AUTHORED by T13 to close a real gap: `Overlay.confirm` requires a
+   * `transcript`, but the frozen `anomaly` and `search` variants carry none, so
+   * a queue advance OUT of an anomaly or a search into the combined confirm
+   * sheet had no transcript to pass and fell back to `''` — the operator lost
+   * what they had just said exactly when asked to confirm it.
+   *
+   * It lives on the state rather than on those two overlay variants because
+   * overlay literals are hand-built all over the component tests, so a new
+   * required field there would break concurrent work; every `SessionState` is
+   * built by spreading `initialSessionState`, so a new field here is absorbed.
+   * Set on `PIPELINE_TRANSCRIPT` / `PIPELINE_RESOLVED`, read by every advance.
+   */
+  lastTranscript: string | null;
   /** Error banner on the count screen. */
   error: UiError | null;
 }

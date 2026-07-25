@@ -33,6 +33,7 @@ export const initialSessionState: SessionState = {
   records: [],
   progress: { counted: 45, total: 107 },
   catalogueId: null,
+  lastTranscript: null,
   error: null,
 };
 
@@ -68,11 +69,11 @@ function canOverlay(state: SessionState): boolean {
  * the head is a confirmable every remaining entry is too and they recombine
  * into ONE confirm sheet (design §6, REQ-OCF-3).
  *
- * `transcript` is only known when the queue comes straight off
- * `PIPELINE_RESOLVED`; the frozen `anomaly` / `search` overlay shapes carry no
- * transcript, so an anomaly- or search-resolved advance falls back to `''`.
- * See the T7 note in apply-progress: adding `transcript` to those two overlay
- * variants is a T3 change, not a T7 one.
+ * The frozen `anomaly` / `search` overlay shapes carry no transcript, so an
+ * advance out of one of them has none to hand over. `SessionState.lastTranscript`
+ * (authored by T13) closes that gap: it is set once per utterance and read by
+ * every advance, so the combined confirm sheet still shows what the operator
+ * said even after an anomaly or a manual search was resolved first.
  */
 function openNext(queue: QueueEntry[], transcript: string): Overlay {
   const head = queue[0];
@@ -224,13 +225,19 @@ export function sessionReducer(state: SessionState, event: SessionEvent): Sessio
 
     case 'PIPELINE_TRANSCRIPT':
       if (state.overlay?.kind !== 'processing') return state;
-      return { ...state, overlay: { kind: 'processing', transcript: event.raw } };
+      // Kept on the state too, so it survives the whole resolution chain.
+      return {
+        ...state,
+        lastTranscript: event.raw,
+        overlay: { kind: 'processing', transcript: event.raw },
+      };
 
     case 'PIPELINE_RESOLVED': {
       if (!state.requestInFlight && state.overlay?.kind !== 'processing') return state;
       return {
         ...state,
         requestInFlight: false,
+        lastTranscript: event.outcome.transcript,
         overlay: openNext(event.outcome.queue, event.outcome.transcript),
       };
     }
@@ -259,14 +266,14 @@ export function sessionReducer(state: SessionState, event: SessionEvent): Sessio
     case 'ANOMALY_REDICTATE': {
       if (state.overlay?.kind !== 'anomaly') return state;
       // "Eliminar y volver a dictar": the item is dropped, never persisted.
-      return { ...state, overlay: openNext(state.overlay.queue, '') };
+      return { ...state, overlay: openNext(state.overlay.queue, state.lastTranscript ?? '') };
     }
 
     case 'ANOMALY_KEEP_NOTED': {
       if (state.overlay?.kind !== 'anomaly') return state;
       const { item, anomaly, queue } = state.overlay;
       const kept = toRecord(item, event.at, state.records.length, 'anom_noted', anomaly);
-      return { ...appendRecords(state, [kept]), overlay: openNext(queue, '') };
+      return { ...appendRecords(state, [kept]), overlay: openNext(queue, state.lastTranscript ?? '') };
     }
 
     /* --- S7 manual search (REQ-OCF-6, D8) ------------------------------ */
@@ -289,13 +296,13 @@ export function sessionReducer(state: SessionState, event: SessionEvent): Sessio
       // Confirmables sort last, so the resolved item joins the tail of the
       // queue and lands on the combined confirm sheet (REQ-OCF-3).
       const queue: QueueEntry[] = [...state.overlay.queue, { kind: 'confirmable', item: resolved }];
-      return { ...state, overlay: openNext(queue, '') };
+      return { ...state, overlay: openNext(queue, state.lastTranscript ?? '') };
     }
 
     case 'SEARCH_DISMISSED':
       if (state.overlay?.kind !== 'search') return state;
       // "Ninguno · volver a dictar": the item is dropped, the queue advances.
-      return { ...state, overlay: openNext(state.overlay.queue, '') };
+      return { ...state, overlay: openNext(state.overlay.queue, state.lastTranscript ?? '') };
 
     /* --- S8 exclude (stretch) ------------------------------------------ */
 

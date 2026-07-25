@@ -9,7 +9,8 @@
  */
 import type { AnomalyEngine, Anomaly } from './anomaly/engine';
 import type { CapturedAudio } from './audio/types';
-import type { Candidate, MatchFn, MatchResponse, TranscribeFn } from './api/types';
+import { UiError } from './api/types';
+import type { Candidate, MatchFn, MatchRequest, MatchResponse, TranscribeFn } from './api/types';
 import type { ExtractedItem, ExtractionAdapter } from './extraction/adapter';
 
 /** An extracted item that has been resolved to a concrete catalogue article. */
@@ -49,19 +50,99 @@ export interface PipelineDeps {
 }
 
 /**
+ * Build the matcher request for one extracted item.
+ *
+ * `unit` is OMITTED, never sent as `null` or `''`: the matcher treats an absent
+ * unit as "unknown" and a present one as a filter, so an unresolved unit
+ * (REQ-EXT-4, e.g. 'tablas') must not narrow the search at all.
+ */
+function toMatchRequest(item: ExtractedItem, catalogueId: string): MatchRequest {
+  return {
+    spoken_name: item.spokenName,
+    catalogue_id: catalogueId,
+    ...(item.unit !== null ? { unit: item.unit } : {}),
+  };
+}
+
+/**
  * Transcribe the audio, extract N items, fan out to N PARALLEL match calls, and
- * recombine into an ordered queue.
+ * recombine into ONE ordered queue.
  *
- * Throws `UiError('garbage')` when STT reports `is_garbage`, and
- * `UiError('nothing_extracted')` when extraction yields zero items.
+ * The whole chain is a single hop sequence:
+ *   `CapturedAudio` -> `transcribe` -> raw transcript -> `extraction.extract`
+ *   -> N items -> N concurrent `match` calls -> `anomalies.check` per matched
+ *   item -> one `PipelineOutcome`.
  *
- * T13 implements — this stub exists only so the type surface can freeze now and
- * every dependent task can compile against it.
+ * ONE outcome for N items is the point (RF-14): a three-item utterance must
+ * produce a single confirm sheet, not three.
+ *
+ * Failure modes, all deliberate:
+ *
+ *   - `is_garbage: true` is a SIGNAL on a perfectly good HTTP 200, not a
+ *     transport failure. The pipeline is where that signal becomes a verdict,
+ *     because it is the only layer that knows the transcript is about to be fed
+ *     to extraction. It surfaces as `UiError('garbage')` carrying the STT
+ *     `request_id` — the same channel every other failure uses, so the UI shows
+ *     one authored "no te entendí, repite" state instead of a second mechanism.
+ *     The client below MUST NOT treat it as an error, and nothing here reads
+ *     `stt_confidence` or `audio_duration_ms` to second-guess it.
+ *   - `audio_duration_ms: null` and `stt_confidence: null` are NORMAL (chunked
+ *     MediaRecorder blobs carry no duration header). They are never read, never
+ *     coerced, and a `0` confidence is a real value, not garbage.
+ *   - Zero extracted items raise `UiError('nothing_extracted')`. This is NOT
+ *     defensive padding: `MockExtractionAdapter` silently drops any segment
+ *     with no quantity or no article name, so 'tres kilos' or a stray
+ *     "hola, buenos días" legitimately yields `[]`.
+ *   - Every other error is a `UiError` from the client (413, 400, 502, 422,
+ *     404, aborted, network) and propagates untouched. Nothing here catches,
+ *     rewraps or downgrades one into a generic failure.
  */
 export async function runPipeline(
-  _audio: CapturedAudio,
-  _catalogueId: string,
-  _deps: PipelineDeps,
+  audio: CapturedAudio,
+  catalogueId: string,
+  deps: PipelineDeps,
 ): Promise<PipelineOutcome> {
-  throw new Error('not implemented');
+  const stt = await deps.transcribe(audio);
+
+  if (stt.is_garbage) throw new UiError('garbage', stt.request_id);
+
+  const transcript = stt.raw_transcript;
+  const items = deps.extraction.extract(transcript);
+  if (items.length === 0) throw new UiError('nothing_extracted', stt.request_id);
+
+  // Fan out: N items, N concurrent requests, one await. A `for await` loop here
+  // would make a three-item utterance three times slower than a one-item one.
+  const matches = await Promise.all(
+    items.map((item) => deps.match(toMatchRequest(item, catalogueId))),
+  );
+
+  // Recombine. Three buckets rather than one array + sort, so the ordering rule
+  // is structural and extraction order survives inside each bucket.
+  const anomalies: QueueEntry[] = [];
+  const searches: QueueEntry[] = [];
+  const confirmables: QueueEntry[] = [];
+
+  items.forEach((extracted, i) => {
+    const match = matches[i]!;
+    const picked = match.candidates[0];
+
+    // `ambiguous` AND `no_match` both go to the search sheet (D8): a confident
+    // wrong match is worse than asking. A `matched` with no candidate at all is
+    // not a contract the matcher promises, but if it ever happens the operator
+    // gets the search sheet instead of a crash.
+    if (match.status !== 'matched' || picked === undefined) {
+      searches.push({ kind: 'needs_search', item: extracted, candidates: match.candidates });
+      return;
+    }
+
+    const item: ConfirmableItem = { extracted, match, picked };
+    const anomaly = deps.anomalies.check(item);
+    if (anomaly) anomalies.push({ kind: 'anomaly', item, anomaly });
+    else confirmables.push({ kind: 'confirmable', item });
+  });
+
+  // Anomalies -> searches -> confirmables (design §7). The reducer relies on
+  // this exact order: once the head is a confirmable, every remaining entry is
+  // too, which is what lets them recombine into ONE confirm sheet.
+  return { transcript, queue: [...anomalies, ...searches, ...confirmables] };
 }

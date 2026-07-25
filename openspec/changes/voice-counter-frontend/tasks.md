@@ -117,7 +117,7 @@ Parallel groups: **P-A** = T4→T5→T6 (extraction/units chain) · **P-B** = T7
   GREEN: `src/lib/catalogues.ts`, `src/fixtures/operatorSeed.ts` (3 seed rows, progress 45/107).
   Requirements: REQ-OCF-8, D13. Deps: T3.
 
-- [ ] **T13 — `runPipeline` fan-out and recombine.**
+- [x] **T13 — `runPipeline` fan-out and recombine.**
   RED: `tests/pipeline.test.ts` with fully stubbed `PipelineDeps` — a 3-item transcript issues **3 parallel** `match` calls; `matched` + clean anomaly check → `confirmable`; `ambiguous` **AND** `no_match` both → `needs_search` carrying the returned candidates; queue ordering is anomalies → searches → confirmables; `is_garbage:true` throws `UiError('garbage')`; 0 extracted items throws `UiError('nothing_extracted')`.
   GREEN: fill in `runPipeline` in `src/lib/pipeline.ts` (replaces the T3 stub).
   Requirements: REQ-OCF-6, REQ-OCF-12, REQ-EXT-1. Deps: T6, T8, T9. **Sequential with T3 on `pipeline.ts`.**
