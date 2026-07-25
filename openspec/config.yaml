@@ -1,0 +1,53 @@
+schema: spec-driven
+
+context: |
+  Project: colsubsidio30x-minka
+  State: Data tooling exists (uv-managed Python, SQLite build script); backend
+  services are being implemented from decided spikes (spikes/01..06).
+  Tech stack: Python 3.11+ managed by uv (pyproject.toml + uv.lock, no
+  requirements.txt). Services: FastAPI + uvicorn, httpx (no vendor SDKs),
+  pydantic-settings, docker-compose per service.
+  Architecture: Two independent backend services (Module 1 STT :8001,
+  Module 3 matching :8002); no shared process, datastore, or deploy unit.
+  Testing: pytest + pytest-asyncio + respx (httpx mocking).
+  Style: Generated technical artifacts use English; product scope is es-CO.
+
+strict_tdd: true
+
+testing:
+  detected: 2026-07-25
+  test_command: uv run pytest
+  runner: pytest
+  layers:
+    unit: uv run pytest
+    integration: uv run pytest
+    e2e: null
+  coverage:
+    available: false
+    command: null
+  quality:
+    linter: null
+    type_checker: null
+    formatter: null
+
+rules:
+  proposal:
+    - Keep scope, risks, and rollback explicit.
+  specs:
+    - Use Given/When/Then scenarios and RFC 2119 keywords.
+  design:
+    - Record architecture choices and rationale after the stack is selected.
+  tasks:
+    - Group work hierarchically and keep tasks independently verifiable.
+  apply:
+    guidelines:
+      - Follow conventions established by the approved design.
+      - Audio is never written to disk (RNF-04); never log transcript bodies at INFO (Ley 1581).
+    tdd: true
+    test_command: uv run pytest
+  verify:
+    test_command: uv run pytest
+    build_command: null
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas.

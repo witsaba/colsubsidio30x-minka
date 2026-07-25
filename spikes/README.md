@@ -26,7 +26,7 @@ Frontend is out of scope for both.
 
 ## Decisions in one line each
 
-1. **STT — build against Deepgram Nova-3 multilingual.** ElevenLabs, the team's
+1. **STT — build against Deepgram Nova-3 with es-CO (`language=es`).** ElevenLabs, the team's
    initial pick, is disqualified for the MVP: zero-retention is Enterprise-gated
    and we require that audio is never persisted. Fallback: Groq
    `whisper-large-v3-turbo`.

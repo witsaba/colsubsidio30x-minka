@@ -134,7 +134,7 @@ clips, as a data point for a later iteration. It must not block the build.**
 ## First-hour empirical check (before committing build time)
 
 1. 20 clips: clean speech, warehouse-noise speech, and 5 garbage clips.
-   Through Deepgram (`numerals=true, language=multi`) and Groq in parallel.
+   Through Deepgram (`numerals=true, language=es`) and Groq in parallel.
 2. Score exactly two things:
    - **digit accuracy** — hand-count every "said 90, transcribed 900" error;
    - **hallucination rate on the garbage clips** — did either invent
