@@ -72,7 +72,7 @@ T21–T22 (auditor) run fully in parallel and must land before T24 (demo step 8)
 
 Parallel groups: **P-A** = T4→T5→T6 (extraction/units chain) · **P-B** = T7 (reducer) · **P-C** = T9 (api client) · **P-D** = T10 (proxy) · **P-E** = T11 (capture) · **P-F** = T12 (catalogues) · **P-G** = T14→T15 (styles/layouts). T8 joins P-A after T5. T13 joins after T6+T8+T9.
 
-- [ ] **T4 — Spanish ITN (`cardinalToNumber`). ⭐ FIRST RED TEST OF THE PROJECT.**
+- [x] **T4 — Spanish ITN (`cardinalToNumber`). ⭐ FIRST RED TEST OF THE PROJECT.**
   RED: create `frontend/tests/extraction/itn.test.ts` asserting `cardinalToNumber('novecientos') === 900` **AND** `cardinalToNumber('noventa') === 90` (the 90-vs-900 case that triggers the demo anomaly), plus `'trescientos cinco' === 305`, `'doce' === 12`, `'tres' === 3`, `'cinco' === 5`, `'dos' === 2`. Run `npx vitest run tests/extraction/itn.test.ts` and **observe the failure** (module not found) before writing any implementation.
   GREEN: create `src/lib/extraction/itn.ts`.
   Requirements: REQ-EXT-2. Deps: T3.
