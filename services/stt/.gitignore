@@ -1,0 +1,2 @@
+# Vendor credentials never enter git (spike 05: ".env stays out of git").
+.env
