@@ -136,7 +136,7 @@ Parallel groups: **P-A** = T4→T5→T6 (extraction/units chain) · **P-B** = T7
 
 ## Phase 4 — Operator vertical slice (demoable FIRST — do not start the auditor before T20 in a serial run)
 
-- [ ] **T16 — Consent screen with the C1 fix + plans screen. 🔒 COMPLIANCE**
+- [x] **T16 — Consent screen with the C1 fix + plans screen. 🔒 COMPLIANCE**
   RED: `tests/components/consent-screen.test.tsx` — the rendered DOM contains **verbatim** `"El audio no se guarda: se transmite para transcribirlo y se descarta al instante. Solo se conserva la transcripción de lo que dictas."`; the string `"12 meses"` appears **nowhere**; the string `"Funciona sin señal"` appears **nowhere** (C2); "Permitir el micrófono" is `disabled` until the checkbox is checked; activating it calls the injected `getUserMedia`; a `NotAllowedError` rejection renders "Sin autorización el conteo se hace escribiendo artículo por artículo. Puedes autorizar más tarde desde tu perfil." and does NOT advance to plans.
   GREEN: `src/components/operator/ConsentScreen.tsx`, `PlansScreen.tsx`.
   Requirements: **REQ-OCF-10 (C1)**, **REQ-OCF-11 (C2)**, REQ-VC-7, REQ-OCF-8, D6, D7. Deps: T7, T12, T14.
