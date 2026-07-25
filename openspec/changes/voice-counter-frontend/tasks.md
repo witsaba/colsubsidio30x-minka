@@ -184,11 +184,33 @@ Parallel groups: **P-A** = T4→T5→T6 (extraction/units chain) · **P-B** = T7
   4. Confirm every upload is ≤ 1 048 576 bytes, auto-stop fires at 20 s, and `git status` shows **no modified file under `services/`**.
   Requirements: all. Deps: T20, T22, T23.
 
+  **Status — BLOCKED on one external input, everything else verified.**
+
+  | Step | State |
+  |---|---|
+  | 1 — suite green | ✅ 662 tests / 30 files; `npx astro check` 0 errors; `npm run build` exit 0 |
+  | 2 — matcher `:8002` | ✅ live, `/health` → `{"status":"ok","catalogues":8,"rows":1405}` |
+  | 2 — app `:4321` | ✅ live, `/conteo` and `/auditor` both 200 |
+  | 2 — STT `:8001` | ❌ **`services/stt/.env` does not exist — no `DEEPGRAM_API_KEY`, service cannot boot** |
+  | 3 — real-microphone walkthrough | ⛔ cannot start without step 2's STT |
+  | 4 — `services/` untouched | ✅ `git diff --name-only main...HEAD -- services` → 0 files |
+
+  Verified without STT, through the real same-origin proxy against the live matcher:
+  `POST /api/match {"spoken_name":"aceite de oliva","catalogue_id":"stock_restaurante_fuentes_ayb"}`
+  → `status:"ambiguous"` with real `nr_articulo` (`"7293"`) and real `unidad_display`
+  (`"litros"`) — so the proxy, the client contract and the ambiguous → manual-search
+  route are all exercised against real data. Only the transcription hop is unproven.
+
+  **To unblock:** create `services/stt/.env` with `DEEPGRAM_API_KEY=…` (gitignored; the
+  key must never be pasted into a chat or a commit), then `cd services/stt &&
+  docker compose up -d`. Step 3 is a human-in-the-loop microphone walkthrough and
+  cannot be automated.
+
 ## STRETCH — cut these first if the clock runs out
 
 The acceptance bar is the 8-step demo narrative in the proposal. Everything below is expendable.
 
-- [ ] **S1 — `ExcludeSheet.tsx` (S8 exclude overlay)** — Vencido/Roto/Descompuesto/Otro. Design-only; actas are out of PRD scope.
+- [x] **S1 — `ExcludeSheet.tsx` (S8 exclude overlay) — CUT, and its half-wired remains removed.** Vencido/Roto/Descompuesto/Otro. Design-only; actas are out of PRD scope. The sheet was never built, but the reducer had shipped the four `EXCLUDE_*` events and an `exclude` overlay variant ahead of it. An open overlay blocks the mic and disables «Terminar conteo», so an overlay with no sheet was a soft-lock with no exit. Verify caught it (WARNING-3) and it was deleted rather than completed; `frontend/tests/session/no-soft-lock.test.ts` now explores the reducer over every declared event and fails if any unrendered overlay is reintroduced. Checked off as *resolved*, not as *delivered*.
 - [ ] **S2 — `/auditor/cierre` and `/auditor/base` beyond static shells** — live KPIs, real Oracle `Import Count Sequences` table, conciliación.
 - [ ] **S3 — Playwright e2e** — the Vitest component suite plus T24's manual walkthrough is the tonight-level proof.
 - [ ] **S4 — `POST /api/records` in-memory operator→auditor handoff** — the auditor runs on seeded fixtures tonight.
