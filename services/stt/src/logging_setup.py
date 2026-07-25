@@ -12,10 +12,11 @@ LOGGER_NAME = "stt"
 
 def configure_logging(log_level: str) -> logging.Logger:
     """Configure and return the service logger."""
+    # No force=True: if a handler is already installed (uvicorn, pytest's
+    # caplog) we configure levels and leave the handler alone.
     logging.basicConfig(
         level=log_level.upper(),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
-        force=True,
     )
     logger = logging.getLogger(LOGGER_NAME)
     logger.setLevel(log_level.upper())
