@@ -57,7 +57,7 @@ T21–T22 (auditor) run fully in parallel and must land before T24 (demo step 8)
   Proof (not a RED test — infrastructure gate): `cd frontend && npm install && npx astro check && npm run build` all exit 0. **If this fails, STOP and escalate — every later task is blocked.**
   Requirements: D1, D2. Deps: none.
 
-- [ ] **T2 — Vitest + happy-dom + `@preact/preset-vite` harness.**
+- [x] **T2 — Vitest + happy-dom + `@preact/preset-vite` harness.**
   Creates: `frontend/vitest.config.ts` (`environment:'happy-dom'`, `globals:true`, `setupFiles:['tests/setup.ts']`, `include:['tests/**/*.test.{ts,tsx}']`), `frontend/tests/setup.ts` (`vi.stubGlobal('MediaRecorder', FakeMediaRecorder)` with static `isTypeSupported` + `start/stop/ondataavailable`; `navigator.mediaDevices.getUserMedia` mock; `fetch` stub helper returning canned `Response`s).
   Proof: write a throwaway assertion that `document` and `MediaRecorder.isTypeSupported` exist, observe it run under `npx vitest run`, then **delete it**. This is harness validation, NOT a product RED — the first product RED is T4.
   Deps: T1.
