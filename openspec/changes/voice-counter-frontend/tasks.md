@@ -124,7 +124,7 @@ Parallel groups: **P-A** = T4→T5→T6 (extraction/units chain) · **P-B** = T7
 
 ## Phase 3 — Design system (PARALLEL with Phase 2, starts right after T1)
 
-- [ ] **T14 — Tokens and global stylesheet.**
+- [x] **T14 — Tokens and global stylesheet.**
   RED: `tests/styles/tokens.test.ts` reads `src/styles/tokens.css` and asserts it declares the contract's custom properties (`--primary:#0067b1`, `--accent:#ffd000`, `--page:#f2f2ef`, `--text:#2f2f2e`, warn `#d9631a`/`#fdf1e7`/`#8a4a12`, success `#2f6b3a`/`#eef6ef`, borders, scrim) and all five keyframes `vpulse vbar vdot vrise trise`, plus a `prefers-reduced-motion: reduce` block.
   GREEN: `src/styles/tokens.css` (keyframes copied **verbatim** from the design contract), `src/styles/global.css` (reset, Manrope/JetBrains Mono stacks, `tabular-nums` on `.qty`, focus-visible).
   Requirements: design §4, D12. Deps: T1. **Sole owner of `src/styles/`.**
