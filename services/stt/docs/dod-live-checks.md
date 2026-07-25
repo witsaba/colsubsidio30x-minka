@@ -11,11 +11,13 @@ transcript redacted, because a real clip is personal data (Ley 1581).
 Setup for all four:
 
 ```bash
-cd services/stt
-cp .env.example .env      # fill in DEEPGRAM_API_KEY and GROQ_API_KEY
-docker compose up -d --build
+./scripts/setup-env.sh    # asks for DEEPGRAM_API_KEY and GROQ_API_KEY
+docker compose up -d --build stt
 curl -s localhost:8001/health
 ```
+
+Run from the repository root: there is one Compose file and one `.env` for the
+whole project (see `docs/deployment.md`).
 
 ---
 
@@ -36,7 +38,7 @@ question 3, unresolvable without a live account.
 
 ## [ ] T22 — Real clip transcribes end to end
 
-- `docker compose up -d` with a real `.env`; `curl :8001/health` returns
+- `docker compose up -d stt` with a real root `.env`; `curl :8001/health` returns
   `{"status":"ok","vendor":"deepgram"}`.
 - POST a real es-CO push-to-talk clip.
 - Expect `200`, a verbatim transcript, and `is_garbage: false`.

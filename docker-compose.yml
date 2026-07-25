@@ -1,0 +1,129 @@
+# The one deployment surface for every service in this repository.
+#
+#   ./scripts/setup-env.sh       # create the single root .env, once
+#   docker compose up            # everything, in one command
+#   docker compose up stt        # one service, nothing else starts
+#   docker compose config        # validate the file without a daemon
+#   docker compose ps            # healthy / unhealthy per service
+#
+# Values come from the root .env only (template: .env.example). Services are
+# deliberately independent: no depends_on, no custom network, no shared
+# lifecycle, so one of them failing never holds another down.
+#
+# Adding a service? docs/deployment.md carries the checklist and
+# tests/deployment/ enforces it.
+
+# Pinned rather than inferred from the directory: the same stack started from a
+# git worktree would otherwise become a second set of containers fighting over
+# the same host ports.
+name: colsubsidio30x-minka
+
+services:
+  # Module 1 - speech to text. A standalone uv project with its own lockfile,
+  # so it builds from its own directory rather than the repository root.
+  stt:
+    build:
+      context: ./services/stt
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      # Neither key is required here: only the ACTIVE vendor's key is, and the
+      # boot validator in services/stt/src/settings.py already fails fast with
+      # a message naming the missing variable (REQ-VND-5). Demanding all of
+      # them at the compose layer only blocked Groq-only deployments (JD-4).
+      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      # deepgram or groq. elevenlabs is backup-only and fails boot here
+      # (RNF-04); reach it through STT_FALLBACK_VENDOR or the auto chain.
+      STT_VENDOR: ${STT_VENDOR:-deepgram}
+      STT_ELEVENLABS_MODEL: ${STT_ELEVENLABS_MODEL:-scribe_v1}
+      # Pinned, not operator-tunable: REQ-VND-1 freezes the request shape and
+      # RNF-04 forbids opting back in to vendor-side model training.
+      STT_LANGUAGE: es
+      STT_MODEL: nova-3
+      STT_NUMERALS: "true"
+      STT_MIP_OPT_OUT: "true"
+      STT_CONFIDENCE_FLOOR: "0.60"
+      STT_MIN_SPEECH_MS: ${STT_MIN_SPEECH_MS:-300}
+      STT_MAX_UPLOAD_BYTES: ${STT_MAX_UPLOAD_BYTES:-1048576}
+      STT_VENDOR_TIMEOUT_S: ${STT_VENDOR_TIMEOUT_S:-30}
+      STT_RETRY_ATTEMPTS: ${STT_RETRY_ATTEMPTS:-2}
+      STT_RETRY_BACKOFF_S: ${STT_RETRY_BACKOFF_S:-0.5}
+      STT_FALLBACK_ENABLED: ${STT_FALLBACK_ENABLED:-true}
+      # Empty walks the priority chain deepgram -> elevenlabs -> groq, skipping
+      # vendors with no key; a blank reads as unset. Naming one makes it the
+      # whole chain.
+      STT_FALLBACK_VENDOR: ${STT_FALLBACK_VENDOR:-}
+      STT_TOTAL_DEADLINE_S: ${STT_TOTAL_DEADLINE_S:-45}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request;urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      # Failures during startup do not count against `retries`, so a slow boot
+      # is not mistaken for an unhealthy service.
+      start_period: 15s
+    restart: unless-stopped
+
+  # Module 3 - product matching. A uv workspace member, so the repository root
+  # is its build context: the root pyproject.toml and uv.lock must be visible.
+  matcher:
+    build:
+      context: .
+      dockerfile: services/matcher/Dockerfile
+    ports:
+      - "8002:8002"
+    volumes:
+      # The catalogue is read-only, always.
+      - ./data:/data:ro
+    environment:
+      # Container-internal path, fixed by the mount above rather than by the
+      # operator.
+      CATALOGUE_DB: /data/bodegas-y-stock.sqlite
+      MATCH_ACCEPT_SCORE: ${MATCH_ACCEPT_SCORE:-0.50}
+      MATCH_AMBIGUITY_MARGIN: ${MATCH_AMBIGUITY_MARGIN:-0.08}
+      MATCH_TSR_MARGIN: ${MATCH_TSR_MARGIN:-0.08}
+      MATCH_MAX_CANDIDATES: ${MATCH_MAX_CANDIDATES:-5}
+      MATCH_UNIT_RERANK: ${MATCH_UNIT_RERANK:-true}
+      STARTUP_RETRIES: ${STARTUP_RETRIES:-3}
+      STARTUP_RETRY_DELAY_SECONDS: ${STARTUP_RETRY_DELAY_SECONDS:-2.0}
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request;urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      # Loading the catalogue (plus any startup retry) takes time; probes
+      # during that window are not failures.
+      start_period: 10s
+    restart: unless-stopped
+
+  # Module 2 - product identification and voice inventory extraction. A uv workspace
+  # member, so the repository root is its build context: root pyproject.toml and uv.lock are visible.
+  product_identification:
+    build:
+      context: .
+      dockerfile: services/product_identification/Dockerfile
+    ports:
+      - "8003:8003"
+    environment:
+      USE_VERTEX_AI: ${USE_VERTEX_AI:-true}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-gen-lang-client-0715489298}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-us-central1}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-gen-lang-client-0715489298-735dd2d08718.json}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GOOGLE_CLOUD_API_KEY: ${GOOGLE_CLOUD_API_KEY:-}
+      DEFAULT_MODEL: ${DEFAULT_MODEL:-gemini-2.5-flash}
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request;urllib.request.urlopen('http://localhost:8003/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+

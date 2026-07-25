@@ -4,6 +4,10 @@
 # catalogue is mounted at runtime, never baked in.
 .git
 .gitignore
+# Credentials are passed in at run time, never baked into a layer.
+.env
+.env.bak*
+tests/
 **/__pycache__
 **/*.pyc
 **/.venv

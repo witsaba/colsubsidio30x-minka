@@ -1,3 +1,7 @@
+# The single root env file. Vendor credentials never enter git; .env.example
+# is the committed template and ./scripts/setup-env.sh fills this in.
+.env
+
 # Python
 __pycache__/
 *.py[cod]
@@ -22,3 +26,8 @@ frontend/.astro/
 .env.*
 !.env.example
 !*.env.example
+
+# Service-account credentials (product_identification / Vertex AI).
+gen-lang-client-*.json
+*-key.json
+service-account*.json

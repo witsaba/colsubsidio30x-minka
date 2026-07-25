@@ -13,7 +13,7 @@ dependencies = [
 package = false
 
 [tool.uv.workspace]
-members = ["services/matcher"]
+members = ["services/matcher", "services/product_identification"]
 
 [tool.uv.sources]
 matcher = { workspace = true }
@@ -26,4 +26,4 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["services/matcher/tests"]
+testpaths = ["services/matcher/tests", "tests/deployment"]

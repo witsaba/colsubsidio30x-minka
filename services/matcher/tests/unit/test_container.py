@@ -1,8 +1,16 @@
 """Contract tests for the deployment artefacts (T10, REQ-API-6, design D5).
 
-These assert the *content contract* of `Dockerfile` and `docker-compose.yml`
-without a Docker daemon, so the guarantees survive in CI where no daemon
-exists. The live `docker compose up -d` harness remains the runtime proof.
+These assert the *content contract* of the matcher's `Dockerfile` and of its
+service block in the root `docker-compose.yml`, without a Docker daemon, so the
+guarantees survive in CI where no daemon exists. The live `docker compose up -d`
+harness remains the runtime proof.
+
+The Compose file moved to the repository root (REQ-UCD-1): one deployment
+surface for every service. What is asserted here is the part of it that belongs
+to this service, and only that — the cross-service contracts live in
+`tests/deployment/`. The `matcher` block is sliced out first so a value that
+happens to appear in a sibling service cannot satisfy an assertion made about
+this one.
 
 Parsed as text on purpose: PyYAML is not a project dependency and adding one
 only to read two files would violate the "no dependency without a measured
@@ -10,12 +18,29 @@ need" rule this service already follows.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
 
 SERVICE_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = Path(__file__).resolve().parents[4]
+
+
+def _service_block(compose_text: str, service: str) -> str:
+    """The body of one service in the root Compose, by indentation."""
+    lines = compose_text.splitlines()
+    start = next(
+        index
+        for index, line in enumerate(lines)
+        if line.rstrip() == f"  {service}:"
+    )
+    body: list[str] = []
+    for line in lines[start + 1 :]:
+        if line.strip() and not line.startswith("    "):
+            break
+        body.append(line)
+    return "\n".join(body)
 
 
 @pytest.fixture(scope="module")
@@ -34,9 +59,10 @@ def dockerfile() -> str:
 
 @pytest.fixture(scope="module")
 def compose() -> str:
-    path = SERVICE_ROOT / "docker-compose.yml"
+    """This service's block of the single root Compose file."""
+    path = REPO_ROOT / "docker-compose.yml"
     assert path.is_file(), f"missing {path}"
-    return path.read_text(encoding="utf-8")
+    return _service_block(path.read_text(encoding="utf-8"), "matcher")
 
 
 class TestDockerfile:
@@ -106,30 +132,32 @@ class TestDockerignore:
 
 class TestCompose:
     def test_build_context_is_the_repo_root(self, compose: str) -> None:
-        assert "context: ../.." in compose
+        assert re.search(r"^\s+context:\s+\.\s*$", compose, re.MULTILINE)
         assert "dockerfile: services/matcher/Dockerfile" in compose
 
     def test_publishes_port_8002(self, compose: str) -> None:
         assert '"8002:8002"' in compose
 
     def test_mounts_the_catalogue_read_only(self, compose: str) -> None:
-        assert "../../data:/data:ro" in compose
+        assert "./data:/data:ro" in compose
         assert "CATALOGUE_DB: /data/bodegas-y-stock.sqlite" in compose
 
     @pytest.mark.parametrize(
         "key, value",
         [
-            ("MATCH_ACCEPT_SCORE", '"0.50"'),
-            ("MATCH_AMBIGUITY_MARGIN", '"0.08"'),
-            ("MATCH_TSR_MARGIN", '"0.08"'),
-            ("MATCH_MAX_CANDIDATES", '"5"'),
-            ("MATCH_UNIT_RERANK", '"true"'),
+            ("MATCH_ACCEPT_SCORE", "0.50"),
+            ("MATCH_AMBIGUITY_MARGIN", "0.08"),
+            ("MATCH_TSR_MARGIN", "0.08"),
+            ("MATCH_MAX_CANDIDATES", "5"),
+            ("MATCH_UNIT_RERANK", "true"),
         ],
     )
     def test_pins_every_tunable_threshold(
         self, compose: str, key: str, value: str
     ) -> None:
-        assert f"{key}: {value}" in compose
+        """Overridable from the root `.env`, but only ever *overridable*: with
+        no `.env` the deployment still runs on the value reviewed here."""
+        assert f"{key}: ${{{key}:-{value}}}" in compose
 
     def test_compose_env_defaults_match_the_settings_defaults(
         self, compose: str
@@ -138,17 +166,26 @@ class TestCompose:
         from matcher.config import Settings
 
         defaults = Settings(catalogue_db=Path("/data/bodegas-y-stock.sqlite"))
-        assert f'MATCH_ACCEPT_SCORE: "{defaults.match_accept_score:.2f}"' in compose
         assert (
-            f'MATCH_AMBIGUITY_MARGIN: "{defaults.match_ambiguity_margin:.2f}"'
-            in compose
-        )
-        assert f'MATCH_TSR_MARGIN: "{defaults.match_tsr_margin:.2f}"' in compose
-        assert f'MATCH_MAX_CANDIDATES: "{defaults.match_max_candidates}"' in compose
+            "MATCH_ACCEPT_SCORE: "
+            f"${{MATCH_ACCEPT_SCORE:-{defaults.match_accept_score:.2f}}}"
+        ) in compose
         assert (
-            f'MATCH_UNIT_RERANK: "{str(defaults.match_unit_rerank).lower()}"'
-            in compose
-        )
+            "MATCH_AMBIGUITY_MARGIN: "
+            f"${{MATCH_AMBIGUITY_MARGIN:-{defaults.match_ambiguity_margin:.2f}}}"
+        ) in compose
+        assert (
+            "MATCH_TSR_MARGIN: "
+            f"${{MATCH_TSR_MARGIN:-{defaults.match_tsr_margin:.2f}}}"
+        ) in compose
+        assert (
+            "MATCH_MAX_CANDIDATES: "
+            f"${{MATCH_MAX_CANDIDATES:-{defaults.match_max_candidates}}}"
+        ) in compose
+        assert (
+            "MATCH_UNIT_RERANK: "
+            f"${{MATCH_UNIT_RERANK:-{str(defaults.match_unit_rerank).lower()}}}"
+        ) in compose
 
     def test_healthcheck_probes_the_health_endpoint(self, compose: str) -> None:
         assert "healthcheck:" in compose
@@ -171,8 +208,11 @@ class TestCompose:
         monkeypatch.delenv("STARTUP_RETRIES", raising=False)
         monkeypatch.delenv("STARTUP_RETRY_DELAY_SECONDS", raising=False)
         defaults = Settings(catalogue_db=Path("/data/bodegas-y-stock.sqlite"))
-        assert f'STARTUP_RETRIES: "{defaults.startup_retries}"' in compose
         assert (
-            f'STARTUP_RETRY_DELAY_SECONDS: '
-            f'"{defaults.startup_retry_delay_seconds:.1f}"' in compose
+            f"STARTUP_RETRIES: ${{STARTUP_RETRIES:-{defaults.startup_retries}}}"
+            in compose
+        )
+        assert (
+            "STARTUP_RETRY_DELAY_SECONDS: ${STARTUP_RETRY_DELAY_SECONDS:-"
+            f"{defaults.startup_retry_delay_seconds:.1f}}}" in compose
         )
