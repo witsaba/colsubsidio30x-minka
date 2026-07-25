@@ -1,0 +1,139 @@
+---
+/**
+ * Auditor nav rail — 94px, design contract §3 "Chrome".
+ *
+ * Static `.astro`: navigation between the three views is three real page
+ * loads, so no island is needed. The design draws the active item purely with
+ * colour; `aria-current="page"` is an authored addition (the prototypes carry
+ * zero aria).
+ */
+import { AUDITOR_INITIALS, AUDITOR_NAME } from '../../fixtures/auditorSeed';
+
+interface Props {
+  active: 'review' | 'close' | 'base';
+}
+
+const { active } = Astro.props;
+
+const items = [
+  { key: 'review', label: 'Revisión', icon: 'fact_check', href: '/auditor' },
+  { key: 'close', label: 'Cierre', icon: 'checklist', href: '/auditor/cierre' },
+  { key: 'base', label: 'Base', icon: 'database', href: '/auditor/base' },
+] as const;
+---
+
+<div class="rail">
+  <span class="rail__logo" aria-hidden="true">C</span>
+
+  <ul class="rail__items">
+    {
+      items.map((item) => (
+        <li>
+          <a
+            class:list={['rail__item', { 'rail__item--active': item.key === active }]}
+            href={item.href}
+            aria-current={item.key === active ? 'page' : undefined}
+          >
+            <span class="rail__icon" aria-hidden="true">{item.icon}</span>
+            <span class="rail__label">{item.label}</span>
+          </a>
+        </li>
+      ))
+    }
+  </ul>
+
+  <div class="rail__user">
+    <span class="rail__avatar" aria-hidden="true">{AUDITOR_INITIALS}</span>
+    <span class="rail__role">Auditor</span>
+    <span class="sr-only">{AUDITOR_NAME}</span>
+  </div>
+</div>
+
+<style>
+  .rail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-5);
+    min-height: 100%;
+    padding: var(--sp-5) var(--sp-2);
+  }
+
+  .rail__logo {
+    display: grid;
+    place-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: var(--r-btn);
+    background: var(--brand-yellow);
+    color: var(--text);
+    font-weight: 800;
+  }
+
+  .rail__items {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--sp-2);
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .rail__item {
+    display: grid;
+    gap: var(--sp-1);
+    justify-items: center;
+    padding: var(--sp-3) var(--sp-1);
+    border-radius: var(--r-btn);
+    color: var(--text-on-blue-3);
+    text-decoration: none;
+  }
+
+  .rail__item:hover {
+    background: rgb(255 255 255 / 16%);
+  }
+
+  .rail__item--active {
+    background: rgb(255 255 255 / 20%);
+    color: #fff;
+  }
+
+  .rail__icon {
+    font-family: var(--font-icon);
+    font-size: 24px;
+    line-height: 1;
+  }
+
+  .rail__label {
+    font-size: var(--fs-eyebrow);
+    font-weight: 700;
+  }
+
+  .rail__user {
+    display: grid;
+    gap: var(--sp-1);
+    justify-items: center;
+  }
+
+  .rail__avatar {
+    display: grid;
+    place-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: var(--brand-yellow);
+    color: var(--text);
+    font-size: var(--fs-eyebrow);
+    font-weight: 800;
+  }
+
+  .rail__role {
+    color: var(--text-on-blue-3);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+</style>

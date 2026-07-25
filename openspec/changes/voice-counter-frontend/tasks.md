@@ -163,7 +163,7 @@ Parallel groups: **P-A** = T4→T5→T6 (extraction/units chain) · **P-B** = T7
 
 ## Phase 5 — Auditor dashboard (FULLY PARALLEL with Phase 4 — disjoint files)
 
-- [ ] **T21 — Auditor fixtures + static V2/V3 shells.**
+- [x] **T21 — Auditor fixtures + static V2/V3 shells.**
   RED: `tests/fixtures/auditor-seed.test.ts` — exactly 8 seed records with 3 open alerts, each carrying `counted`, `system`, badge state, and an empty trace array.
   GREEN: `src/fixtures/auditorSeed.ts` (8 verbatim records, warehouses, Oracle export rows), `src/pages/auditor/cierre.astro` + `base.astro` (zero-JS shells; the `base` view states the RF-11 bodega→catalogue limitation verbatim).
   Requirements: REQ-AUD-1, REQ-AUD-3. Deps: T14, T15.

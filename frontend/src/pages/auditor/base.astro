@@ -1,0 +1,345 @@
+---
+/**
+ * V3 `base` — "Base de datos y equipo" (design contract §3, REQ-AUD-1).
+ *
+ * Zero-JS static shell, allowed by REQ-AUD-1. This view is also where the RF-11
+ * limitation is stated verbatim to the auditor (design §11): the source
+ * workbook carries no key joining the 48 bodegas to the 8 stock tables, so the
+ * audit categories ARE the 8 stock tables. Saying it here is the honest
+ * alternative to inventing a mapping.
+ */
+import AuditorLayout from '../../layouts/AuditorLayout.astro';
+import AuditorRail from '../../components/auditor/AuditorRail.astro';
+import {
+  AUDITOR_EYEBROW,
+  COUNT_TEAM,
+  LEARNED_RANGES,
+  WORKBOOK_STATS,
+} from '../../fixtures/auditorSeed';
+
+export const prerender = true;
+
+const title = 'Base de datos y equipo';
+---
+
+<AuditorLayout title={`${title} · Auditor`}>
+  <AuditorRail slot="rail" active="base" />
+
+  <section slot="bodegas" class="pane">
+    <h2 class="pane__title">Archivo de origen</h2>
+    <div class="file">
+      <span class="file__tile" aria-hidden="true">table_view</span>
+      <div>
+        <p class="file__name">BODEGAS Y STOCK.xlsx</p>
+        <p class="file__meta">Cargado 30 jul · 14:02 · 1.482 SKU</p>
+      </div>
+      <span class="pill">Aprobada</span>
+    </div>
+
+    <ul class="stats">
+      {
+        WORKBOOK_STATS.map((stat) => (
+          <li class="stat">
+            <b class="stat__value">{stat.value}</b>
+            <span class="stat__label">{stat.label}</span>
+          </li>
+        ))
+      }
+    </ul>
+  </section>
+
+  <header class="head">
+    <p class="head__eyebrow">{AUDITOR_EYEBROW}</p>
+    <h1 class="head__title">{title}</h1>
+  </header>
+
+  <div class="body">
+    <section class="card">
+      <h2 class="card__title">Rangos aprendidos por artículo</h2>
+      <p class="card__help">
+        Cada artículo aprende el rango en el que suele contarse en esta bodega. Fuera de ese rango
+        el conteo se marca para que el auditor lo mire, nunca se corrige solo.
+      </p>
+
+      <table class="table">
+        <caption class="sr-only">Rangos aprendidos por artículo</caption>
+        <thead>
+          <tr>
+            <th scope="col">Artículo</th>
+            <th scope="col">Unidad</th>
+            <th scope="col">Rango</th>
+          </tr>
+        </thead>
+        <tbody>
+          {
+            LEARNED_RANGES.map((range) => (
+              <tr>
+                <td>{range.articulo}</td>
+                <td>{range.unit}</td>
+                <td>{range.range}</td>
+              </tr>
+            ))
+          }
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2 class="card__title">Equipo del conteo</h2>
+      <ul class="team">
+        {
+          COUNT_TEAM.map((member) => (
+            <li class="team__row">
+              <span class="team__avatar" aria-hidden="true">{member.initials}</span>
+              <div>
+                <p class="team__name">{member.name}</p>
+                <p class="team__role">{member.role}</p>
+              </div>
+            </li>
+          ))
+        }
+      </ul>
+    </section>
+
+    <section class="card card--note">
+      <h2 class="card__title">Sin integración al ERP</h2>
+      <p class="card__help">
+        La herramienta es autónoma: se alimenta del Excel y devuelve el archivo de carga. El ERP
+        sigue siendo el dueño de traslados, ventas y bajas.
+      </p>
+    </section>
+
+    <section class="card card--note">
+      <h2 class="card__title">Bodegas y tablas de stock</h2>
+      <p class="card__help">
+        El libro de origen no trae una llave que una las 48 bodegas con las 8 tablas de stock: las
+        categorías de auditoría son las 8 tablas reales.
+      </p>
+    </section>
+  </div>
+
+  <section slot="detalle" class="pane">
+    <h2 class="pane__title">Unidades de medida</h2>
+    <p class="note">
+      El conteo se guarda con la unidad que el catálogo declara para cada artículo. Si el contador
+      dicta otra unidad, el registro se marca y lo resuelve el auditor.
+    </p>
+  </section>
+</AuditorLayout>
+
+<style>
+  .head {
+    display: grid;
+    gap: var(--sp-1);
+    padding: var(--sp-5) var(--sp-6);
+    border-bottom: 1px solid var(--border-5);
+    background: var(--surface);
+  }
+
+  .head__eyebrow {
+    margin: 0;
+    color: var(--text-faint);
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .head__title {
+    margin: 0;
+    font-size: var(--fs-h2);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+
+  .body {
+    display: grid;
+    gap: var(--sp-4);
+    padding: var(--sp-5) var(--sp-6);
+  }
+
+  .card {
+    padding: var(--sp-5);
+    border: 1px solid var(--border-5);
+    border-radius: var(--r-card-lg);
+    background: var(--surface);
+  }
+
+  .card--note {
+    background: var(--surface-alt);
+  }
+
+  .card__title {
+    margin: 0 0 var(--sp-2);
+    font-size: var(--fs-h3);
+    font-weight: 800;
+  }
+
+  .card__help {
+    margin: 0;
+    color: var(--text-soft-2);
+    font-size: 13.5px;
+  }
+
+  .table {
+    width: 100%;
+    margin-top: var(--sp-4);
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .table th,
+  .table td {
+    padding: var(--sp-2) var(--sp-3);
+    border-bottom: 1px solid var(--border-7);
+    text-align: left;
+  }
+
+  .table th {
+    color: var(--text-faint-2);
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .table td:nth-child(2),
+  .table td:nth-child(3) {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .pane {
+    padding: var(--sp-5);
+  }
+
+  .pane__title {
+    margin: 0 0 var(--sp-3);
+    color: var(--text-faint-2);
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .file {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-4);
+    border: 1px solid var(--border-5);
+    border-radius: var(--r-card);
+  }
+
+  .file__tile {
+    display: grid;
+    place-content: center;
+    width: 42px;
+    height: 42px;
+    border-radius: var(--r-btn);
+    background: var(--surface-pale-blue-2);
+    color: var(--brand-blue);
+    font-family: var(--font-icon);
+    font-size: 22px;
+  }
+
+  .file__name {
+    margin: 0;
+    font-size: 13.5px;
+    font-weight: 700;
+  }
+
+  .file__meta {
+    margin: 0;
+    color: var(--text-faint-3);
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono-meta);
+  }
+
+  .pill {
+    grid-column: 1 / -1;
+    justify-self: start;
+    padding: var(--sp-1) var(--sp-3);
+    border-radius: var(--r-pill);
+    background: var(--ok-bg);
+    color: var(--ok);
+    font-size: var(--fs-eyebrow);
+    font-weight: 800;
+  }
+
+  .stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--sp-2);
+    margin: var(--sp-4) 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .stat {
+    display: grid;
+    gap: 2px;
+    padding: var(--sp-3);
+    border: 1px solid var(--border-6);
+    border-radius: var(--r-card);
+  }
+
+  .stat__value {
+    font-size: 19px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .stat__label {
+    color: var(--text-faint-2);
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .team {
+    display: grid;
+    gap: var(--sp-3);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .team__row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+  }
+
+  .team__avatar {
+    display: grid;
+    place-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: var(--surface-pale-blue-2);
+    color: var(--brand-blue);
+    font-size: var(--fs-eyebrow);
+    font-weight: 800;
+  }
+
+  .team__name {
+    margin: 0;
+    font-size: 13.5px;
+    font-weight: 700;
+  }
+
+  .team__role {
+    margin: 0;
+    color: var(--text-soft-2);
+    font-size: 12.5px;
+  }
+
+  .note {
+    margin: 0;
+    color: var(--text-soft-2);
+    font-size: 13px;
+  }
+</style>

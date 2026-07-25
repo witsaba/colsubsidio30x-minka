@@ -1,0 +1,380 @@
+---
+/**
+ * V2 `close` — "Cierre y exportación" (design contract §3, REQ-AUD-1).
+ *
+ * Ships tonight as a ZERO-JS static shell: REQ-AUD-1 explicitly allows it, and
+ * the live KPIs / real export generation are stretch S2. Everything rendered
+ * here comes from `auditorSeed.ts`, so the numbers cannot drift from the
+ * review view's fixtures.
+ *
+ * DECIMAL SEPARATOR — deliberate inconsistency, do not "fix": the Spanish UI
+ * writes `6,5` while the `COUNT_QTY` column below writes `6.5`, because the
+ * Oracle file is machine-targeted and Oracle My Inventory parses that column
+ * with a period. Both forms are correct in their own context.
+ */
+import AuditorLayout from '../../layouts/AuditorLayout.astro';
+import AuditorRail from '../../components/auditor/AuditorRail.astro';
+import {
+  AUDITOR_EYEBROW,
+  CLOSE_KPIS,
+  CONCILIATION_ROWS,
+  ORACLE_EXPORT_ROWS,
+} from '../../fixtures/auditorSeed';
+
+export const prerender = true;
+
+const title = 'Cierre y exportación';
+---
+
+<AuditorLayout title={`${title} · Auditor`}>
+  <AuditorRail slot="rail" active="close" />
+
+  <section slot="bodegas" class="pane">
+    <h2 class="pane__title">Resumen de la toma</h2>
+    <ul class="pane__list">
+      {
+        CONCILIATION_ROWS.map((row) => (
+          <li class="pane__row">
+            <span>{row.label}</span>
+            <b class:list={['pane__value', `tone--${row.tone}`]}>{row.value}</b>
+          </li>
+        ))
+      }
+    </ul>
+  </section>
+
+  <header class="head">
+    <p class="head__eyebrow">{AUDITOR_EYEBROW}</p>
+    <h1 class="head__title">{title}</h1>
+  </header>
+
+  <div class="body">
+    <ul class="kpis">
+      {
+        CLOSE_KPIS.map((kpi) => (
+          <li class:list={['kpi', `tone--${kpi.tone}`]}>
+            <p class="kpi__label">{kpi.label}</p>
+            <p class="kpi__value">{kpi.value}</p>
+            <p class="kpi__detail">{kpi.detail}</p>
+          </li>
+        ))
+      }
+    </ul>
+
+    <section class="card">
+      <div class="card__head">
+        <h2 class="card__title">Archivo para Oracle My Inventory</h2>
+        <span class="tag">Import Count Sequences</span>
+      </div>
+
+      {/* Real table semantics; the prototype ships nested divs only. */}
+      <table class="table">
+        <caption class="sr-only">
+          Primeras filas del archivo de carga en formato Import Count Sequences
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">SUBINVENTORY</th>
+            <th scope="col">ITEM</th>
+            <th scope="col">COUNT_QTY</th>
+            <th scope="col">UOM</th>
+            <th scope="col">COUNTER</th>
+          </tr>
+        </thead>
+        <tbody>
+          {
+            ORACLE_EXPORT_ROWS.map((row) => (
+              <tr>
+                <td>{row.subinventory}</td>
+                <td>{row.item}</td>
+                <td>{row.countQty}</td>
+                <td>{row.uom}</td>
+                <td>{row.counter}</td>
+              </tr>
+            ))
+          }
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2 class="card__title">Conciliación</h2>
+      <ul class="pane__list">
+        {
+          CONCILIATION_ROWS.map((row) => (
+            <li class="pane__row">
+              <span>{row.label}</span>
+              <b class:list={['pane__value', `tone--${row.tone}`]}>{row.value}</b>
+            </li>
+          ))
+        }
+      </ul>
+    </section>
+
+    <section class="promo">
+      <span class="promo__icon" aria-hidden="true">history</span>
+      <h2 class="promo__title">De 2 días a 41 minutos</h2>
+      <p class="promo__body">
+        El conteo ya está digitado en el momento de contar. Nadie vuelve a transcribir las 48
+        bodegas.
+      </p>
+    </section>
+  </div>
+
+  <section slot="detalle" class="pane">
+    <h2 class="pane__title">Cómo se cierra</h2>
+    <ul class="legend">
+      <li>
+        <span class="legend__icon" aria-hidden="true">filter_alt</span>
+        <b>Revisión por excepción</b>
+        <p>
+          El auditor no recuenta el 100%: entra por las alertas y solo baja al detalle cuando algo
+          lo amerita.
+        </p>
+      </li>
+      <li>
+        <span class="legend__icon" aria-hidden="true">history_edu</span>
+        <b>Traza completa</b>
+        <p>
+          Cada registro guarda quién contó, a qué hora, qué dictó y qué decidió el auditor. La voz
+          no se almacena.
+        </p>
+      </li>
+      <li>
+        <span class="legend__icon" aria-hidden="true">lock</span>
+        <b>Cierre con candado</b>
+        <p>
+          El archivo para Oracle no se genera con alertas abiertas: se evita cargar datos que
+          después hay que corregir.
+        </p>
+      </li>
+    </ul>
+  </section>
+</AuditorLayout>
+
+<style>
+  .head {
+    display: grid;
+    gap: var(--sp-1);
+    padding: var(--sp-5) var(--sp-6);
+    border-bottom: 1px solid var(--border-5);
+    background: var(--surface);
+  }
+
+  .head__eyebrow {
+    margin: 0;
+    color: var(--text-faint);
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .head__title {
+    margin: 0;
+    font-size: var(--fs-h2);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+
+  .body {
+    display: grid;
+    gap: var(--sp-4);
+    padding: var(--sp-5) var(--sp-6);
+  }
+
+  .kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: var(--sp-3);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .kpi {
+    padding: var(--sp-4);
+    border: 1px solid var(--border-5);
+    border-radius: var(--r-card);
+    background: var(--surface);
+  }
+
+  .kpi__label {
+    margin: 0;
+    color: var(--text-faint-2);
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .kpi__value {
+    margin: var(--sp-2) 0 0;
+    font-size: 26px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+
+  .kpi__detail {
+    margin: var(--sp-1) 0 0;
+    color: var(--text-soft-2);
+    font-size: 13px;
+  }
+
+  .card {
+    padding: var(--sp-5);
+    border: 1px solid var(--border-5);
+    border-radius: var(--r-card-lg);
+    background: var(--surface);
+  }
+
+  .card__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-3);
+  }
+
+  .card__title {
+    margin: 0 0 var(--sp-3);
+    font-size: var(--fs-h3);
+    font-weight: 800;
+  }
+
+  .card__head .card__title {
+    margin: 0;
+  }
+
+  .tag {
+    padding: var(--sp-1) var(--sp-3);
+    border: 1px solid var(--border-3);
+    border-radius: var(--r-pill);
+    color: var(--text-soft-3);
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono-meta);
+  }
+
+  .table {
+    width: 100%;
+    margin-top: var(--sp-4);
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono-meta);
+  }
+
+  .table th,
+  .table td {
+    padding: var(--sp-2) var(--sp-3);
+    border-bottom: 1px solid var(--border-7);
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  .table th {
+    color: var(--text-faint-2);
+    font-weight: 500;
+  }
+
+  .pane {
+    padding: var(--sp-5);
+  }
+
+  .pane__title {
+    margin: 0 0 var(--sp-3);
+    color: var(--text-faint-2);
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .pane__list {
+    display: grid;
+    gap: var(--sp-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .pane__row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--sp-3);
+    padding-bottom: var(--sp-2);
+    border-bottom: 1px solid var(--border-7);
+    color: var(--text-soft-2);
+    font-size: 13px;
+  }
+
+  .pane__value {
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .tone--ok .pane__value,
+  .pane__value.tone--ok {
+    color: var(--ok);
+  }
+
+  .tone--warn .pane__value,
+  .pane__value.tone--warn {
+    color: var(--warn);
+  }
+
+  .kpi.tone--warn .kpi__value {
+    color: var(--warn);
+  }
+
+  .kpi.tone--info .kpi__value {
+    color: var(--brand-blue);
+  }
+
+  .promo {
+    padding: var(--sp-5);
+    border-radius: var(--r-card-lg);
+    background: var(--brand-blue);
+    color: var(--text-on-blue);
+  }
+
+  .promo__icon {
+    font-family: var(--font-icon);
+    font-size: 28px;
+    color: var(--brand-yellow);
+  }
+
+  .promo__title {
+    margin: var(--sp-2) 0 var(--sp-1);
+    color: #fff;
+    font-size: var(--fs-h2);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+
+  .promo__body {
+    margin: 0;
+    font-size: 13.5px;
+  }
+
+  .legend {
+    display: grid;
+    gap: var(--sp-4);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .legend p {
+    margin: var(--sp-1) 0 0;
+    color: var(--text-soft-2);
+    font-size: 13px;
+  }
+
+  .legend__icon {
+    display: block;
+    color: var(--brand-blue);
+    font-family: var(--font-icon);
+    font-size: 20px;
+  }
+</style>
