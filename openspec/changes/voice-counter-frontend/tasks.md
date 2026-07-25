@@ -87,7 +87,7 @@ Parallel groups: **P-A** = T4→T5→T6 (extraction/units chain) · **P-B** = T7
   GREEN: `src/lib/extraction/mock.ts` (conjunction/comma split + ITN + unit lookup), `src/fixtures/scripts.ts` (4 scripts + expected extractions, shared by app and tests).
   Requirements: REQ-EXT-1, REQ-EXT-3, REQ-EXT-5. Deps: T4, T5.
 
-- [ ] **T7 — Pure `sessionReducer`.**
+- [x] **T7 — Pure `sessionReducer`.**
   RED: `tests/session/reducer.test.ts` — `MIC_REQUESTED` is a no-op unless `consentChecked`; `REC_STARTED` is refused when `blocked(state)` is true, when an overlay is open, or when `requestInFlight`; `blocked()` is DERIVED from `overlay.kind==='anomaly' || records.some(r=>r.state==='anom_open')` and never stored; a `PIPELINE_RESOLVED` queue of 3 confirmables produces ONE combined confirm overlay; `ANOMALY_REDICTATE` pops the queue; `CONFIRM_ACCEPTED` appends N records and bumps `progress`; `CONFIRM_REPEAT` appends none; `COUNT_FINISHED` → `screen:'done'` only when `overlay===null && !requestInFlight`; an unknown event returns the identical state object (reducer is total).
   GREEN: `src/lib/session/reducer.ts`.
   Requirements: REQ-OCF-1, REQ-OCF-3, REQ-OCF-4, REQ-OCF-5, REQ-OCF-9. Deps: T3.
