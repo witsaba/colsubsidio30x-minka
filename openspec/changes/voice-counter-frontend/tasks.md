@@ -77,7 +77,7 @@ Parallel groups: **P-A** = T4→T5→T6 (extraction/units chain) · **P-B** = T7
   GREEN: create `src/lib/extraction/itn.ts`.
   Requirements: REQ-EXT-2. Deps: T3.
 
-- [ ] **T5 — Unit vocabulary and dimension map.**
+- [x] **T5 — Unit vocabulary and dimension map.**
   RED: `tests/units.test.ts` — `dimensionOf('gramos') === 'mass'`, `dimensionOf('litros') === 'volume'`, `dimensionOf('botellas'|'cajas'|'tablas'|'unidades') === 'count'`; vocabulary is bound to the matcher's `UNIT_SYNONYMS` and an unknown word returns `null` (never an invented unit).
   GREEN: `src/lib/units.ts` (+ `displayUnit()` helper: renders `unidad_display` only, returns `null` for null).
   Requirements: REQ-EXT-4, REQ-OCF-7. Deps: T3.
