@@ -18,6 +18,17 @@ from src.settings import Settings
 from src.transcribe import error_response, router
 
 
+def request_id_of(request) -> str:
+    """The id this request is already known by, or a fresh one.
+
+    Handlers must never mint their own when the route has one: an error
+    envelope carrying an id that appears in no log line is worse than useless
+    to whoever has to correlate it (JD-6). The fallback covers failures that
+    happen before the route ran at all.
+    """
+    return getattr(request.state, "request_id", None) or str(uuid4())
+
+
 def create_app() -> FastAPI:
     # Settings() raises here, at import/boot time, when the ACTIVE vendor's key
     # is missing or STT_VENDOR is unknown (REQ-VND-3, REQ-VND-5).
@@ -49,10 +60,13 @@ def create_app() -> FastAPI:
         """
         if isinstance(exc.__cause__, MultiPartException):
             return error_response(
-                413, "payload_too_large", "upload exceeds the part size limit", str(uuid4())
+                413,
+                "payload_too_large",
+                "upload exceeds the part size limit",
+                request_id_of(request),
             )
         return error_response(
-            exc.status_code, "http_error", str(exc.detail), str(uuid4())
+            exc.status_code, "http_error", str(exc.detail), request_id_of(request)
         )
 
     @app.exception_handler(Exception)
@@ -61,10 +75,11 @@ def create_app() -> FastAPI:
 
         The message is deliberately fixed - an exception string can quote
         payload data, and Module 2 has a request_id to correlate with the
-        traceback the server still logs (JD-3, REQ-PRV-2).
+        traceback the server still logs (JD-3, REQ-PRV-2). That id must be the
+        route's own, or there is nothing to correlate with (JD-6).
         """
         return error_response(
-            500, "internal_error", "unexpected internal error", str(uuid4())
+            500, "internal_error", "unexpected internal error", request_id_of(request)
         )
 
     return app

@@ -214,7 +214,9 @@ async def transcribe(request: Request, file: UploadFile = File(...)) -> JSONResp
     settings: Settings = request.app.state.settings
     client: httpx.AsyncClient = request.app.state.http_client
     vendor = settings.stt_vendor
-    request_id = str(uuid4())
+    # On the request scope, not just a local, so a crash anywhere downstream
+    # reports the id that is already in the logs (JD-6).
+    request_id = request.state.request_id = str(uuid4())
     started = time.perf_counter()
 
     audio = await file.read()
