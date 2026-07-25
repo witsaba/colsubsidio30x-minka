@@ -10,6 +10,7 @@ import { fireEvent, render, screen, within } from '@testing-library/preact';
 import { describe, expect, it } from 'vitest';
 
 import { AuditorReview } from '../../../src/components/auditor/AuditorReview';
+import { REVIEWED_WAREHOUSE_NAME } from '../../../src/fixtures/auditorSeed';
 
 /** Deterministic clock so trace assertions never depend on wall time. */
 const clock = () => '9:05 a.m.';
@@ -314,7 +315,7 @@ describe('accessibility the prototype lacks entirely', () => {
     const warehouses = screen.getByRole('list', { name: 'Bodegas' });
     const current = within(warehouses).getAllByRole('button', { current: true });
     expect(current).toHaveLength(1);
-    expect(current[0]?.textContent).toContain('Cocina Principal');
+    expect(current[0]?.textContent).toContain(REVIEWED_WAREHOUSE_NAME);
 
     selectRecord('SALSA DE SOYA 1L');
     expect(within(recordList()).getAllByRole('button', { current: true })).toHaveLength(1);

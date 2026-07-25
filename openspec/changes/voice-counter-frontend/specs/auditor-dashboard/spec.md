@@ -14,7 +14,7 @@ The dashboard MUST provide `review` (live, three-pane: warehouses 286px / record
 
 - GIVEN the nav rail with Revisión / Cierre / Base
 - WHEN each item is activated
-- THEN the corresponding view renders with its header title ("Cocina Principal · revisión" / "Cierre y exportación" / "Base de datos y equipo")
+- THEN the corresponding view renders with its header title ("{bodega} · revisión", where {bodega} is `labelFor(DEMO_CATALOGUE_ID)` — the same label the operator counted under, "Restaurante Fuentes · AyB" / "Cierre y exportación" / "Base de datos y equipo")
 
 ### Requirement: REQ-AUD-2 — Auditor may see theoretical stock
 

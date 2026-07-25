@@ -29,6 +29,18 @@ export const CATALOGUES: readonly Catalogue[] = [
   { catalogueId: 'zoologico', label: 'Zoológico · AyB', rows: 55 },
 ] as const;
 
+/**
+ * The one bodega the demo actually counts — the largest food table, so the
+ * demo scripts have the best match odds.
+ *
+ * It is exported so the auditor's seeded fixtures can DERIVE the name of the
+ * warehouse under review instead of hardcoding a second one. The operator half
+ * is the source of truth for naming because it is the half backed by real
+ * matcher data; nothing here invents a bodega→catalogue mapping (RF-11 has
+ * none — see `RF11_LIMITATION_NOTE`).
+ */
+export const DEMO_CATALOGUE_ID = 'stock_restaurante_fuentes_ayb';
+
 /** Every real catalogue id, in the same size order as `CATALOGUES`. */
 export const CATALOGUE_IDS: readonly string[] = CATALOGUES.map((c) => c.catalogueId);
 

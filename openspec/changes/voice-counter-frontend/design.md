@@ -284,7 +284,7 @@ Swap point: `AnomalyEngine` is constructor-injected into `runPipeline` via `Pipe
 | `stock_kiosco_piscigiros_ayb` | 57 | Kiosco Piscigiros · AyB |
 | `zoologico` | 56 | Zoológico · AyB |
 
-**Operator plan cards keep the design's illustrative names as labels** — the active card reads "Cocina Principal" but carries `catalogueId: 'stock_restaurante_fuentes_ayb'` (largest food catalogue → best match odds for the demo scripts); a small mono sub-line shows the real `catalogue_id` for honesty. **RF-11 limitation (state verbatim in demo + auditor `base` view):** the bodega→catalogue join key does not exist in the source workbook, so audit categories are the 8 real stock tables, not the 48 bodegas.
+**Operator plan cards are named by the REAL catalogue labels** (D13, revised during apply) — the active card reads "Restaurante Fuentes · AyB" over `catalogueId: 'stock_restaurante_fuentes_ayb'` (largest food catalogue → best match odds for the demo scripts); a small mono sub-line shows the real `catalogue_id` for honesty. The auditor's bodega under review derives the same label from `DEMO_CATALOGUE_ID`, so one name runs through the whole demo. **RF-11 limitation (state verbatim in demo + auditor `base` view):** the bodega→catalogue join key does not exist in the source workbook, so audit categories are the 8 real stock tables, not the 48 bodegas.
 
 ## 11. Testing architecture (strict TDD)
 
@@ -333,7 +333,7 @@ cd frontend && cp .env.example .env && npm install && npm run dev   # http://loc
 | D10 | 20 s hard cap + 28 kbps + client-side 1 MiB pre-check, all constants in `capture.ts` | server 413 as the signal | RF-13 value unratified (`[TEAM]`); one constant to change; 413 should never be the first feedback |
 | D11 | Anomaly mock: mass↔volume rule + keyword learned-ranges, injected via `AnomalyEngine` seam | generic anomaly heuristics | Deterministic for the 4 scripts; zero false positives on script 1; honest Module 4 swap point |
 | D12 | Google Fonts CDN link kept; self-host is follow-up | self-host tonight | Zero setup under deadline; fallback stacks degrade gracefully (§4) |
-| D13 | Plan cards: design labels ("Cocina Principal") over real `catalogue_id`, real id visible in mono sub-line | fake bodega mapping | RF-11 join key does not exist; labels keep the demo narrative, sub-line keeps it honest (§10) |
+| D13 (revised) | Plan cards: REAL catalogue labels ("Restaurante Fuentes · AyB") over real `catalogue_id`, real id visible in mono sub-line; the auditor's reviewed bodega derives its name from `DEMO_CATALOGUE_ID` | fake bodega mapping; illustrative labels ("Cocina Principal") that made the demo's two halves disagree | RF-11 join key does not exist; one source of bodega names (`lib/catalogues.ts`) keeps the narrative coherent AND honest (§10) |
 
 ## Threat Matrix
 

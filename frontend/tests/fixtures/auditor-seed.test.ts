@@ -19,6 +19,7 @@ import {
   badgeOf,
   diffOf,
   openAlertCount,
+  REVIEWED_WAREHOUSE_NAME,
 } from '../../src/fixtures/auditorSeed';
 
 describe('AUDITOR_RECORDS — the 8 verbatim seed records', () => {
@@ -111,7 +112,7 @@ describe('AUDITOR_RECORDS — the 8 verbatim seed records', () => {
 
   it('carries the RF-32 trace columns on every record', () => {
     for (const record of AUDITOR_RECORDS) {
-      expect(record.plan).toBe('Cocina Principal · 31 jul');
+      expect(record.plan).toBe(`${REVIEWED_WAREHOUSE_NAME} · 31 jul`);
       expect(record.dictated.length).toBeGreaterThan(0);
       expect(record.consensus).toBe('3 de 3');
     }
@@ -170,7 +171,7 @@ describe('AUDITOR_WAREHOUSES — the left pane', () => {
       AUDITOR_WAREHOUSES.map((w) => [w.name, w.percentage, w.counted, w.total, w.stateLabel]),
     ).toEqual([
       ['Almacén General', 100, 412, 412, 'Cerrada · Jorge M.'],
-      ['Cocina Principal', 78, 84, 107, 'En curso · Pablo R.'],
+      [REVIEWED_WAREHOUSE_NAME, 78, 84, 107, 'En curso · Pablo R.'],
       ['Restaurante Principal', 100, 96, 96, 'Cerrada · Marta G.'],
       ['Cafetería Primer Piso', 0, 0, 62, 'Programada 11:00'],
       ['Bar Piscina', 100, 48, 48, 'Cerrada · Luis P.'],
@@ -180,9 +181,9 @@ describe('AUDITOR_WAREHOUSES — the left pane', () => {
     ]);
   });
 
-  it('selects Cocina Principal — the bodega the review view opens on', () => {
+  it('selects the bodega the operator counted — the one the review view opens on', () => {
     expect(AUDITOR_WAREHOUSES.filter((w) => w.selected)).toHaveLength(1);
-    expect(AUDITOR_WAREHOUSES.find((w) => w.selected)?.name).toBe('Cocina Principal');
+    expect(AUDITOR_WAREHOUSES.find((w) => w.selected)?.name).toBe(REVIEWED_WAREHOUSE_NAME);
   });
 });
 
@@ -242,7 +243,7 @@ describe('close and base view data', () => {
   it('seeds the 4 team members with their initials', () => {
     expect(COUNT_TEAM.map((m) => [m.initials, m.name, m.role])).toEqual([
       ['VR', 'Viviana Ríos', 'Auditora · cierra la toma'],
-      ['PR', 'Pablo Ruiz', 'Chef · Cocina Principal'],
+      ['PR', 'Pablo Ruiz', `Chef · ${REVIEWED_WAREHOUSE_NAME}`],
       ['MG', 'Marta Gómez', 'Auxiliar · verifica cocina'],
       ['JM', 'Jorge Mesa', 'Líder de costos · asigna'],
     ]);

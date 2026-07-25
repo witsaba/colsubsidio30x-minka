@@ -10,11 +10,12 @@ import { describe, expect, it } from 'vitest';
 import {
   CATALOGUES,
   CATALOGUE_IDS,
+  DEMO_CATALOGUE_ID,
   RF11_LIMITATION_NOTE,
   isCatalogueId,
   labelFor,
 } from '../../src/lib/catalogues';
-import { OPERATOR_PLANS, OPERATOR_SEED_PROGRESS, OPERATOR_SEED_RECORDS } from '../../src/fixtures/operatorSeed';
+import { OPERATOR_SEED_PROGRESS, OPERATOR_SEED_RECORDS } from '../../src/fixtures/operatorSeed';
 
 /**
  * The matcher's real tables and their row counts.
@@ -91,28 +92,19 @@ describe('REQ-OCF-8 — the 8 real catalogues', () => {
   });
 });
 
-describe('D13 — plan cards over real catalogue ids', () => {
-  it('gives the "Cocina Principal" card the real stock_restaurante_fuentes_ayb id', () => {
-    const cocina = OPERATOR_PLANS.find((p) => p.label === 'Cocina Principal');
-    expect(cocina?.catalogueId).toBe('stock_restaurante_fuentes_ayb');
+describe('DEMO_CATALOGUE_ID — the one bodega the demo counts', () => {
+  it('is one of the 8 real matcher tables, not an invented plan id', () => {
+    expect(isCatalogueId(DEMO_CATALOGUE_ID)).toBe(true);
+    expect(DEMO_CATALOGUE_ID).toBe('stock_restaurante_fuentes_ayb');
   });
 
-  it('marks exactly one plan as the active demo plan', () => {
-    expect(OPERATOR_PLANS.filter((p) => p.active)).toHaveLength(1);
-    expect(OPERATOR_PLANS.find((p) => p.active)?.label).toBe('Cocina Principal');
+  it('is the largest catalogue, so the demo scripts get the best match odds', () => {
+    expect(CATALOGUES[0]?.catalogueId).toBe(DEMO_CATALOGUE_ID);
+    expect(CATALOGUES[0]?.rows).toBe(344);
   });
 
-  it('backs every plan with one of the 8 real catalogue ids', () => {
-    expect(OPERATOR_PLANS.length).toBeGreaterThan(0);
-    for (const plan of OPERATOR_PLANS) {
-      expect(isCatalogueId(plan.catalogueId)).toBe(true);
-    }
-  });
-
-  it('carries the real catalogue id as the honest mono sub-line on every card', () => {
-    for (const plan of OPERATOR_PLANS) {
-      expect(plan.subline).toBe(plan.catalogueId);
-    }
+  it('resolves to the real Spanish label the operator sees, never an invented one', () => {
+    expect(labelFor(DEMO_CATALOGUE_ID)).toBe('Restaurante Fuentes · AyB');
   });
 });
 

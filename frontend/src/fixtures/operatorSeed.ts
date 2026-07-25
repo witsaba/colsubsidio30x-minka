@@ -1,53 +1,14 @@
 /**
- * Operator S2/S3 seed data (design §6 "seed 45/107", §10, D13).
+ * Operator S3 seed data (design §6 "seed 45/107").
  *
- * The plan cards keep the design's illustrative names as LABELS while carrying
- * a real matcher `catalogue_id`, with that id rendered verbatim in a mono
- * sub-line. No bodega→catalogue mapping is invented (RF-11 does not have one).
+ * There is deliberately NO plan table here. `PlansScreen` renders the 8 REAL
+ * matcher catalogues from `lib/catalogues.ts`, which is the single source of
+ * bodega names for the whole demo — operator AND auditor. A second table of
+ * illustrative warehouse labels used to live here, imported by tests only, and
+ * it drifted away from the shipped screen (verify report WARNING-2). Do not
+ * reintroduce one: no bodega→catalogue mapping exists to invent (RF-11).
  */
 import type { CountRecord } from '../lib/session/types';
-
-export interface OperatorPlan {
-  id: string;
-  /** Illustrative plan name from the design contract. */
-  label: string;
-  /** The REAL matcher catalogue this plan counts against. */
-  catalogueId: string;
-  /** Honest mono sub-line: always the literal `catalogueId`. */
-  subline: string;
-  /** Secondary line on the card, e.g. the shift window. */
-  detail: string;
-  /** The one card the demo starts from. */
-  active: boolean;
-}
-
-/** Largest food catalogue backs the active card — best odds for the scripts. */
-export const OPERATOR_PLANS: readonly OperatorPlan[] = [
-  {
-    id: 'plan-cocina-principal',
-    label: 'Cocina Principal',
-    catalogueId: 'stock_restaurante_fuentes_ayb',
-    subline: 'stock_restaurante_fuentes_ayb',
-    detail: 'Turno de la mañana · 107 artículos',
-    active: true,
-  },
-  {
-    id: 'plan-almacen-general',
-    label: 'Almacén General',
-    catalogueId: 'stock_almacen_ayb',
-    subline: 'stock_almacen_ayb',
-    detail: 'Programado para mañana',
-    active: false,
-  },
-  {
-    id: 'plan-zoologico',
-    label: 'Zoológico',
-    catalogueId: 'zoologico',
-    subline: 'zoologico',
-    detail: 'Programado para el viernes',
-    active: false,
-  },
-] as const;
 
 /** The count already carried into the session by the seeded records. */
 export const OPERATOR_SEED_PROGRESS = { counted: 45, total: 107 } as const;

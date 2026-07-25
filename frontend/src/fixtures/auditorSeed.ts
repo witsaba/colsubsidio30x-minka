@@ -17,7 +17,20 @@
  * Quantities are stored as PRE-FORMATTED STRINGS rather than numbers. The seed
  * is display data whose formatting is part of the contract (`6,5`, `−2` with a
  * real U+2212 minus sign as in the design); parsing helpers live in `diffOf`.
+ *
+ * ONE EXCEPTION to "transcribed verbatim": the bodega UNDER REVIEW is named by
+ * `labelFor(DEMO_CATALOGUE_ID)`, not by the design's illustrative "Cocina
+ * Principal". The operator half counts a REAL matcher catalogue, and the demo
+ * showed two different names for one bodega across its two halves. The other
+ * seven rows stay illustrative — only the active bodega has to be coherent.
  */
+import { DEMO_CATALOGUE_ID, labelFor } from '../lib/catalogues';
+
+/**
+ * The bodega the operator actually counted, named exactly as the operator saw
+ * it. Single source: `lib/catalogues.ts`.
+ */
+export const REVIEWED_WAREHOUSE_NAME = labelFor(DEMO_CATALOGUE_ID);
 
 /** The three alert rules the design fires, from the operator anomaly engine. */
 export type AlertKind = 'unidad' | 'cantidad' | 'negativo';
@@ -75,7 +88,7 @@ export interface AuditorRecord {
   trace: readonly TraceEntry[];
 }
 
-const PLAN = 'Cocina Principal · 31 jul';
+const PLAN = `${REVIEWED_WAREHOUSE_NAME} · 31 jul`;
 /** Mocked, never computed: module 2 (3-model consensus) does not exist (C4). */
 const CONSENSUS = '3 de 3';
 
@@ -311,7 +324,7 @@ export interface Warehouse {
 
 export const AUDITOR_WAREHOUSES: readonly Warehouse[] = [
   { id: 'w-almacen', name: 'Almacén General', percentage: 100, counted: 412, total: 412, state: 'cerrada', stateLabel: 'Cerrada · Jorge M.', selected: false },
-  { id: 'w-cocina', name: 'Cocina Principal', percentage: 78, counted: 84, total: 107, state: 'en-curso', stateLabel: 'En curso · Pablo R.', selected: true },
+  { id: 'w-cocina', name: REVIEWED_WAREHOUSE_NAME, percentage: 78, counted: 84, total: 107, state: 'en-curso', stateLabel: 'En curso · Pablo R.', selected: true },
   { id: 'w-restaurante', name: 'Restaurante Principal', percentage: 100, counted: 96, total: 96, state: 'cerrada', stateLabel: 'Cerrada · Marta G.', selected: false },
   { id: 'w-cafeteria', name: 'Cafetería Primer Piso', percentage: 0, counted: 0, total: 62, state: 'programada', stateLabel: 'Programada 11:00', selected: false },
   { id: 'w-bar', name: 'Bar Piscina', percentage: 100, counted: 48, total: 48, state: 'cerrada', stateLabel: 'Cerrada · Luis P.', selected: false },
@@ -413,7 +426,7 @@ export interface TeamMember {
 
 export const COUNT_TEAM: readonly TeamMember[] = [
   { initials: 'VR', name: 'Viviana Ríos', role: 'Auditora · cierra la toma' },
-  { initials: 'PR', name: 'Pablo Ruiz', role: 'Chef · Cocina Principal' },
+  { initials: 'PR', name: 'Pablo Ruiz', role: `Chef · ${REVIEWED_WAREHOUSE_NAME}` },
   { initials: 'MG', name: 'Marta Gómez', role: 'Auxiliar · verifica cocina' },
   { initials: 'JM', name: 'Jorge Mesa', role: 'Líder de costos · asigna' },
 ] as const;
