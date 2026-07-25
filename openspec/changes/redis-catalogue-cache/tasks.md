@@ -159,28 +159,28 @@ D2 specifies is preserved. This keeps every commit green with no rename churn.
 
 ## WU-3: `SupabaseCatalogueSource` over `httpx.MockTransport` — PARALLEL with WU-2
 
-- [ ] 3.1 **RED** — create `services/matcher/tests/unit/test_supabase_source.py`, `TestQueryShape`. Harness: a real `httpx.Client` with `httpx.MockTransport(handler)` where `handler` appends every `httpx.Request` to a `recorded` list.
+- [x] 3.1 **RED** — create `services/matcher/tests/unit/test_supabase_source.py`, `TestQueryShape`. Harness: a real `httpx.Client` with `httpx.MockTransport(handler)` where `handler` appends every `httpx.Request` to a `recorded` list.
   - `test_it_queries_only_the_warehouse_products_endpoint` — every recorded `request.url.path == "/rest/v1/warehouse_products"`.
   - `test_it_never_queries_warehouse_stock_balances` (**REQ-CSS-4**) — assert no recorded request URL (path **or** query) contains `warehouse_stock_balances`, `theoretical_qty`, or `stock`.
   - `test_it_filters_inactive_and_merged_rows` (REQ-CSS-3) — query string contains `is_active=eq.true`, `warehouses.is_active=eq.true`, `warehouses.merged_into_warehouse_id=is.null`, `products.is_active=eq.true`.
   - `test_it_sends_the_apikey_and_bearer_headers`
   - `test_it_never_fetches_the_units_table` — `unit_code` is denormalized; `UNIT_DISPLAY` is local (D1).
   - **Expected RED:** `ImportError: cannot import name 'SupabaseCatalogueSource' from 'matcher.supabase_source'`.
-- [ ] 3.2 **RED** — `TestPagination` (D1; the 1,000-row PostgREST cap makes the loop mandatory, not defensive):
+- [x] 3.2 **RED** — `TestPagination` (D1; the 1,000-row PostgREST cap makes the loop mandatory, not defensive):
   - `test_it_follows_the_range_header_past_the_thousand_row_page` — transport serves 1,000 rows then 405 rows; assert exactly 2 requests carrying `Range: 0-999` then `Range: 1000-1999`, and 1,405 rows loaded in total.
   - `test_a_short_first_page_stops_after_one_request`
   - **Expected RED:** `AssertionError: expected 2 requests, got 1` (a non-paginating implementation silently truncates at 1,000 — this is the truncation guard from the design risk table).
-- [ ] 3.3 **RED** — `TestRowMapping` (REQ-CSS-2):
+- [x] 3.3 **RED** — `TestRowMapping` (REQ-CSS-2):
   - `test_rows_map_uid_articulo_unidad_and_nr_articulo_from_the_joined_tables` — `uid == warehouse_products.id`, `articulo == products.name`, `unidad == unit_code`, `nr_articulo == products.sku`.
   - `test_a_null_unit_code_and_null_sku_are_preserved_as_none` — never coerced.
   - `test_rows_are_grouped_by_warehouse_code` — result is `dict[str, list[Row]]` keyed by `warehouses.code`.
-- [ ] 3.4 **RED then GREEN** — `TestFailureModes` (D5 taxonomy; all wrapped into `CatalogueUnavailableError`, cause-chained):
+- [x] 3.4 **RED then GREEN** — `TestFailureModes` (D5 taxonomy; all wrapped into `CatalogueUnavailableError`, cause-chained):
   - `test_a_5xx_raises_catalogue_unavailable`
   - `test_a_401_raises_catalogue_unavailable` — permanent in truth, but the bounded 4-attempt retry loop makes one taxonomy the simpler correct choice.
   - `test_a_transport_timeout_raises_catalogue_unavailable`
   - `test_invalid_json_raises_catalogue_unavailable`
   - `test_zero_rows_raises_catalogue_unavailable` (REQ-CSS-5 — never serve empty)
-  - **GREEN:** create `services/matcher/src/matcher/supabase_source.py` implementing the D1 query, the `Range` pagination loop, grouping, and the error taxonomy. Import `CatalogueUnavailableError` from the (still legacy) `matcher.catalogue` — that class survives the rewrite unchanged, so there is no conflict. **Verify:** `uv run pytest services/matcher/tests/unit/test_supabase_source.py` then `uv run pytest` → 4 failed (baseline).
+  - **GREEN:** create `services/matcher/src/matcher/supabase_source.py` implementing the D1 query, the `Range` pagination loop, grouping, and the error taxonomy. Import `CatalogueUnavailableError` from the (still legacy) `matcher.catalogue` — that class survives the rewrite unchanged, so there is no conflict. **Verify:** `uv run pytest services/matcher/tests/unit/test_supabase_source.py` → 22 passed; `uv run pytest` → 4 failed, 435 passed (baseline unchanged). *Applied additions beyond the listed cases: `test_it_orders_by_id_so_pagination_is_stable` (an unordered paginated read can duplicate or drop rows at a page boundary — `order=id` was in the D1 query but had no assertion), `test_an_exactly_full_page_followed_by_an_empty_one_is_not_truncated` (the off-by-one boundary the `< page_size` stop condition turns on), `test_a_payload_of_the_wrong_shape_raises_catalogue_unavailable`, and `test_the_error_message_never_leaks_the_credential` (REQ-API-8 — the key is in every request header, so an exception message is the natural leak path). The truncation guard was verified by mutation: removing the `len(page) < page_size` stop condition fails `test_it_follows_the_range_header_past_the_thousand_row_page`, so the test genuinely bites rather than passing incidentally.*
 
 ## WU-4: `load_index` startup orchestration
 
