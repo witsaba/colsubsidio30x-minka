@@ -2,9 +2,10 @@
 
 A single vendor hiccup must not surface as a failed dictation. The service
 retries the primary vendor on failures that are plausibly transient, then -
-only if the other vendor's key is configured - tries the other vendor once.
-Failures that a retry cannot fix (bad credentials, rejected audio, an
-unparsable body) fail immediately: retrying them just burns the user's time.
+for each backup whose key is configured - tries that vendor once, in the
+order deepgram, elevenlabs, groq. Failures that a retry cannot fix (bad
+credentials, rejected audio, an unparsable body) fail immediately: retrying
+them just burns the user's time.
 """
 
 import logging

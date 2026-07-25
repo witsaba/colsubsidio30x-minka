@@ -77,9 +77,9 @@ class Settings(BaseSettings):
     #: operator can name it (REQ-VND-9).
     stt_fallback_vendor: VendorName | None = None
     #: Ceiling on ALL vendor work for one request - every attempt, every
-    #: backoff, and the failover together. Without it the defaults above
-    #: multiply out to 30 + 0.5 + 30 + 30 s of waiting before a 502
-    #: (REQ-VND-8).
+    #: backoff, and every failover together. Without it the defaults above
+    #: multiply out to 30 + 0.5 + 30 + 30 + 30 s of waiting before a 502 on a
+    #: deployment with all three keys configured (REQ-VND-8).
     stt_total_deadline_s: float = Field(default=45.0, gt=0)
 
     log_level: str = "INFO"

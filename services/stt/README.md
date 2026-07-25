@@ -117,10 +117,10 @@ env -u DEEPGRAM_API_KEY STT_VENDOR=groq GROQ_API_KEY=... \
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `STT_VENDOR` | `deepgram` | `deepgram` \| `groq` \| `elevenlabs`. The only change needed to swap vendor |
+| `STT_VENDOR` | `deepgram` | `deepgram` \| `groq`. The only change needed to swap primary. `elevenlabs` is rejected at boot — backup only, see Vendors |
 | `DEEPGRAM_API_KEY` | — | Required when Deepgram is active or the explicit fallback |
 | `GROQ_API_KEY` | — | Required when Groq is active or the explicit fallback |
-| `ELEVENLABS_API_KEY` | — | Required when ElevenLabs is active or the explicit fallback |
+| `ELEVENLABS_API_KEY` | — | Required when ElevenLabs is the explicit fallback; enables it as an automatic backup |
 | `STT_ELEVENLABS_MODEL` | `scribe_v1` | `scribe_v1` \| `scribe_v2` |
 | `STT_LANGUAGE` | `es` | Dedicated Spanish model; never `multi` |
 | `STT_MODEL` | `nova-3` | Deepgram model |
@@ -132,9 +132,9 @@ env -u DEEPGRAM_API_KEY STT_VENDOR=groq GROQ_API_KEY=... \
 | `STT_VENDOR_TIMEOUT_S` | `30` | Vendor call timeout |
 | `STT_RETRY_ATTEMPTS` | `2` | Total attempts against the primary vendor, initial call included. `1` disables retry; `0` fails startup |
 | `STT_RETRY_BACKOFF_S` | `0.5` | Base wait between primary attempts; doubles each time (0.5s, 1s, …) |
-| `STT_FALLBACK_ENABLED` | `true` | Automatic failover to another vendor. Needs that vendor's key to be set |
-| `STT_FALLBACK_VENDOR` | — (auto) | Which vendor takes over. Empty selects automatically; naming one makes its key required at boot |
-| `STT_TOTAL_DEADLINE_S` | `45` | Ceiling on **all** vendor work for one request: every attempt, every backoff and the failover together. Must be > 0 |
+| `STT_FALLBACK_ENABLED` | `true` | Automatic failover to the backup chain. Needs those vendors' keys to be set |
+| `STT_FALLBACK_VENDOR` | — (auto) | Which vendor takes over. Empty walks the priority order; naming one makes it the whole chain and its key required at boot |
+| `STT_TOTAL_DEADLINE_S` | `45` | Ceiling on **all** vendor work for one request: every attempt, every backoff and every failover together. Must be > 0 |
 | `LOG_LEVEL` | `INFO` | Standard logging level |
 | `DEEPGRAM_BASE_URL` | `https://api.deepgram.com` | Override for testing |
 | `GROQ_BASE_URL` | `https://api.groq.com` | Override for testing |
@@ -153,8 +153,13 @@ push-to-talk clip.
 
 ## Vendors
 
-Three vendors, any of them usable as primary or as fallback. `STT_VENDOR`
-picks the primary; nothing else changes.
+Three vendors. `STT_VENDOR` picks the primary and nothing else changes — but
+it accepts `deepgram` or `groq` only. **ElevenLabs is a backup, never a
+primary**: its zero-retention guarantee is Enterprise-gated and documented as
+revocable at the vendor's discretion, so RNF-04 ("audio is never persisted")
+does not permit routing every clip through it. Reaching it as a failover
+target is a bounded, deliberate exposure — it only happens once the primary is
+already failing — and `STT_VENDOR=elevenlabs` fails startup with that reason.
 
 | | Deepgram (default) | Groq | ElevenLabs |
 |---|---|---|---|
@@ -176,20 +181,26 @@ rejected `model_id` is our bug, not the caller's.
 
 A vendor hiccup should not cost the speaker a dictation, so the primary vendor
 gets `STT_RETRY_ATTEMPTS` tries with an exponential backoff, and then — if
-`STT_FALLBACK_ENABLED` is on and the chosen vendor's key is configured — that
-vendor gets exactly one.
+`STT_FALLBACK_ENABLED` is on — each configured backup gets exactly one attempt,
+in order, until one answers.
 
-Which vendor takes over is either named or derived:
+The sanctioned chain is **Deepgram → ElevenLabs → Groq**. ElevenLabs is the
+second layer because it is the stronger Spanish transcriber and the primary has
+already failed by the time it is reached; Groq is the last resort for the same
+reason read the other way.
+
+Which vendors take over is either named or derived:
 
 - **Explicit**: set `STT_FALLBACK_VENDOR`. It must differ from `STT_VENDOR` and
   its key must be present, both checked at boot. Naming a fallback you have no
   key for is a safety net that would never fire, and you would find out during
-  an outage; the service refuses to start instead.
-- **Auto** (`STT_FALLBACK_VENDOR` empty): the first vendor other than the
-  primary that has a key, in the fixed order `deepgram`, `groq`, `elevenlabs`.
-  A vendor with no key is skipped silently — that is the right default, and it
-  is why the explicit form is stricter. If nothing qualifies there is no
-  failover, exactly as before.
+  an outage; the service refuses to start instead. A named fallback is the
+  *whole* chain — the service will not walk past it to a vendor you did not
+  choose.
+- **Auto** (`STT_FALLBACK_VENDOR` empty): every vendor other than the primary
+  that has a key, in the fixed order `deepgram`, `elevenlabs`, `groq`. A vendor
+  with no key is skipped silently — that is the right default, and it is why the
+  explicit form is stricter. If nothing qualifies there is no failover.
 
 Only failures a retry could plausibly fix are eligible: timeouts, connection
 errors, and HTTP 429/500/502/503/504. A 400, 401 or 403, audio the vendor
@@ -197,11 +208,12 @@ rejects, or a 2xx body we cannot parse fails on the first attempt — asking
 again returns the same answer and the speaker pays for the wait.
 
 `stt_vendor` in the response and `vendor` in the request log always name the
-vendor that **actually served** the request, not the configured one. When both
-vendors fail, the caller gets the primary's failure class.
+vendor that **actually served** the request, not the configured one. When every
+layer fails, the caller gets the primary's failure class.
 
-Retries multiply the worst-case wait — with the defaults above, per-call
-timeouts alone would allow 30 + 0.5 + 30 + 30 s before a 502. `STT_TOTAL_DEADLINE_S`
+Retries multiply the worst-case wait — with the defaults above and all three
+keys set, per-call timeouts alone would allow 30 + 0.5 + 30 + 30 + 30 s before a
+502. `STT_TOTAL_DEADLINE_S`
 caps the whole of it, so resilience never buys itself with availability. When
 the budget runs out the answer is the same `502 vendor_timeout` as a single
 vendor timeout, because that is what it is, and the request log names the
