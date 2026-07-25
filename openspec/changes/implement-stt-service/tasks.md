@@ -85,7 +85,7 @@ fit the 800-line session budget; only PR1 needs the documentation exception.
 
 - [x] **T18 — RED: runner tests.** Add `benchmarks/tests/test_run.py`: a 3-clip corpus produces 3 `results.json` entries with no corpus-size error; each entry pairs labels with the frozen response fields plus `latency_ms`/`status`/`error`; concurrency capped by the semaphore; `results.json` carries `run_at`, `vendor`, `base_url`. Satisfies REQ-BMK-1, REQ-BMK-2. **Verify:** the file FAILS. **Rollback:** `git rm benchmarks/tests/test_run.py`.
 
-- [ ] **T19 — GREEN: `run.py` + corpus scaffold.** Add `benchmarks/run.py` (asyncio + semaphore default 4 against `BENCH_STT_URL`, writes `results.json`) and `benchmarks/corpus/labels.csv` with header `clip_id,condition,transcript,items,is_garbage` (condition is `clean|noisy|spontaneous`; garbage clips carry a condition plus `is_garbage=true`) plus `benchmarks/corpus/README.md` recording how to add clips. Satisfies REQ-BMK-1, REQ-BMK-2. **Verify:** `uv run --project services/stt pytest benchmarks/tests` fully green. **Rollback:** `git rm -r benchmarks/run.py benchmarks/corpus`.
+- [x] **T19 — GREEN: `run.py` + corpus scaffold.** Add `benchmarks/run.py` (asyncio + semaphore default 4 against `BENCH_STT_URL`, writes `results.json`) and `benchmarks/corpus/labels.csv` with header `clip_id,condition,transcript,items,is_garbage` (condition is `clean|noisy|spontaneous`; garbage clips carry a condition plus `is_garbage=true`) plus `benchmarks/corpus/README.md` recording how to add clips. Satisfies REQ-BMK-1, REQ-BMK-2. **Verify:** `uv run --project services/stt pytest benchmarks/tests` fully green. **Rollback:** `git rm -r benchmarks/run.py benchmarks/corpus`.
 
 ## Phase 6: Documentation
 

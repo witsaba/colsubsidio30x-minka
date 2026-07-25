@@ -1,0 +1,9 @@
+# Recordings of real people (Ley 1581) and generated run output stay out of git.
+corpus/*
+!corpus/labels.csv
+!corpus/README.md
+results.json
+
+# Python and uv build artefacts
+__pycache__/
+*.pyc
