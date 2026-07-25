@@ -130,6 +130,7 @@ env -u DEEPGRAM_API_KEY STT_VENDOR=groq GROQ_API_KEY=... \
 | `STT_RETRY_ATTEMPTS` | `2` | Total attempts against the primary vendor, initial call included. `1` disables retry; `0` fails startup |
 | `STT_RETRY_BACKOFF_S` | `0.5` | Base wait between primary attempts; doubles each time (0.5s, 1s, …) |
 | `STT_FALLBACK_ENABLED` | `true` | Automatic failover to the other vendor. Needs that vendor's key to be set |
+| `STT_TOTAL_DEADLINE_S` | `45` | Ceiling on **all** vendor work for one request: every attempt, every backoff and the failover together. Must be > 0 |
 | `LOG_LEVEL` | `INFO` | Standard logging level |
 | `DEEPGRAM_BASE_URL` | `https://api.deepgram.com` | Override for testing |
 | `GROQ_BASE_URL` | `https://api.groq.com` | Override for testing |
@@ -172,6 +173,13 @@ again returns the same answer and the speaker pays for the wait.
 `stt_vendor` in the response and `vendor` in the request log always name the
 vendor that **actually served** the request, not the configured one. When both
 vendors fail, the caller gets the primary's failure class.
+
+Retries multiply the worst-case wait — with the defaults above, per-call
+timeouts alone would allow 30 + 0.5 + 30 + 30 s before a 502. `STT_TOTAL_DEADLINE_S`
+caps the whole of it, so resilience never buys itself with availability. When
+the budget runs out the answer is the same `502 vendor_timeout` as a single
+vendor timeout, because that is what it is, and the request log names the
+vendor that was in flight when it expired.
 
 Failover needs the fallback vendor's key to be present; a missing one is still
 tolerated at boot, so the feature switches itself off rather than blocking

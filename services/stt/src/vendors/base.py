@@ -34,6 +34,20 @@ class VendorAudioRejected(Exception):
     """The vendor rejected the audio itself as undecodable (maps to HTTP 400)."""
 
 
+class VendorDeadlineExceeded(Exception):
+    """All vendor work for one request ran past its budget (maps to HTTP 502).
+
+    Carries the vendor that was in flight when the budget ran out, so the
+    request log names what was actually being waited on rather than whatever
+    `STT_VENDOR` happens to say (REQ-VND-8).
+    """
+
+    def __init__(self, vendor: str, deadline_s: float) -> None:
+        super().__init__(f"{vendor} exceeded the {deadline_s}s total deadline")
+        self.vendor = vendor
+        self.deadline_s = deadline_s
+
+
 class VendorBadResponse(Exception):
     """The vendor answered 2xx with a body we cannot parse (maps to HTTP 502).
 

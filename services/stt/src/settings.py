@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     #: Automatic failover to the other vendor once the primary is exhausted.
     #: Only takes effect when the other vendor's key is configured.
     stt_fallback_enabled: bool = True
+    #: Ceiling on ALL vendor work for one request - every attempt, every
+    #: backoff, and the failover together. Without it the defaults above
+    #: multiply out to 30 + 0.5 + 30 + 30 s of waiting before a 502
+    #: (REQ-VND-8).
+    stt_total_deadline_s: float = Field(default=45.0, gt=0)
 
     log_level: str = "INFO"
 

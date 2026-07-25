@@ -109,3 +109,16 @@ When the selected vendor exhausts its retry budget on transient failures, `STT_F
 - WHEN a clip is POSTed to `/transcribe`
 - THEN Groq is never called
 - AND the response is `502` with `code: "vendor_timeout"`
+
+### Requirement: REQ-VND-8 Total deadline on end-to-end vendor time
+
+All vendor work for one request — every retry attempt, every backoff wait, and the failover attempt together — SHALL be bounded by `STT_TOTAL_DEADLINE_S` (default 45 seconds, must be greater than zero). When the budget is exhausted the service SHALL answer `502` with `code: "vendor_timeout"` on the frozen error envelope, emit its per-request INFO record naming the vendor that was in flight, and MUST NOT wait for the remaining attempts.
+
+#### Scenario: A hanging vendor is cut off at the total deadline
+
+- GIVEN `STT_TOTAL_DEADLINE_S` is shorter than the vendor's response time
+- AND the selected vendor accepts the connection and never answers
+- WHEN a clip is POSTed to `/transcribe`
+- THEN the response is `502` with `code: "vendor_timeout"` and a `request_id`
+- AND the caller waits approximately the deadline, not the sum of the per-attempt timeouts
+- AND the per-request INFO record carries that same `request_id`

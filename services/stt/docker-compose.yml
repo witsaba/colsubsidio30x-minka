@@ -22,6 +22,7 @@ services:
       STT_RETRY_ATTEMPTS: ${STT_RETRY_ATTEMPTS:-2}
       STT_RETRY_BACKOFF_S: ${STT_RETRY_BACKOFF_S:-0.5}
       STT_FALLBACK_ENABLED: ${STT_FALLBACK_ENABLED:-true}
+      STT_TOTAL_DEADLINE_S: ${STT_TOTAL_DEADLINE_S:-45}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     healthcheck:
       test: ["CMD", "python", "-c",

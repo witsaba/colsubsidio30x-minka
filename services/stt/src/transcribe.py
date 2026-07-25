@@ -8,6 +8,7 @@ memory, forwarded, and the reference dropped - it never reaches the filesystem
 
 import time
 from asyncio import sleep as _asyncio_sleep
+from asyncio import timeout as _asyncio_timeout
 from uuid import uuid4
 
 import httpx
@@ -22,6 +23,7 @@ from src.vendors.base import (
     VendorAdapter,
     VendorAudioRejected,
     VendorBadResponse,
+    VendorDeadlineExceeded,
 )
 
 #: Resolved once at boot; `STT_VENDOR` is the only switch (REQ-VND-3).
@@ -167,41 +169,58 @@ async def dispatch(
     Returns the result together with the vendor that actually produced it, so
     the response and the request log name the truth rather than the
     configuration (REQ-VND-7).
+
+    The whole of it runs under one deadline. Attempts, backoffs and the
+    failover otherwise add up to a wait no single setting expresses, and the
+    caller is a person holding a push-to-talk button (REQ-VND-8).
     """
     primary = settings.stt_vendor
-    try:
-        result = await call_vendor(
-            primary,
-            audio,
-            content_type,
-            settings,
-            client,
-            settings.stt_retry_attempts,
-            request_id,
-        )
-        return result, primary
-    except Exception as primary_error:
-        fallback = fallback_vendor(settings)
-        if fallback is None or not is_transient(primary_error):
-            raise
+    in_flight = primary
 
-        logger.debug(
-            "primary vendor exhausted, failing over",
-            extra={
-                "request_id": request_id,
-                "vendor": primary,
-                "fallback_vendor": fallback,
-            },
-        )
+    async def _attempt_all() -> tuple[TranscriptionResult, str]:
+        nonlocal in_flight
         try:
             result = await call_vendor(
-                fallback, audio, content_type, settings, client, 1, request_id
+                primary,
+                audio,
+                content_type,
+                settings,
+                client,
+                settings.stt_retry_attempts,
+                request_id,
             )
-        except Exception:
-            # Both vendors are down; the primary's failure is the honest
-            # diagnosis for the caller.
-            raise primary_error from None
-        return result, fallback
+            return result, primary
+        except Exception as primary_error:
+            fallback = fallback_vendor(settings)
+            if fallback is None or not is_transient(primary_error):
+                raise
+
+            logger.debug(
+                "primary vendor exhausted, failing over",
+                extra={
+                    "request_id": request_id,
+                    "vendor": primary,
+                    "fallback_vendor": fallback,
+                },
+            )
+            in_flight = fallback
+            try:
+                result = await call_vendor(
+                    fallback, audio, content_type, settings, client, 1, request_id
+                )
+            except Exception:
+                # Both vendors are down; the primary's failure is the honest
+                # diagnosis for the caller.
+                raise primary_error from None
+            return result, fallback
+
+    try:
+        async with _asyncio_timeout(settings.stt_total_deadline_s):
+            return await _attempt_all()
+    except TimeoutError as exc:
+        # The cancellation that got us here is not a vendor verdict, so it must
+        # not look like one to the retry logic above.
+        raise VendorDeadlineExceeded(in_flight, settings.stt_total_deadline_s) from exc
 
 
 @router.get("/health")
@@ -239,6 +258,16 @@ async def transcribe(request: Request, file: UploadFile = File(...)) -> JSONResp
                 file.content_type or "application/octet-stream",
                 settings,
                 client,
+                request_id,
+            )
+        except VendorDeadlineExceeded as exc:
+            # Budget exhaustion IS a timeout, so it shares the vendor_timeout
+            # code Module 2 already handles.
+            vendor = exc.vendor
+            return error_response(
+                502,
+                "vendor_timeout",
+                f"vendor work exceeded STT_TOTAL_DEADLINE_S ({exc.deadline_s}s)",
                 request_id,
             )
         except VendorAudioRejected:
