@@ -28,27 +28,39 @@ The detail pane MUST show "Contado" vs "Sistema" side-by-side with the diff line
 
 ### Requirement: REQ-AUD-3 — Filters and badges
 
-Filter chips MUST be "Requieren mirada · {n}", "Todos los registros", "Verificados", and MUST filter the seeded 8 records. Each record MUST show its state badge: `Unidad` / `Cantidad atípica` / `Saldo negativo` (warn), `Verificado`, `Búsqueda manual` / `Sin novedad`.
+Filter chips MUST be "Requieren mirada · {n}", "Todos los registros", "Verificados", and MUST filter live records read from `count_records` and `record_anomalies` — the 8 hardcoded fixtures are retired. Soft-deleted records (`is_deleted = true`) MUST NOT count as pending nor render as active records. Each record MUST show its state badge: `Unidad` / `Cantidad atípica` / `Saldo negativo` (warn), `Verificado`, `Búsqueda manual` / `Sin novedad`.
 
 #### Scenario: Requieren mirada shows only open alerts
 
-- GIVEN the 8 seed records with 3 open alerts
+- GIVEN persisted records with 3 open `record_anomalies`
 - WHEN "Requieren mirada · 3" is selected
-- THEN exactly the 3 alert records render
+- THEN exactly those 3 alert records render
 
-### Requirement: REQ-AUD-4 — Actions leave a trace
+#### Scenario: Operator write appears to auditor
 
-Actions "Aprobar registro", "Corregir", "Pedir reconteo" MUST each append a trace entry (user, time, action) to the record, per "Toda acción queda firmada con usuario, hora y motivo." Approving an alerted record MUST mark it "Verificado" and decrement the open-alert count. (RF-32)
+- GIVEN an operator persists a new count record
+- WHEN the auditor view loads
+- THEN that record renders without any fixture data source
+
+### Requirement: REQ-AUD-4 — Actions leave a persisted trace
+
+Actions "Aprobar registro", "Corregir", "Pedir reconteo" MUST each write an `auditor_actions` row (user, time, action, record) and render it in the record's trace, per "Toda acción queda firmada con usuario, hora y motivo." Approving an alerted record MUST mark it "Verificado" and decrement the open-alert count. The trace MUST survive reload. (RF-08/09/32)
 
 #### Scenario: Approve decrements the alert pill
 
 - GIVEN 3 alertas abiertas
 - WHEN "Aprobar registro" is confirmed on an alerted record
-- THEN the record's badge becomes "Verificado" AND the header pill shows "2 alertas abiertas" AND a trace entry exists
+- THEN the record's badge becomes "Verificado" AND the header pill shows "2 alertas abiertas" AND an `auditor_actions` row exists
 
-### Requirement: REQ-AUD-5 — Export gate and corrected blocked modal
+#### Scenario: Trace survives reload
 
-Export MUST be gated while alerts are open (`strictExport`, default true): "Exportar a Oracle" renders disabled, and activating export with open alerts shows the `blocked` modal "Faltan {n} registros por resolver". The design's inverted wiring MUST be corrected: primary "Ver los pendientes" navigates to the filtered pending list; secondary "Cancelar" dismisses; "Exportar de todos modos" is REMOVED (the strict gate is the honest behaviour). With zero open alerts, export MUST show the `export` modal ("Generar archivo de carga"). (RF-30 visual, RF-31)
+- GIVEN an approved record
+- WHEN the dashboard reloads
+- THEN the approval trace entry still renders from `auditor_actions`
+
+### Requirement: REQ-AUD-5 — Export gate and real export
+
+Export MUST be gated while alerts are open (`strictExport`, default true): "Exportar a Oracle" renders disabled, and activating export with open alerts shows the `blocked` modal "Faltan {n} registros por resolver". Primary "Ver los pendientes" navigates to the filtered pending list; secondary "Cancelar" dismisses; "Exportar de todos modos" remains REMOVED. With zero open alerts, "Generar y descargar" MUST trigger the real export (per `oracle-export`): persisted `export_batches`/`export_lines` and a downloaded file — not a no-op modal. (RF-30, RF-31)
 
 #### Scenario: Blocked modal buttons act as labelled
 
@@ -56,8 +68,8 @@ Export MUST be gated while alerts are open (`strictExport`, default true): "Expo
 - WHEN the blocked modal is shown and "Ver los pendientes" is activated
 - THEN the modal closes and the record list filters to "Requieren mirada" AND no "Exportar de todos modos" control exists
 
-#### Scenario: Gate lifts when alerts reach zero
+#### Scenario: Gate lifts and export is real
 
 - GIVEN all alerts resolved
-- WHEN "Exportar a Oracle" is activated
-- THEN the export modal opens with "Generar y descargar" enabled
+- WHEN "Exportar a Oracle" then "Generar y descargar" are activated
+- THEN an `export_batches` row with its `export_lines` exists AND a file download is offered
