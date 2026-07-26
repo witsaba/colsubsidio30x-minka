@@ -159,6 +159,10 @@ class TestRenderedContract:
         environment = rendered["services"]["frontend"]["environment"]
         assert environment["STT_BASE_URL"] == "http://stt:8001"
         assert environment["MATCHER_BASE_URL"] == "http://matcher:8002"
+        assert (
+            environment["EXTRACTOR_BASE_URL"]
+            == "http://product_identification:8003"
+        )
         assert environment["HOST"] == "0.0.0.0"
         assert str(environment["PORT"]) == "4321"
 

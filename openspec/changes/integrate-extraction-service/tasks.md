@@ -55,10 +55,10 @@ Phases 1 → 4 are strictly ordered by dependency.
 
 ## Phase 5: Deployment contract, smoke check, full green
 
-- [ ] 5.1 RED — `tests/deployment/test_root_compose.py`: assert `"EXTRACTOR_BASE_URL: http://product_identification:8003" in frontend`. `tests/deployment/test_compose_config.py`: assert `environment["EXTRACTOR_BASE_URL"] == "http://product_identification:8003"`. Fails: key absent.
-- [ ] 5.2 GREEN — add `EXTRACTOR_BASE_URL: http://product_identification:8003` to the `frontend` service env in `docker-compose.yml` (beside `MATCHER_BASE_URL`, line ~179). NO `depends_on`.
-- [ ] 5.3 Create `scripts/smoke-extract.sh` (`bash`, `set -euo pipefail`, `chmod +x`): curl `POST :8003/api/v1/extract` with a sample `transcription` expecting 200 + `validated_inventory`, then `POST :4321/api/extract` for the proxy leg. Owner: Braejan — run on the demo host the morning of 26 Jul, before the presentation. Validates GCP creds.
-- [ ] 5.4 Full suite green: `cd frontend && npx vitest run` AND `uv run pytest tests/deployment`. Both must pass with zero skips added.
+- [x] 5.1 RED — `tests/deployment/test_root_compose.py`: assert `"EXTRACTOR_BASE_URL: http://product_identification:8003" in frontend`. `tests/deployment/test_compose_config.py`: assert `environment["EXTRACTOR_BASE_URL"] == "http://product_identification:8003"`. Fails: key absent.
+- [x] 5.2 GREEN — add `EXTRACTOR_BASE_URL: http://product_identification:8003` to the `frontend` service env in `docker-compose.yml` (beside `MATCHER_BASE_URL`, line ~179). NO `depends_on`.
+- [x] 5.3 Create `scripts/smoke-extract.sh` (`bash`, `set -euo pipefail`, `chmod +x`): curl `POST :8003/api/v1/extract` with a sample `transcription` expecting 200 + `validated_inventory`, then `POST :4321/api/extract` for the proxy leg. Owner: Braejan — run on the demo host the morning of 26 Jul, before the presentation. Validates GCP creds.
+- [x] 5.4 Full suite green: `cd frontend && npx vitest run` AND `uv run pytest tests/deployment`. Both must pass with zero skips added.
 
 ## Notes
 
