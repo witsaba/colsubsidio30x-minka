@@ -1,8 +1,20 @@
-"""Benchmark metrics (REQ-BMK-3/4/5/6).
+"""Benchmark metrics (REQ-BMK-3..11).
 
 Two numbers carry the accuracy claim - digit accuracy and the garbage-clip
 hallucination rate - and WER is a secondary sanity signal. Everything here is a
 pure function so the evidence behind the pitch is reproducible and testable.
+
+The metric contract is the ``stt-es-v1`` normaliser (one number per line):
+
+* digit accuracy = exact-match per labelled quantity token against the
+  multiset of numeric tokens in the vendor transcript;
+* hallucination rate = share of ``is_garbage=True`` clips whose normalised
+  transcript matches QUANTITY-NEAR-ITEM;
+* WER = token-level Levenshtein, secondary only.
+
+Scoring must NEVER branch on ``ACERTIVIDAD`` or ``DIFICULTAD``; ``condition``
+defaults to ``"unknown"`` and that bucket lives in the per-condition split
+without any inference from difficulty.
 """
 
 import re
@@ -10,6 +22,12 @@ import unicodedata
 from collections import Counter
 
 CONDITIONS = ("clean", "noisy", "spontaneous")
+
+#: Documented normalizer identifier for v2 results.json. Bumping this is a
+#: deliberate, versioned change — the runner records it in
+#: ``results["normalizer_version"]`` and the report renders it for the
+#: reproducibility contract (REQ-BMK-11).
+NORMALIZER_VERSION = "stt-es-v1"
 
 #: Spanish number words that count as a quantity token (design Decision 11).
 QUANTITY_WORDS = {
@@ -201,3 +219,19 @@ def summarise(clips: list[dict]) -> dict:
             condition: _finalise(bucket) for condition, bucket in by_condition.items()
         },
     }
+
+
+def summarise_results(results: dict) -> dict:
+    """Aggregate a v2 ``results.json`` payload.
+
+    Convenience wrapper over :func:`summarise` that pulls ``clips`` out of the
+    v2 envelope. The two callers (``report.py`` and tests) prefer this shape so
+    the report pipeline can pass the full stored payload without unpacking it
+    first. Scoring never branches on ``ACERTIVIDAD``; ``condition`` defaults to
+    ``"unknown"`` and ``DIFICULTAD`` is recorded only inside the per-clip rows.
+    """
+
+    if not isinstance(results, dict):
+        raise TypeError("summarise_results expects a v2 results.json envelope")
+    clips = results.get("clips", [])
+    return summarise(clips)

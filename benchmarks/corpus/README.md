@@ -1,20 +1,15 @@
 # Benchmark corpus
 
-Audio clips plus `labels.csv`. The runner processes whatever clips exist — there
-is no minimum or hard-coded corpus size (REQ-BMK-1), so the corpus can grow one
-clip at a time.
+The runner processes whatever clips exist — there is no minimum or hard-coded
+corpus size (REQ-BMK-1). Two layouts are supported and they round-trip into
+the same `CorpusClip` shape.
 
-Audio files are **not** committed. Keep them out of git the same way `.env` is:
-they are recordings of real people, and Ley 1581 applies to them too.
+## Layout 1: `benchmarks/corpus/labels.csv`
 
-## Adding a clip
+Audio clips sit next to `labels.csv`. The runner finds each clip by `clip_id`,
+whatever the audio extension (`.webm`, `.ogg`, `.wav`, `.mp3`).
 
-1. Drop the audio next to this file, named `<clip_id>.<ext>` (`webm`, `ogg`,
-   `wav`, …). The runner finds it by `clip_id`, whatever the extension.
-2. Append one row to `labels.csv`.
-3. Re-run the harness — nothing else needs updating.
-
-## `labels.csv` columns
+### `labels.csv` columns
 
 | Column | Meaning |
 |---|---|
@@ -22,11 +17,7 @@ they are recordings of real people, and Ley 1581 applies to them too.
 | `condition` | `clean` \| `noisy` \| `spontaneous` — the report splits every metric by this (REQ-BMK-6) |
 | `transcript` | Reference transcript, verbatim, in es-CO. Empty for garbage clips |
 | `items` | JSON array of the expected quantity tokens as strings, e.g. `["3","12"]` |
-| `is_garbage` | `true` when the clip contains no inventory speech (silence, noise, filler) |
-
-`garbage` is **not** a condition. A garbage clip carries a real condition
-*plus* `is_garbage=true`, so the hallucination rate can also be read per
-condition.
+| `is_garbage` | `true` when the clip contains no inventory speech (silence, noise, filler) — explicit no-speech signal (REQ-BMK-10) |
 
 Example rows:
 
@@ -40,14 +31,88 @@ garbage-01,noisy,,[],true
 Note the CSV quoting: the `items` JSON is wrapped in double quotes and its own
 quotes are doubled.
 
+## Layout 2: external XLSX root (`BD_AUDIOS.xlsx` + `NOTAS_VOZ/`)
+
+Pointer the runner at any directory holding one or more `BD_AUDIOS.xlsx`
+workbooks. Each workbook lives in its own contributor folder (so local
+`ID_UNICO=1` repeats across folders without collision) and has a sibling
+`NOTAS_VOZ/` audio folder.
+
+```
+BD_Pruebas/
+├── Braejan/
+│   ├── BD_AUDIOS.xlsx   # schema unchanged: see below
+│   └── NOTAS_VOZ/
+│       ├── 1.ogg
+│       └── ...
+└── Daniel/
+    ├── BD_AUDIOS.xlsx
+    └── NOTAS_VOZ/
+        └── ...
+```
+
+### Workbook schema (unchanged)
+
+| Column | Meaning |
+|---|---|
+| `ID_UNICO` | Unique id within this dataset. Floats (`1.0`) and unpadded strings (`"1"`) are normalised to the same display form |
+| `TEXTO_AUDIO` | Verbatim ground-truth transcript (es-CO); empty for pure silence |
+| `ACERTIVIDAD` | Opaque metadata. Recorded verbatim and never used to filter, classify, or score (REQ-BMK-8) |
+| `DIFICULTAD` | Opaque metadata, one of `FACIL` / `MEDIO` / `DIFICIL`. Recorded verbatim (REQ-BMK-7) |
+| `JSON PRODUCTOS` | Opaque payload; never parsed for STT scoring |
+
+`JSON PRODUCTOS` is downstream product-extraction ground truth and stays out of
+scope for the STT benchmark. The loader requires it to be present (so the
+schema is frozen) but never reads it.
+
+### Mapping rules
+
+| Condition | Outcome |
+|---|---|
+| Workbook row missing matching audio | `CorpusValidationError` (loader refuses to start) |
+| Workbook row matches multiple audio extensions (`.ogg` + `.webm`) | `CorpusValidationError` |
+| Audio file in `NOTAS_VOZ/` not referenced by any `ID_UNICO` | `CorpusValidationError` (unlabeled) |
+| Audio with a non-audio extension (`.txt`, `.html`, …) | `CorpusValidationError` |
+| Duplicate composite id inside one workbook | `CorpusValidationError` (deterministic, named) |
+
+### Adding clips
+
+* Drop a workbook + `NOTAS_VOZ/` folder into the corpus root and rerun —
+  the loader discovers it. N is not hard-coded; one row + one matching file
+  = one new clip with zero code changes.
+* For the same-clip-id-across-datasets case, use the composite id
+  `<relative-dataset>/<display-id>` (e.g. `Braejan/00001`) to disambiguate.
+
+## Acoustic `condition`
+
+Acoustic `condition` (`clean` / `noisy` / `spontaneous`) is **optional**. When
+no benchmark field/config supplies it, the matrix and the aggregate both
+record `condition="unknown"`. The runner never infers `condition` from
+`DIFICULTAD`.
+
+## Hallucination signal
+
+Hallucination rate is gated by the explicit `is_garbage` signal (CSV) or its
+XLSX equivalent (config). Relevance classes like `irrelevante`, `filler`,
+`cancion`, `mixto`, `silencio` are recorded verbatim in the matrix but do NOT
+change whether a clip is transcribed or scored — every voice-bearing clip is
+POSTed to `/transcribe` and compared against `TEXTO_AUDIO`.
+
 ## Coverage worth aiming for
 
-- Enough `clean` / `noisy` / `spontaneous` clips that each row of the report
-  means something on its own.
-- Quantities that expose near-misses (`90` vs `900`), which is the failure the
-  digit-accuracy metric exists to catch.
-- Every garbage clip you can record: silence, warehouse noise, and pure filler
-  speech. The hallucination rate runs over **all** of them, never a sample
-  (REQ-BMK-4).
-- At least one clip recorded as chunked `MediaRecorder` timeslice blobs, which
-  usually carry no duration header — that is the `audio_duration_ms: null` path.
+- Inventory clips with quantities that expose near-misses (`90` vs `900`)
+  — digit accuracy exists to catch exactly that failure.
+- Garbage clips: silence, warehouse noise, and pure filler. The hallucination
+  rate runs over **all** of them, never a sample.
+- Each `ACERTIVIDAD` class once (irrelevante / filler / cancion / mixto /
+  silencio) so the matrix shows that the runner actually submits and scores
+  them, never filters by class.
+
+## Privacy
+
+* Audio, workbooks, and `BD_Pruebas/` itself live outside Git
+  (root `.gitignore` covers it).
+* `benchmarks/results.json`, `benchmark_matrices/`, and `benchmarks/matrix.csv`
+  / `summary.txt` are gitignored via `benchmarks/.gitignore`.
+* The runner never logs transcripts at `INFO`; use `LOG_LEVEL=DEBUG` when
+  debugging audio rejection paths.
