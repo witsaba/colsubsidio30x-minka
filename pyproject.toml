@@ -28,6 +28,17 @@ dev = [
     "fakeredis>=2",
     "requests>=2.31",
 ]
+# Opt-in browser E2E stack. Kept out of `dev` so the normal unit-test run never
+# downloads Playwright browsers. Install with: uv sync --group e2e
+e2e = [
+    "pytest>=8",
+    "pytest-playwright>=0.5",
+]
 
 [tool.pytest.ini_options]
+# tests/e2e is intentionally NOT listed: it needs the live docker compose
+# stack and is run explicitly with `uv run pytest tests/e2e -m e2e`.
 testpaths = ["services/matcher/tests", "tests/deployment", "tests/product_identification"]
+markers = [
+    "e2e: end-to-end smoke tests that require the docker compose stack to be running",
+]

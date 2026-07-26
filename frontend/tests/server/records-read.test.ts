@@ -27,9 +27,10 @@ function request(query = 'planId=plan-1&operatorId=op-1'): Request {
   return new Request(`http://localhost:4321/api/records?${query}`, { method: 'GET' });
 }
 
-function db(options: { assigned?: boolean } = {}) {
+function db(options: { assigned?: boolean; errors?: Record<string, string> } = {}) {
   const { assigned = true } = options;
   return createStubDb({
+    errors: options.errors,
     tables: {
       audit_plans: [{ id: 'plan-1', status: 'active', warehouse_id: 'wh-1' }],
       warehouses: [{ id: 'wh-1', code: 'STOCK_RESTAURANTE_FUENTES_AYB' }],
@@ -259,5 +260,43 @@ describe('GET /api/records — the payload stays blind (RF-18)', () => {
     ]) {
       expect(text).not.toContain(leak);
     }
+  });
+});
+
+/**
+ * Resume is the one place where "you counted nothing" is the most expensive lie
+ * in the system: the operator trusts the empty list, re-dictates the shelf, and
+ * the client mints a FRESH `client_record_id`, so the idempotency key no longer
+ * matches and the same physical count is written twice. A failed read must stop
+ * the resume, not empty it.
+ */
+describe('GET /api/records — a failed query is never an empty resume', () => {
+  async function statusFor(errors: Record<string, string>) {
+    return (await handleListRecords(db({ errors }), request())).status;
+  }
+
+  it('answers 502 when the count_records read fails', async () => {
+    expect(await statusFor({ 'select:count_records': 'JWT expired' })).toBe(502);
+  });
+
+  it('answers 502 when the anomaly read fails, rather than restoring records as clean', async () => {
+    expect(await statusFor({ 'select:record_anomalies': 'connection reset' })).toBe(502);
+  });
+
+  it('answers 502 when the product read fails, rather than blank article names', async () => {
+    expect(await statusFor({ 'select:products': 'connection reset' })).toBe(502);
+  });
+
+  it('answers 502 when the unit-label read fails, rather than a null unitDisplay', async () => {
+    expect(await statusFor({ 'select:units': 'permission denied' })).toBe(502);
+  });
+
+  it('names the failure with the shared db_unavailable code', async () => {
+    const response = await handleListRecords(
+      db({ errors: { 'select:count_records': 'JWT expired' } }),
+      request(),
+    );
+
+    expect(await response.json()).toMatchObject({ error: { code: 'db_unavailable' } });
   });
 });

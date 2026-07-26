@@ -147,8 +147,11 @@ class TestCompose:
         assert "CATALOGUE_DB" not in compose
 
     def test_receives_the_supabase_and_redis_variables(self, compose: str) -> None:
+        # The container variable stays SUPABASE_KEY (the matcher's Settings
+        # field is unchanged); the host-side source is the canonical
+        # SUPABASE_SECRET_KEY of the new Supabase API-key scheme.
         assert "SUPABASE_URL: ${SUPABASE_URL:-}" in compose
-        assert "SUPABASE_KEY: ${SUPABASE_KEY:-}" in compose
+        assert "SUPABASE_KEY: ${SUPABASE_SECRET_KEY:-}" in compose
         assert "REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}" in compose
         assert (
             "CATALOGUE_CACHE_TTL_SECONDS: ${CATALOGUE_CACHE_TTL_SECONDS:-10800}"

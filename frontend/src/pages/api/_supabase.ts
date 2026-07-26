@@ -6,8 +6,9 @@
  * server-only directory — so it can never be pulled into a browser bundle by a
  * component import.
  *
- * The key handled here is the SERVICE ROLE key: it bypasses RLS entirely. Two
- * rules follow from that and are both enforced by `tests/server/supabase-client.test.ts`:
+ * The key handled here is the SECRET key (the service-role equivalent in the
+ * new Supabase API-key scheme): it bypasses RLS entirely. Two rules follow
+ * from that and are both enforced by `tests/server/supabase-client.test.ts`:
  *
  *   - the variable names are NOT `PUBLIC_`-prefixed. Astro inlines every
  *     `PUBLIC_` variable into the client bundle, so a `PUBLIC_SUPABASE_*` name
@@ -25,7 +26,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 export const SUPABASE_URL_ENV = 'SUPABASE_URL';
-export const SUPABASE_SERVICE_ROLE_KEY_ENV = 'SUPABASE_SERVICE_ROLE_KEY';
+export const SUPABASE_SECRET_KEY_ENV = 'SUPABASE_SECRET_KEY';
 
 /**
  * Read one required variable from the running process's environment.
@@ -56,7 +57,7 @@ let cached: SupabaseClient | null = null;
  */
 export function supabase(): SupabaseClient {
   if (cached) return cached;
-  cached = createClient(requireEnv(SUPABASE_URL_ENV), requireEnv(SUPABASE_SERVICE_ROLE_KEY_ENV), {
+  cached = createClient(requireEnv(SUPABASE_URL_ENV), requireEnv(SUPABASE_SECRET_KEY_ENV), {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   return cached;

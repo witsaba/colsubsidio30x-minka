@@ -149,6 +149,24 @@ describe('POST /api/records — persistence', () => {
     expect(response.status).toBe(400);
     expect(stub.calls).toEqual([]);
   });
+
+  /**
+   * The idempotency lookup is the cooperative half of the unique index on
+   * `client_record_id`. If its error is read as "no existing row", the route
+   * proceeds to INSERT — and the only thing standing between a flaky connection
+   * and a double-counted shelf becomes the database constraint, whose violation
+   * this route reports as a plain 500 with no id. Refusing up front is the
+   * honest answer: nothing was written, and the client may retry the same key.
+   */
+  it('answers 502 and writes nothing when the idempotency lookup fails', async () => {
+    const stub = db({ errors: { 'select:count_records': 'connection reset' } });
+
+    const response = await handleCreateRecord(stub, request());
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({ error: { code: 'db_unavailable' } });
+    expect(stub.rows('count_records')).toEqual([]);
+  });
 });
 
 describe('POST /api/records — server re-validation (REQ-AV-2, RF-18)', () => {

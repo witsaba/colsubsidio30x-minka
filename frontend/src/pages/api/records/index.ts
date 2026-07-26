@@ -19,7 +19,7 @@
 import type { APIRoute } from 'astro';
 
 import { supabase } from '../_supabase';
-import { supabaseDb } from '../../../lib/server/db';
+import { dataOrThrow, supabaseDb } from '../../../lib/server/db';
 import type { Db } from '../../../lib/server/db';
 import { assertPlanAssignment } from '../../../lib/server/authz';
 import { resolveProductId } from '../../../lib/server/products';
@@ -31,6 +31,7 @@ import {
   readJsonBody,
   requireNumber,
   requireString,
+  respondingToDbFailure,
   serverError,
 } from '../../../lib/server/http';
 import {
@@ -129,61 +130,79 @@ export async function handleCreateRecord(db: Db, request: Request): Promise<Resp
   const productId: string | null = await resolveProductId(db, input);
   if (!productId) return badRequest('No encontramos ese artículo en el catálogo.');
 
-  // Idempotency: a retried POST must resolve, not duplicate.
-  const { data: existing } = await db
-    .from('count_records')
-    .select('id, status')
-    .eq('client_record_id', input.clientRecordId)
-    .maybeSingle();
+  return respondingToDbFailure(async () => {
+    /*
+     * Idempotency: a retried POST must resolve, not duplicate.
+     *
+     * `dataOrThrow` is load-bearing here, not defensive. Read as "no existing
+     * row", a failed lookup lets the route fall through to the INSERT, and the
+     * only thing left between a flaky connection and a double-counted shelf is
+     * the unique index on `client_record_id` — whose violation this route
+     * reports as a plain 500 with no id. A 502 writes nothing and the client may
+     * retry the SAME key. `null` still means "no such row" and inserts.
+     */
+    const existing = dataOrThrow(
+      await db
+        .from('count_records')
+        .select('id, status')
+        .eq('client_record_id', input.clientRecordId)
+        .maybeSingle(),
+    );
 
-  const verdict: InternalVerdict = await validateCount(db, {
-    planId: input.planId,
-    warehouseId: assignment.plan.warehouseId,
-    productId,
-    quantity: input.quantity,
-    unitCode: input.unitCode,
-  });
-
-  if (existing) {
-    return json({ id: existing.id, ...toOperatorVerdict(verdict) }, 200);
-  }
-
-  const { data: created, error } = await db
-    .from('count_records')
-    .insert({
-      plan_id: input.planId,
-      warehouse_id: assignment.plan.warehouseId,
-      product_id: productId,
+    const verdict: InternalVerdict = await validateCount(db, {
+      planId: input.planId,
+      warehouseId: assignment.plan.warehouseId,
+      productId,
       quantity: input.quantity,
-      unit_code: input.unitCode,
-      source: 'voice',
-      status: verdict.anomaly ? COUNT_STATUS.anomaly : COUNT_STATUS.ok,
-      dictated_text: input.spokenName,
-      counted_by: input.operatorId,
-      client_record_id: input.clientRecordId,
-      is_deleted: false,
-    })
-    .select()
-    .single();
+      unitCode: input.unitCode,
+    });
 
-  if (error || !created) {
-    return serverError(`No se pudo guardar el conteo: ${error?.message ?? 'sin datos'}`);
-  }
-
-  if (verdict.anomaly) {
-    // Best-effort by design: the count itself is already durable, and losing the
-    // count because its annotation failed would be the worse outcome. The
-    // failure is surfaced in the server log, not swallowed into the response.
-    const { error: anomalyError } = await db
-      .from('record_anomalies')
-      .insert(anomalyRow(String(created.id), verdict.anomaly))
-      .select();
-    if (anomalyError) {
-      console.error('record_anomalies insert failed', { recordId: created.id, error: anomalyError });
+    if (existing) {
+      return json({ id: existing.id, ...toOperatorVerdict(verdict) }, 200);
     }
-  }
 
-  return json({ id: created.id, ...toOperatorVerdict(verdict) }, 201);
+    // Still `serverError`, not `dataOrThrow`: a write we ATTEMPTED and lost is a
+    // 500. The 502 above says the database was never asked.
+    const { data: created, error } = await db
+      .from('count_records')
+      .insert({
+        plan_id: input.planId,
+        warehouse_id: assignment.plan.warehouseId,
+        product_id: productId,
+        quantity: input.quantity,
+        unit_code: input.unitCode,
+        source: 'voice',
+        status: verdict.anomaly ? COUNT_STATUS.anomaly : COUNT_STATUS.ok,
+        dictated_text: input.spokenName,
+        counted_by: input.operatorId,
+        client_record_id: input.clientRecordId,
+        is_deleted: false,
+      })
+      .select()
+      .single();
+
+    if (error || !created) {
+      return serverError(`No se pudo guardar el conteo: ${error?.message ?? 'sin datos'}`);
+    }
+
+    if (verdict.anomaly) {
+      // Best-effort by design: the count itself is already durable, and losing the
+      // count because its annotation failed would be the worse outcome. The
+      // failure is surfaced in the server log, not swallowed into the response.
+      const { error: anomalyError } = await db
+        .from('record_anomalies')
+        .insert(anomalyRow(String(created.id), verdict.anomaly))
+        .select();
+      if (anomalyError) {
+        console.error('record_anomalies insert failed', {
+          recordId: created.id,
+          error: anomalyError,
+        });
+      }
+    }
+
+    return json({ id: created.id, ...toOperatorVerdict(verdict) }, 201);
+  });
 }
 
 export const POST: APIRoute = ({ request }) => handleCreateRecord(supabaseDb(supabase()), request);
@@ -234,73 +253,89 @@ export async function handleListRecords(db: Db, request: Request): Promise<Respo
   const assignment = await assertPlanAssignment(db, planId, operatorId);
   if (!assignment.ok) return forbidden(assignment.reason);
 
-  const { data: rows } = await db
-    .from('count_records')
-    .select(
-      'id, client_record_id, product_id, quantity, unit_code, status, dictated_text, created_at, is_deleted',
-    )
-    .eq('plan_id', planId)
-    .eq('counted_by', operatorId)
-    // RF-21: a soft-deleted row was CORRECTED. Restoring it would show the
-    // operator their own shelf counted twice.
-    .eq('is_deleted', false)
-    .order('created_at', { ascending: false });
+  return respondingToDbFailure(async () => {
+    const rows = dataOrThrow(
+      await db
+        .from('count_records')
+        .select(
+          'id, client_record_id, product_id, quantity, unit_code, status, dictated_text, created_at, is_deleted',
+        )
+        .eq('plan_id', planId)
+        .eq('counted_by', operatorId)
+        // RF-21: a soft-deleted row was CORRECTED. Restoring it would show the
+        // operator their own shelf counted twice.
+        .eq('is_deleted', false)
+        .order('created_at', { ascending: false }),
+    );
 
-  const records = rows ?? [];
-  if (records.length === 0) return json([]);
+    const records = rows ?? [];
+    // A genuinely empty resume. Reached only when the read SUCCEEDED — the
+    // alternative is an operator who re-dictates a shelf they already counted
+    // under a fresh `client_record_id`, which the idempotency key can no longer
+    // match.
+    if (records.length === 0) return json([]);
 
-  const ids = records.map((row) => String(row.id));
-  const { data: anomalyRows } = await db
-    .from('record_anomalies')
-    // The projection is the guard: `detail` and `expected_unit_code` are not
-    // selected at all, so there is no field to forget to strip later.
-    .select('record_id, type, severity, title')
-    .in('record_id', ids);
+    const ids = records.map((row) => String(row.id));
+    const anomalyRows = dataOrThrow(
+      await db
+        .from('record_anomalies')
+        // The projection is the guard: `detail` and `expected_unit_code` are not
+        // selected at all, so there is no field to forget to strip later.
+        .select('record_id, type, severity, title')
+        .in('record_id', ids),
+    );
 
-  const anomalyByRecord = new Map(
-    (anomalyRows ?? []).map((row) => [
-      String(row.record_id),
-      {
-        type: String(row.type),
-        severity: String(row.severity),
-        title: String(row.title ?? ''),
-      },
-    ]),
-  );
+    const anomalyByRecord = new Map(
+      (anomalyRows ?? []).map((row) => [
+        String(row.record_id),
+        {
+          type: String(row.type),
+          severity: String(row.severity),
+          title: String(row.title ?? ''),
+        },
+      ]),
+    );
 
-  const { data: productRows } = await db
-    .from('products')
-    .select('id, sku, name')
-    .in('id', [...new Set(records.map((row) => String(row.product_id)))]);
-  const products = new Map((productRows ?? []).map((row) => [String(row.id), row]));
+    const productRows = dataOrThrow(
+      await db
+        .from('products')
+        .select('id, sku, name')
+        .in('id', [...new Set(records.map((row) => String(row.product_id)))]),
+    );
+    const products = new Map((productRows ?? []).map((row) => [String(row.id), row]));
 
-  const unitCodes = [...new Set(records.map((row) => row.unit_code).filter(Boolean))];
-  const { data: unitRows } = unitCodes.length
-    ? await db.from('units').select('code, label_es').in('code', unitCodes)
-    : { data: [] };
-  const unitLabels = new Map((unitRows ?? []).map((row) => [String(row.code), row.label_es ?? null]));
+    // A code with no `units` row keeps a null `unitDisplay` (REQ-OCF-7); only a
+    // failed label read refuses.
+    const unitCodes = [...new Set(records.map((row) => row.unit_code).filter(Boolean))];
+    const unitRows = unitCodes.length
+      ? dataOrThrow(await db.from('units').select('code, label_es').in('code', unitCodes))
+      : [];
+    const unitLabels = new Map(
+      (unitRows ?? []).map((row) => [String(row.code), row.label_es ?? null]),
+    );
 
-  const payload: RestoredRecord[] = records.map((row) => {
-    const product = products.get(String(row.product_id));
-    const anomaly = anomalyByRecord.get(String(row.id)) ?? null;
-    return {
-      id: String(row.client_record_id ?? row.id),
-      serverId: String(row.id),
-      quantity: Number(row.quantity),
-      unitCode: row.unit_code ?? null,
-      unitDisplay: row.unit_code ? (unitLabels.get(String(row.unit_code)) ?? null) : null,
-      articulo: String(product?.name ?? ''),
-      nrArticulo: product?.sku ?? null,
-      spokenName: String(row.dictated_text ?? ''),
-      // A restored record is SETTLED. It can never come back as `sync`, or the
-      // client would fire a write for a row that already exists.
-      state: row.status === COUNT_STATUS.anomaly ? 'anom_noted' : 'ok',
-      anomaly,
-      createdAt: String(row.created_at ?? ''),
-    };
+    const payload: RestoredRecord[] = records.map((row) => {
+      const product = products.get(String(row.product_id));
+      const anomaly = anomalyByRecord.get(String(row.id)) ?? null;
+      return {
+        id: String(row.client_record_id ?? row.id),
+        serverId: String(row.id),
+        quantity: Number(row.quantity),
+        unitCode: row.unit_code ?? null,
+        unitDisplay: row.unit_code ? (unitLabels.get(String(row.unit_code)) ?? null) : null,
+        articulo: String(product?.name ?? ''),
+        nrArticulo: product?.sku ?? null,
+        spokenName: String(row.dictated_text ?? ''),
+        // A restored record is SETTLED. It can never come back as `sync`, or the
+        // client would fire a write for a row that already exists.
+        state: row.status === COUNT_STATUS.anomaly ? 'anom_noted' : 'ok',
+        anomaly,
+        createdAt: String(row.created_at ?? ''),
+      };
+    });
+
+    return json(payload);
   });
-
-  return json(payload);
 }
 
 export const GET: APIRoute = ({ request }) => handleListRecords(supabaseDb(supabase()), request);

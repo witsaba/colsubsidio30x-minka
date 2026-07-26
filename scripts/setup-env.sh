@@ -192,6 +192,21 @@ printf 'Wrote %s\n' "$env_file"
 # Say whether the stack will actually come up, while the operator is still here
 # to fix it. `docker compose up` would otherwise report it as a crash loop.
 # ---------------------------------------------------------------------------
+# A publishable key in the secret slot is the one credential mistake this stack
+# cannot survive and cannot report: the `anon` role holds zero table privileges
+# by design (RLS targets `authenticated`, and the server routes rely on
+# service-role bypass), so PostgREST answers 401 — which the frontend routes
+# degrade into an empty list. The operator sees "no plans assigned" instead of
+# "wrong key". Checked here by prefix, while there is still someone to tell.
+supabase_key=${value_of[SUPABASE_SECRET_KEY]:-}
+if [[ -z "$supabase_key" ]]; then
+  printf 'WARNING: frontend will not boot and matcher will crash-loop - SUPABASE_SECRET_KEY is empty. Copy it from Supabase: Project Settings > API Keys > Secret keys > default (reveal, then copy).\n' >&2
+elif [[ "$supabase_key" == sb_publishable_* ]]; then
+  printf 'WARNING: SUPABASE_SECRET_KEY holds a PUBLISHABLE key (sb_publishable_...). Every database read will return empty rather than fail loudly. Use the SECRET key (sb_secret_...) from Project Settings > API Keys > Secret keys.\n' >&2
+elif [[ "$supabase_key" != sb_secret_* ]]; then
+  printf 'WARNING: SUPABASE_SECRET_KEY does not look like a Supabase secret key (expected an sb_secret_ prefix).\n' >&2
+fi
+
 vendor=${value_of[STT_VENDOR]:-}
 if [[ -n "$vendor" ]]; then
   key_name=""
