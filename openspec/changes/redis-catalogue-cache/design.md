@@ -2,7 +2,7 @@
 
 ## Technical Approach
 
-Replace the SQLite loader with two ports composed by `MatcherService`: a `CatalogueSource` (Supabase/PostgREST over plain `httpx`) and a `SnapshotCache` (Redis, versioned JSON snapshot, 3h TTL). `POST /match` keeps reading only an immutable in-process index (`CatalogueIndex`); all I/O happens in `lifespan` (startup load + one background refresh task). Trigram scoring and `decide()` are untouched; `catalogue_id` becomes `warehouses.code`; `Row.uid` becomes `warehouse_products.id`; `sd` is gone and `warehouse_stock_balances` is never queried (least-privilege key over `warehouses`, `products`, `warehouse_products`, `units` only). Single PR, `size:exception` accepted (Engram #144).
+Replace the SQLite loader with two ports composed by `MatcherService`: a `CatalogueSource` (Supabase/PostgREST over plain `httpx`) and a `SnapshotCache` (Redis, versioned JSON snapshot, 3h TTL). `POST /match` keeps reading only an immutable in-process index (`CatalogueIndex`); all I/O happens in `lifespan` (startup load + one background refresh task). Trigram scoring and `decide()` are untouched; `catalogue_id` becomes `warehouses.code`; `Row.uid` becomes `warehouse_products.id`; `sd` is gone and `warehouse_stock_balances` is never queried — enforced by the *service* (the query is never constructed; no stock field exists on `Row`/`Snapshot`), because the shipped credential is the `service_role` key and not the least-privilege key this design originally assumed. See Open Questions. Single PR, `size:exception` accepted (Engram #144).
 
 ## Architecture Decisions
 
@@ -185,4 +185,11 @@ N/A — no new routing, shell, subprocess, VCS/PR automation, or executable-file
 
 ## Open Questions
 
-None blocking. One recommendation needing later confirmation: the Supabase least-privilege key must be provisioned (role/grants on the 4 tables) before deploy; fallback until then is the anon key restricted by RLS — acceptable only if RLS denies `warehouse_stock_balances` reads, which must be verified with `get_advisors`/policy review at apply time.
+None blocking.
+
+**RESOLVED at apply time — this question is closed, and its answer is not the one written here.** The original open question read: *"the Supabase least-privilege key must be provisioned (role/grants on the 4 tables) before deploy; fallback until then is the anon key restricted by RLS — acceptable only if RLS denies `warehouse_stock_balances` reads."* Live policy inspection retired **both** options:
+
+- No least-privilege catalogue-reader role exists, and none was provisioned.
+- The anon-key-with-RLS fallback is not viable: the `anon` role holds no `GRANT` on any catalogue table (PostgREST answers HTTP 401 `42501`), every read policy targets `authenticated`, and `warehouse_products_read` further requires `private.is_staff()`. An anon key cannot read the catalogue at all, so it cannot be a fallback for reading it.
+
+The matcher therefore ships with the **`service_role`** key (proposal Key Decision 2), which bypasses RLS. Stock isolation moved from the credential to the service: no `warehouse_stock_balances` query is ever constructed and the snapshot carries no stock field (REQ-CSS-4). Provisioning a scoped catalogue-reader role and retiring `service_role` from the matcher is a **follow-up for the Data Engineer**, not a precondition of this change.

@@ -87,7 +87,7 @@ they cover (`work-unit-commits`).
 | WU-0 | Declare `httpx`/`redis`/`fakeredis`; commit lock | `uv run pytest services/matcher/tests/unit/test_packaging.py` | N/A — dependency declaration only | revert `pyproject.toml` + `uv.lock` |
 | WU-1 | Ports (`Row`/`Snapshot`/Protocols) + snapshot codec | `uv run pytest services/matcher/tests/unit/test_snapshot_codec.py` | N/A — pure functions | delete `ports.py`, codec half of `cache.py` |
 | WU-2 | `RedisSnapshotCache` over `fakeredis` | `uv run pytest services/matcher/tests/unit/test_redis_cache.py` | `docker compose exec redis redis-cli GET matcher:catalogue:snapshot:v1` | delete adapter half of `cache.py` |
-| WU-3 | `SupabaseCatalogueSource` over `MockTransport` | `uv run pytest services/matcher/tests/unit/test_supabase_source.py` | manual: curl the PostgREST URL with the least-privilege key | delete `supabase_source.py` |
+| WU-3 | `SupabaseCatalogueSource` over `MockTransport` | `uv run pytest services/matcher/tests/unit/test_supabase_source.py` | manual: curl the PostgREST URL with `SUPABASE_KEY` (the `service_role` key — no least-privilege key exists; see proposal Key Decision 2) | delete `supabase_source.py` |
 | WU-4 | `load_index` startup orchestration | `uv run pytest services/matcher/tests/unit/test_load_index.py` | N/A — covered by WU-5 lifespan tests | delete `load_index` from `catalogue.py` |
 | WU-5 | **CUTOVER**: rewire service/main/config, migrate fixtures, delete SQLite | `uv run pytest services/matcher/tests` | `docker compose up matcher` reaches healthy | single revert of the cutover commit |
 | WU-6 | Eval fixture snapshot + offline remap + re-pinned baselines | `uv run pytest services/matcher/tests/eval` | N/A — offline fixture, no network by contract | revert eval data + eval test commit |
@@ -625,6 +625,145 @@ behavioural and follows the full RED → GREEN cycle.
     decision itself — clean break, no server-side shim — is unchanged and was NOT reopened;
     only its coordination assumption needed repair, and the repair is entirely client-side.
 
+## WU-13: CORRECTION — clear every open review and verify WARNING
+
+The single bounded correction transaction after the 4R lenses and `sdd-verify`. Both CRITICALs
+were already closed by WU-12. Two commits: one `fix:` for the behavioural corrections, one
+`docs:` for the prose and spec corrections. **Docstring/prose corrections are legitimately
+non-TDD** — there is no behaviour to drive out, only a false statement to replace with a
+measured one. The two behavioural corrections follow the full RED → GREEN cycle with real
+observed RED.
+
+- [x] 13.1 **RED — R2: the `SnapshotCache` port does not describe the call the service makes.**
+      `ports.py:77` declared `try_acquire_refresh_lock(self, ttl_seconds: int)` with the
+      parameter REQUIRED; the adapter is `(self, ttl_seconds: float | None = None)`
+      (`cache.py:122`) and the only production call site passes nothing (`service.py:157-163`,
+      via `_guarded`). Because the Protocol is `runtime_checkable`, an adapter written strictly
+      to the documented signature satisfies `isinstance` and is accepted — then the `TypeError`
+      is swallowed by `_guarded`, the `SET NX PX` lock is silently never taken, and every
+      replica stampedes Supabase. New `TestThePortMatchesTheRealContract` in
+      `tests/unit/test_refresh.py`; its cache double's lock method is **generated from the
+      Protocol signature** rather than hand-copied, so the double can never drift from the port.
+      **Observed RED (2 failed):** `refresh lock unavailable: try_acquire_refresh_lock() missing
+      1 required positional argument: 'ttl_seconds'`, plus the signature-equality assertion
+      `<Signature (self, ttl_seconds: 'int') -> 'bool'> == <Signature (self, ttl_seconds:
+      'float | None' = None) -> 'bool'>`.
+- [x] 13.2 **GREEN — correct the port, not the adapter.** `ports.py` now documents
+      `ttl_seconds: float | None = None` and says why: the expiry belongs to the adapter
+      (configured once from `CATALOGUE_REFRESH_LOCK_TTL_SECONDS`), the caller has no business
+      re-deciding it per cycle, and it is a duration in seconds rather than a count of them.
+      The conformance double at `tests/unit/test_snapshot_codec.py:110`, which mirrored the
+      wrong signature, follows. `test_refresh.py` + `test_snapshot_codec.py` +
+      `test_redis_cache.py` → **58 passed**.
+- [x] 13.3 **RED — R1-RISK: REQ-API-8's credential guarantee was never asserted on the real
+      crash path.** `test_uvicorn_exits_with_code_three_when_the_catalogue_is_missing` is the
+      only test that runs the unmocked startup failure in a genuine subprocess, so it is the
+      only place Python renders a full chained-exception traceback — every `raise ... from exc`
+      frame, every adapter repr. It asserted the abort message but never the credential's
+      absence, leaving the REQ-API-8 / `docs/deployment.md` promise unverified end to end. The
+      test now runs with `SENTINEL_SUPABASE_KEY = "sb-secret-DO-NOT-LEAK-8f3a1c7e94b2"` (the
+      previous `"unused"` is ordinary English and would make the absence assertion prove
+      nothing) and asserts it appears in neither stderr nor stdout, with a failure message
+      spelling out that a hit means a live RLS-bypassing `service_role` key in the logs.
+      **Observed RED by mutation**: interpolating `self._key` into one `CatalogueUnavailableError`
+      message in `supabase_source.py` fired the assertion on stderr; production restored, `git
+      diff` clean. The reviewer found **no live leak today** — `httpx` error strings are built
+      from status and URL, never headers — so this is regression safety, not a vulnerability.
+- [x] 13.4 **GREEN + commit `ba23975`** — `uv run pytest services/matcher/tests/api/test_startup_retry.py`
+      → 10 passed. Full suite → **1 failed, 542 passed, 1 skipped** (the +2 are 13.1's tests;
+      the single failure is still `test_no_committed_file_carries_a_credential_shaped_default`,
+      unrelated and deliberate).
+- [x] 13.5 **NON-TDD, prose — R2: `config.py` still called the credential "least-privilege".**
+      False, and it is the exact claim corrected everywhere else: the matcher uses the
+      `service_role` key, which bypasses RLS and has full database access. The docstring now
+      states that, why no least-privilege alternative exists (`anon` holds no `GRANT`, PostgREST
+      answers 401 `42501`; every read policy targets `authenticated`; `warehouse_products_read`
+      further requires `private.is_staff()`), and that stock isolation is enforced by the
+      **service** — no `warehouse_stock_balances` query is ever constructed and no stock field
+      exists on `Row`/`Snapshot`. A grep of `services/matcher/src` confirms this was the last
+      surviving occurrence.
+- [x] 13.6 **NON-TDD, prose — R2: `scripts/remap_eval_set.py` still carried the disproved
+      row-gap theory.** It claimed 56 rows were "most plausibly `products.name_normalized`
+      UNIQUE deduping upstream" and that "some gold rows therefore have no target at all".
+      WU-6 disproved it and the docstring now records the measured finding: the 8 SQLite stock
+      tables hold 1,413 `rowid`s (the often-quoted 1,461 also counts the 48-row
+      `bodegas_disponibles` lookup, never catalogue data) against 1,405 `warehouse_products`,
+      and the gap is exactly **8 spreadsheet header rows** with `articulo IS NULL`, one per
+      table, that the loader always discarded. None was gold; **zero eval cases were dropped,
+      all 624 survived**. Re-measured directly against `data/bodegas-y-stock.sqlite` for this
+      task rather than taken on trust. The drop-and-report path is kept and its purpose
+      restated: it is the guard that makes a future lossy export fail loudly.
+- [x] 13.7 **NON-TDD, prose — R2 SUGGESTION: planning docs still presented the withdrawn
+      credential plan as live**, even though `proposal.md` Key Decision 2 documents it as
+      corrected. `proposal.md` Dependencies and Success Criteria now point at Key Decision 2 and
+      state the service-enforced criterion; `design.md`'s Open Questions is marked **RESOLVED**
+      with the anon-key-with-RLS fallback explicitly retired (an `anon` key cannot read the
+      catalogue at all, so it cannot be a fallback for reading it) and the scoped role recorded
+      as a Data Engineer follow-up rather than a precondition; `design.md`'s summary paragraph
+      and `tasks.md`'s WU-3 runtime harness follow.
+- [x] 13.8 **NON-TDD, spec — VERIFY W1: REQ-RCC-4 specified behaviour that does not exist.**
+      "Per-process single-flight" is not implemented in `src/` and has no test. Verify measured
+      that 4 concurrent refreshes coalesce to 1 fetch with Redis up (the `SET NX PX` lock does
+      that) but stampede to 4 with Redis down. It is unreachable today because `refresh()` has a
+      single sequential caller. **Dead code was NOT written.** The requirement now describes what
+      is actually built and relied upon — the cross-replica lock, explicitly stampede control and
+      never a correctness dependency — states that per-process single-flight is unnecessary while
+      `refresh()` has one sequential caller, and names exactly what would have to change if a
+      second trigger were ever added. The unverifiable "In-process refresh triggers coalesce"
+      scenario is replaced by "A lock that cannot be reached still refreshes", which
+      `test_redis_down_still_refreshes_directly_from_supabase` already covers. `proposal.md`
+      decision 6 follows.
+- [x] 13.9 **NON-TDD, prose — VERIFY W3/W4: the accuracy provenance note was factually wrong.**
+      It claimed gold is "rank 2 in every miss" and filed the kyocera tie cluster into `no_code`.
+      **Re-measured from scratch** by driving all 624 cases through `MatcherService.match()`
+      against the checked-in snapshot: 430 variants, top-1 423 (0.98372), **recall@3 430/430 =
+      1.00000 — confirmed**, 7 misses. Gold is rank **2 in six** and rank **3 in one**
+      (`kyocera toner tk 538ic` → `TONER KYOCERA TK 5382C`, whose top 4 candidates all score
+      exactly 0.642857 because the TK 5382 C/K/M/Y colour codes are invisible to the trigram
+      metric). Cohorts: **1 `has_code`** (the kyocera case) and **6 `no_code`** (5x "porcion
+      filete pechuga" + `cola cola`), matching `NO_CODE_TOP1_BASELINE` = 79/85 exactly. The note
+      now tabulates every case with its rank and cohort instead of generalising, and records
+      that `cola cola` → `COLA Y POLA` is genuinely score-driven (0.4545 vs 0.3750, not a tie).
+      `pr-body.md` and `docs/test-plan.md` repeated the "rank 2" claim and are corrected too.
+- [x] 13.10 **NON-TDD, prose — stale PR body.** The BREAKING section said the `catalogue_id`
+      change would be "coordinated with the unmerged `feat/voice-counter-frontend` branch". That
+      branch merged (PR #13) and the frontend migration now ships **inside this PR** (WU-12,
+      `4d3697f`); the section says so, and says why the mitigation expired rather than failed.
+      Added: a "Post-review work carried in this PR" section covering WU-12 and WU-13, the
+      updated test tallies (Python **1 failed / 542 passed / 1 skipped**, frontend **667
+      passed**), commits 13-17 in the reading order, and **two non-blocking follow-ups surfaced
+      by the R4 resilience lens** so they are not lost:
+      **(6) cold-start stampede** — `load_index` (`catalogue.py:105-147`) never takes the
+      `SET NX PX` lock, only the periodic-refresh path does, so N replicas booting against a cold
+      Redis each hit Supabase independently. Zero blast radius today (compose runs one instance
+      per service); matters before horizontal scale-out.
+      **(7) `/health` cannot see staleness** — `HealthResponse` carries only
+      `status`/`catalogues`/`rows`. If Supabase becomes permanently unreachable after startup,
+      refreshes fail behind a catch-all with one WARNING per ~3 h cycle while `/health` returns
+      `200 {"status":"ok"}` indefinitely. `MatcherService` already tracks `_index.source` and
+      `_index.loaded_at`; they are simply not exposed.
+
+### WU-13 deviations, recorded at apply time
+
+41. **Correction 1's RED required a deliberate mutation, and that is the honest way to get it.**
+    The credential-absence assertion passes on today's code, because there is no live leak. A
+    regression-safety assertion cannot fail against correct code, so the RED was produced by
+    breaking the code it protects (interpolating `self._key` into one error message) and
+    confirming the assertion fires. Production was restored immediately; `git diff` on
+    `supabase_source.py` is clean and it is not in either WU-13 commit.
+42. **Correction 3's permanent test generates its double from the Protocol** with a small
+    `exec`. A hand-written double would have to restate the signature, which is precisely the
+    drift the test exists to catch — it would keep passing after a future edit to `ports.py`.
+    Generating it means reverting the port fix turns the test red again.
+43. **`design.md:5` was corrected as well**, though the review named only `design.md:188`. The
+    summary paragraph presented the same withdrawn least-privilege key as the live plan.
+44. **Two extra call sites of the "rank 2 in every miss" claim were found and fixed** beyond the
+    one the review named: `pr-body.md` (twice) and `docs/test-plan.md`. The claim had propagated.
+45. **`tasks.md` line 429 (task 9.3's completed record) still mentions the least-privilege key
+    and was left alone.** It is the historical record of a completed task, and deviation #39
+    already reclassified that manual check as moot. Only the live WU-3 harness line (90) was
+    corrected.
+
 ## Requirement traceability
 
 | Requirement | Covering tasks |
@@ -632,18 +771,18 @@ behavioural and follows the full RED → GREEN cycle.
 | REQ-CSS-1 (Supabase sole source, no SQLite remnant) | 3.1, 4.1-4.4, 5.8, 8.6-8.8, 8.10 |
 | REQ-CSS-2 (row identity and shape) | 1.1, 3.3 |
 | REQ-CSS-3 (active-row filtering, merged excluded) | 3.1 |
-| REQ-CSS-4 (stock isolation, least privilege) | 3.1, 1.2, 9.3 (manual for the live-denial scenario) |
+| REQ-CSS-4 (stock isolation, enforced by the service — **not** by a least-privilege credential) | 3.1, 1.2, 9.3 (manual check reclassified as moot, deviation #39), 13.5 |
 | REQ-CSS-5 (startup abort, never serve empty) | 3.4, 4.3, 4.4, 5.7 |
 | REQ-RCC-1 (snapshot lifecycle) | 2.1, 4.1, 4.2, 4.3 |
 | REQ-RCC-2 (TTL refresh, atomic swap) | 2.1, 7.1, 7.7 |
 | REQ-RCC-3 (soft dependencies, zero per-request I/O) | 2.1, 7.2, 7.8 |
-| REQ-RCC-4 (stampede control) | 2.2, 7.3, 7.4, 7.5, 7.6 |
+| REQ-RCC-4 (stampede control) | 2.2, 7.3, 7.4, 7.5, 7.6, 13.1, 13.2, 13.8 |
 | REQ-RCC-5 (snapshot content safety) | 1.2, 6.2 |
 | REQ-API-1 / REQ-API-2 (warehouse-code `catalogue_id`, `/catalogues`) | 5.3, 5.5, 12.6-12.9 (the merged frontend, the only other consumer) |
 | REQ-API-4 (config; no `CATALOGUE_DB`) | 5.1 |
 | REQ-API-6 (containerized deployment, no mount) | 8.6-8.10 |
 | REQ-API-7 (startup retry, exit 3) | 5.7 |
-| REQ-API-8 (observability, log privacy) | 5.6 |
+| REQ-API-8 (observability, log privacy) | 5.6, 13.3, 13.4 |
 | REQ-API-5 (read-only SQLite catalogue) | **REMOVED** — retired with its tests in 5.8 |
 | REQ-UCD-1 (sole surface, full service set) | 8.1, 8.2, 8.4, 12.2, 12.3, 12.10 |
 | REQ-UCD-3 / REQ-UCD-6 (per-service contracts, daemon-free validation) | 8.5-8.11 |

@@ -28,7 +28,7 @@ Catalogue data must come from the live source of truth (Supabase) without paying
 3. **`Row.sd` is DROPPED.** Verified unused by matching: scoring.py:9 ("Stock level (`sd`) is never a matching prior"), `decide()`'s `RowLike` (decision.py:38-44) reads only `articulo/unidad/nr_articulo`, and tests/unit/test_scoring.py:127-129 asserts REQ-ENG-2 (`sd` must never influence ranking). Dropping it means the matcher never reads `warehouse_stock_balances` (RF-18/RLS-protected `theoretical_qty`) and the Redis snapshot never holds RF-18-restricted data. (The original claim that this also removed the need for a privileged key did not survive contact with the live project — see decision 2.)
 4. **Identity**: `Row.uid` (`table#rowid`, zero external consumers) → `warehouse_products.id` (uuid). Row fields become: `warehouse_code`, `uid`, `articulo` = `products.name`, `unidad` = `unit_code`, `nr_articulo` = `products.sku`.
 5. **Redis and Supabase are SOFT dependencies of `/match`.** `/match` reads only the in-process index — zero I/O per request; p95 ~1.8ms is a hard non-regression constraint. Redis down never degrades `/match` availability.
-6. **Stampede control**: TTL jitter + per-process single-flight + Redis `SET NX` refresh lock; serve current in-process index while revalidating (stale-while-refresh). Data is ~1.4k rows; simple is correct.
+6. **Stampede control**: TTL jitter + Redis `SET NX PX` refresh lock; serve current in-process index while revalidating (stale-while-refresh). Data is ~1.4k rows; simple is correct. Per-process single-flight was also listed here and is **structural, not coded**: `refresh()` has one sequential caller, so an in-process guard would be dead code. REQ-RCC-4 records what would have to change if a second trigger were ever added.
 7. **Startup with Supabase AND Redis unreachable: abort.** Preserve `CatalogueUnavailableError` + `_load_service_with_retry` (main.py:65-92) philosophy — never serve an empty catalogue. Redis-only-down at startup: proceed via Supabase.
 8. **Config**: all tunables in `Settings` (config.py convention): `SUPABASE_URL`, `SUPABASE_KEY`, `REDIS_URL`, `CATALOGUE_CACHE_TTL_SECONDS`, snapshot key/version; `catalogue_db` removed.
 9. **Compose**: `redis` block added but no `depends_on` — Redis is a soft dependency, so the "services are deliberately independent" promise (docs/deployment.md, docker-compose.yml:10) survives with a documented nuance.
@@ -80,7 +80,7 @@ Single revert of the feature branch/PR chain restores the SQLite path; `data/bod
 
 ## Dependencies
 
-- Live Supabase project (populated; verified via MCP `list_tables`) + a least-privilege read key for the four catalogue tables.
+- Live Supabase project (populated; verified via MCP `list_tables`) + a read key for the four catalogue tables. **Corrected — see Key Decision 2**: this originally said "least-privilege read key". No such key exists today, so the dependency is satisfied by the **`service_role`** key, which bypasses RLS.
 - New Python deps: `supabase` (or `postgrest`) client, `redis`; test dep `fakeredis`.
 
 ## Success Criteria
@@ -89,7 +89,7 @@ Single revert of the feature branch/PR chain restores the SQLite path; `data/bod
 - [ ] Startup: cold Redis + live Supabase → loads and writes snapshot; warm Redis → no Supabase call; both down → abort non-zero.
 - [ ] Kill Redis while running: `/match` unaffected; refresh logs a warning, index keeps serving.
 - [ ] `GET /catalogues` returns the 8 warehouse codes that carry rows, with `warehouse_products` counts; no SQLite/`CATALOGUE_DB` reference remains in matcher or compose.
-- [ ] Redis snapshot contains no `theoretical_qty`/`sd` data; matcher credential cannot read `warehouse_stock_balances`.
+- [ ] Redis snapshot contains no `theoretical_qty`/`sd` data; the matcher never *queries* `warehouse_stock_balances`. **Corrected — see Key Decision 2**: this originally read "matcher credential cannot read `warehouse_stock_balances`". The `service_role` key demonstrably can, so the criterion is the service-enforced one: no such query is ever constructed and no stock field exists on `Row`/`Snapshot`.
 - [ ] `uv run pytest` green from repo root, including updated `tests/deployment/*`.
 
 ## Proposal question round

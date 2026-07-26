@@ -105,8 +105,9 @@ exactly the same 1,405 rows the retired SQLite file did (the 8 extra SQLite
 # top-1 misses are candidates whose trigram scores are EXACTLY EQUAL, so rank 1
 # was decided by catalogue order and nothing else: the losing tie-cluster moved
 # out of `has_code` (the 5 "vaso poliboard paq*" 7 OZ / 12 OZ variants) and into
-# `no_code` (the 5 "porcion filete pechuga" X 100 GRS / X 230 GRS variants, plus
-# a four-way "kyocera toner tk 538ic" colour tie).
+# the current miss set (the 5 `no_code` "porcion filete pechuga" X 100 GRS /
+# X 230 GRS variants, plus the four-way `has_code` "kyocera toner tk 538ic"
+# colour tie).
 #
 # WU-11 removed that order dependence: `rank()` now sorts by `(-score, uid)`, so
 # a tie is settled by a stable row identity instead of by whatever order the
@@ -122,11 +123,31 @@ exactly the same 1,405 rows the retired SQLite file did (the 8 extra SQLite
 # scoring problem (these names differ only in a gram weight the trigram metric
 # cannot see) and is out of scope here.
 #
-# In every one of those misses the gold row is still rank 2, which is why
-# recall@3 stays at a flat 1.0000 -- the metric that actually expresses "the
-# engine found it". `cola cola` -> `COLA Y POLA` is the one genuine,
-# score-driven miss, and it misses identically on all three columns. No engine,
-# ranking or decision behaviour regressed in any of them.
+# In every one of those misses the gold row is still within the top 3, which is
+# why recall@3 stays at a flat 1.0000 -- the metric that actually expresses "the
+# engine found it". The full miss profile, re-measured 2026-07-25 on this branch
+# (7 misses out of 430 variants; every gold rank and cohort read off
+# `MatcherService.match()`, not assumed):
+#
+#   query                     gold                                    rank cohort
+#   kyocera toner tk 538ic    TONER KYOCERA TK 5382C                    3  has_code
+#   cola cola                 COCA COLA 400 CC                          2  no_code
+#   porcion filete pechuga    PORCION FILETE PECHUGA X 100 GRS (PA)     2  no_code
+#   porcion filete pechugas   PORCION FILETE PECHUGA X 100 GRS (PA)     2  no_code
+#   filete porcion pechuga    PORCION FILETE PECHUGA X 100 GRS (PA)     2  no_code
+#   porcion filete pechuka    PORCION FILETE PECHUGA X 100 GRS (PA)     2  no_code
+#   fivete porcion pechuga    PORCION FILETE PECHUGA X 100 GRS (PA)     2  no_code
+#
+# So: rank 2 in SIX of the seven, rank 3 in one. The kyocera case is rank 3
+# because its top 4 candidates all score exactly 0.642857 (the TK 5382 C/K/M/Y
+# colour codes are invisible to the trigram metric) and the stable `uid`
+# tie-break seats gold third among the four. It is also the sole `has_code`
+# miss; the other six are `no_code` (5x "porcion filete pechuga" + `cola cola`),
+# which is exactly the 6 that `NO_CODE_TOP1_BASELINE` = 79/85 records.
+#
+# `cola cola` -> `COLA Y POLA` is the one genuine, score-driven miss (0.4545 vs
+# 0.3750 -- not a tie), and it misses identically on all three columns. No
+# engine, ranking or decision behaviour regressed in any of them.
 HAS_CODE_TOP1_BASELINE = 344 / 345
 NO_CODE_TOP1_BASELINE = 79 / 85
 COHORT_RECALL3_BASELINE = 1.00

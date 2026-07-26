@@ -27,8 +27,21 @@ class Settings(BaseSettings):
     one is a permanent misconfiguration that must abort startup, not retry."""
 
     supabase_key: str
-    """Least-privilege API key, sent as `apikey` and as a bearer token. Never
-    logged and never included in an exception message (REQ-API-8)."""
+    """The Supabase **`service_role`** key, sent as `apikey` and as a bearer
+    token. Never logged and never included in an exception message (REQ-API-8).
+
+    It is NOT least-privilege: `service_role` bypasses RLS and has full database
+    access. A least-privilege alternative was investigated and is not available
+    today -- the `anon` role holds no `GRANT` on any catalogue table (PostgREST
+    answers HTTP 401 `42501`), every read policy targets `authenticated`, and
+    `warehouse_products_read` further requires `private.is_staff()`.
+
+    Stock isolation is therefore enforced by the **service**, not by this
+    credential (REQ-CSS-4): the source never constructs a
+    `warehouse_stock_balances` query, and `Row`/`Snapshot` carry no stock field,
+    so nothing about stock can reach the index or Redis. Do not read this key as
+    a boundary; it is capable of reading anything the schema holds.
+    """
 
     supabase_timeout_seconds: float = Field(default=10.0, gt=0)
     """Per-request timeout for the catalogue read."""

@@ -28,11 +28,21 @@ Two traps this script exists to make explicit:
    Supabase (a load-time code collision). A naive `upper()` silently drops that
    warehouse's 193 rows and quietly deflates coverage, so the mapping is written
    out in full and asserted by a test.
-2. **The two row sets differ.** Supabase holds 1,405 rows where SQLite held
-   1,461; the 56 missing ones are most plausibly `products.name_normalized`
-   UNIQUE deduping upstream. Some gold rows therefore have no target at all.
-   Those cases are DROPPED and counted -- never given an invented target, and
-   never allowed to shrink coverage silently.
+2. **The row counts differ, but the row SETS do not.** Supabase holds 1,405
+   `warehouse_products`; the 8 SQLite stock tables hold 1,413 `rowid`s (the
+   often-quoted 1,461 also counts the 48-row `bodegas_disponibles` lookup, which
+   was never catalogue data). Measured (WU-6): the gap is exactly **8
+   spreadsheet header rows** with `articulo IS NULL`, one per stock table, which
+   the SQLite loader always discarded. None of them was ever a gold row, so
+   **zero eval cases were dropped -- all 624 survived** (345 variants resolved
+   by `nr_articulo`, 85 by exact `articulo` text, 0 unmappable). The earlier
+   theory that ~56 rows were lost to `products.name_normalized` UNIQUE deduping
+   upstream was investigated and is WRONG; do not reintroduce it.
+
+   The drop path below is kept anyway: it is the guard that would make a future
+   export which really does lose rows fail loudly instead of silently deflating
+   coverage. An unresolvable case is DROPPED and counted -- never given an
+   invented target.
 
 Gold rows are resolved by `nr_articulo` (SKU) first and by exact `articulo`
 text second, per design D7. A resolved case takes its `gold_articulo` from the

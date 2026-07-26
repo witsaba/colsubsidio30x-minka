@@ -31,9 +31,18 @@
 Note the last row: it is **not** a plain `upper()`. The Supabase code carries a `_2` suffix from
 a load-time code collision. A naive uppercase mapping silently loses 193 rows.
 
-**The unmerged `feat/voice-counter-frontend` branch must adopt the new ids before it merges.**
-An unknown `catalogue_id` is an HTTP 4xx, never a `no_match`, so the failure is loud — but it is
-still a failure.
+**The frontend migration ships inside this PR.** The original plan was to coordinate with the
+then-unmerged `feat/voice-counter-frontend` branch so it would adopt the new ids before merging.
+That branch merged first (PR #13), carrying the legacy vocabulary onto `main`: `catalogues.ts`
+hardcoded all 8 SQLite table names and `DEMO_CATALOGUE_ID = 'stock_restaurante_fuentes_ayb'`.
+The mitigation therefore expired rather than failed — it was a deadline, not a plan.
+
+`sdd-verify` caught it, and WU-12 closed it here: this PR merges `origin/main` and migrates the
+frontend to the warehouse codes in the same breath, so **no consumer is left speaking the retired
+vocabulary at any commit on `main`**. `frontend/tests/catalogues/catalogues.test.ts` now pins the
+exact 8 ids and separately rejects every retired SQLite name, so the mapping cannot silently
+regress. An unknown `catalogue_id` is still an HTTP 4xx and never a `no_match`, so any consumer
+outside this repository fails loudly rather than quietly mismatching.
 
 ### 2. `unidad_display` is non-null again on `/match` responses
 
@@ -174,7 +183,7 @@ score sort makes that shuffle report **428/430 = 0.99535** instead of 0.98372 �
 commit, row order alone was worth about a full accuracy point in either direction. That
 non-determinism is the defect being closed, not the accuracy figure.
 
-**`recall@3` is unchanged at 1.0000 because gold remains rank 2 in every single miss.** A
+**`recall@3` is unchanged at 1.0000 because gold stays inside the top 3 in every single miss** — rank 2 in six of the seven, rank 3 in the four-way `kyocera toner tk 538ic` colour tie (the per-case profile is tabulated in `test_eval_accuracy.py`). A
 tie-break buys determinism, not correctness. Picking the *right* member of a tie cluster — names
 differing only by a gram weight the trigram metric cannot see — is a scoring problem and is out of
 scope. It is listed as a follow-up.
@@ -215,10 +224,15 @@ credential-level denial requires the scoped catalogue-reader role listed as a fo
 ## Test state
 
 ```
-uv run pytest   →   1 failed, 526 passed, 1 skipped
+uv run pytest        →   1 failed, 542 passed, 1 skipped
+npm test (frontend)  →   667 passed
 ```
 
-Baseline on `origin/main` @ `d60e934` was **4 failed, 368 passed**.
+Baseline on `origin/main` @ `d60e934` was **4 failed, 368 passed**. After merging `origin/main`
+@ `3ea308d` (WU-12) the branch stood at 1 failed / 540 passed / 1 skipped; WU-13 added the two
+port-conformance tests. `origin/main` measured on its own in a clean detached worktree is
+**1 failed, 385 passed** — the *same* deliberate failure and no others, so nothing was inherited
+or created by the merge that is unaccounted for.
 
 **The one failure is deliberate and must stay red.**
 `tests/deployment/test_root_compose.py::TestSecretSafeEnvWorkflow::test_no_committed_file_carries_a_credential_shaped_default`
@@ -272,7 +286,39 @@ Three pre-existing failures from PR #12's compose drift, all in `tests/deploymen
 | 2 | **A scoped catalogue-reader role** — `GRANT SELECT` + read policies on exactly `warehouses`, `products`, `warehouse_products`, `units`, restoring genuine least privilege and retiring `service_role` from the matcher. Touches the Data Engineer's schema. |
 | 3 | **Delete `scripts/build_bodegas_sqlite.py` and `data/`** — no service reads them at runtime any more. Deliberately out of scope here (see the proposal's Out of Scope) so the cutover diff stays reviewable. |
 | 4 | **`.env.example:103`** — the pre-existing `GOOGLE_CLOUD_PROJECT` credential-shaped default and the matching filename at line 109. |
-| 5 | **The `no_code` scoring-precision gap** — tie clusters of names differing only by a gram weight the trigram metric cannot see. Gold is at rank 2 in every miss, so this is a scoring problem, not a ranking one. |
+| 5 | **The `no_code` scoring-precision gap** — tie clusters of names differing only by a gram weight the trigram metric cannot see. Gold is at rank 2 in six of the seven misses and rank 3 in the seventh, so this is a scoring problem, not a ranking one. |
+| 6 | **Cold-start stampede across replicas.** `load_index` (`catalogue.py:105-147`) never takes the `SET NX PX` lock — only the periodic refresh path does. N replicas booting against a cold Redis therefore each read Supabase independently. **Blast radius today: zero** — compose runs a single instance per service, so there is exactly one booting replica. It matters the moment the matcher scales horizontally, which is precisely when a cold Redis is most likely (a deploy restarts everything at once). Surfaced by the R4 resilience lens; deliberately not fixed here because taking a lock on the startup path adds a failure mode to boot for no present benefit. |
+| 7 | **`/health` cannot see catalogue staleness.** `HealthResponse` carries only `status`, `catalogues` and `rows`. If Supabase becomes permanently unreachable *after* startup, every refresh fails behind `refresh()`'s catch-all, which logs one WARNING per ~3 h cycle, while `/health` keeps answering `200 {"status":"ok"}` indefinitely over an ever-staler catalogue. Nothing is broken — stale-while-refresh is the intended REQ-RCC-3 behaviour — but it is invisible to a health check and easy to miss in logs at that cadence. `MatcherService` already tracks `_index.source` and `_index.loaded_at`; exposing them (and letting an operator alert on age) is the whole fix. Surfaced by the R4 resilience lens. |
+
+## Post-review work carried in this PR (WU-12, WU-13)
+
+This branch was reviewed by the 4R lenses and by `sdd-verify` *before* the last two work units,
+and both of them are answers to that review rather than new feature work.
+
+**WU-12 — integration.** `sdd-verify` returned FAIL on two CRITICALs, neither a defect inside this
+change's diff: `origin/main` had moved 39 commits ahead, taking the `feat/voice-counter-frontend`
+merge (which invalidated BREAKING #1's mitigation) and a `frontend` compose service (which
+collided with the service-set equality assertions) with it. Fixed by merging `origin/main`,
+resolving every conflict toward the union, and migrating the frontend to the warehouse codes.
+
+**WU-13 — the single bounded correction transaction.** One behavioural commit and one prose
+commit closing every remaining WARNING:
+
+- The `SnapshotCache` Protocol required a `ttl_seconds` argument the only production call site
+  never passes. Because the Protocol is `runtime_checkable`, a strictly-conforming adapter would
+  pass `isinstance`, then raise `TypeError` inside `_guarded`, which swallows it — the refresh lock
+  would be silently never taken and every replica would stampede Supabase. Port corrected, and
+  pinned by a test whose double is generated *from* the Protocol signature.
+- REQ-API-8 ("`SUPABASE_KEY` never appears in an exception message") was documented but never
+  asserted on the real crash path. The subprocess exit-3 test — the only place a full chained
+  traceback is actually rendered — now runs with a sentinel key and asserts its absence from
+  stderr and stdout. No live leak exists; this is regression safety.
+- Prose corrections: `config.py` no longer calls the credential "least-privilege" (it is
+  `service_role`); the remap script's row-gap theory is replaced with the measured 8-header-row
+  finding; REQ-RCC-4 no longer claims a per-process single-flight that is neither implemented nor
+  needed; the accuracy provenance note now tabulates the real per-case miss profile instead of
+  claiming "rank 2 in every miss"; and the withdrawn credential plan is marked as withdrawn in
+  `proposal.md`, `design.md` and `tasks.md` rather than still reading as live.
 
 ## Reviewer guidance
 
@@ -293,5 +339,12 @@ its expected state:
 | 10 | `1d09f5d` | eval remap and the re-pinned baselines — the accuracy story |
 | 11 | `d908946` | the unit-vocabulary bug and its fix |
 | 12 | `47e0d61` | the deterministic tie-break |
+| 13 | `17f694a` | WU-9 — docs sweep: the SQLite catalogue retired from every live document |
+| 14 | `f106a04` | WU-12a — merge `origin/main` (39 commits ahead). Mechanical: every conflict resolved toward the **union**, nothing of main's dropped. Compose now declares all five services |
+| 15 | `4d3697f` | WU-12b — **the frontend `catalogue_id` migration**, which is what makes BREAKING #1 safe to merge. Read `frontend/src/lib/catalogues.ts` against its test |
+| 16 | `ba23975` | WU-13 — `SnapshotCache` port/adapter signature fix + the REQ-API-8 credential-absence assertion on the real crash path |
+| 17 | *(this commit)* | WU-13 — prose only: the `service_role` docstring, the corrected row-gap and miss-profile notes, REQ-RCC-4, and this PR body |
 
 If you have time for only two: **`0397b4c`** (the contract) and **`91a0e73`** (the cutover).
+Commits 14-17 are post-review integration and correction work; 16 is the only one of them that
+changes runtime behaviour.

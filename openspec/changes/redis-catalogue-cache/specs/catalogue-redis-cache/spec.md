@@ -68,7 +68,9 @@ The cache TTL SHALL be configurable via `CATALOGUE_CACHE_TTL_SECONDS` (default `
 
 ### Requirement: Stampede control (REQ-RCC-4)
 
-Refresh SHALL apply: TTL jitter on the snapshot expiry; per-process single-flight so concurrent triggers coalesce into one fetch; a Redis `SET NX` refresh lock so at most one replica fetches Supabase at a time; and stale-while-refresh so non-lock-holders keep serving their current index instead of blocking or fetching.
+Refresh SHALL apply: TTL jitter on the snapshot expiry; a Redis `SET NX PX` refresh lock so at most one replica fetches Supabase at a time; and stale-while-refresh so non-lock-holders keep serving their current index instead of blocking or fetching. The lock SHALL be stampede control only and never a correctness dependency: a Redis that cannot serve the lock SHALL result in a direct source refresh, not a failed one.
+
+**No per-process single-flight is required, and none is implemented.** This requirement originally also demanded it; that clause is withdrawn rather than left as an untested claim. `MatcherService.refresh()` has exactly one caller — the sequential `_refresh_loop` in `main.py` — so two refreshes can never overlap inside one process and an in-process guard would be dead code. The cross-replica lock happens to coalesce concurrent refreshes within a process too, but only while Redis is reachable; with Redis down, concurrent triggers would each fetch. **If a second refresh trigger is ever added** (an admin endpoint, a webhook, a second timer), that gap becomes live and per-process single-flight MUST be added with a covering test at the same time.
 
 #### Scenario: Concurrent replicas do not pile onto Supabase
 
@@ -76,11 +78,11 @@ Refresh SHALL apply: TTL jitter on the snapshot expiry; per-process single-fligh
 - WHEN they attempt refresh concurrently
 - THEN exactly one acquires the `SET NX` lock and fetches Supabase, while the others continue serving their current index
 
-#### Scenario: In-process refresh triggers coalesce
+#### Scenario: A lock that cannot be reached still refreshes
 
-- GIVEN one process where refresh is triggered concurrently more than once
-- WHEN the triggers run
-- THEN a single Supabase fetch occurs (single-flight)
+- GIVEN a running service whose Redis cannot serve the refresh lock
+- WHEN a refresh runs
+- THEN it fetches Supabase directly and swaps the new index in, rather than failing or skipping the cycle
 
 ### Requirement: Snapshot content safety (REQ-RCC-5)
 
