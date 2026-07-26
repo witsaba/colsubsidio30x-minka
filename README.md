@@ -13,6 +13,8 @@
 [![Docker](https://img.shields.io/badge/Deployment-Docker%20Compose-2496ED?style=for-the-badge&logo=docker)](https://www.docker.com/)
 
 ---
+Url de proyecto: http://34.69.62.22/conteo
+url del pitch: https://youtu.be/1wzOQPGqKqA
 
 ## 📋 Tabla de Contenidos
 
