@@ -82,8 +82,8 @@ def test_loader_emits_xlsx_metadata_verbatim(acceptance_corpus: Path) -> None:
     """ACERTIVIDAD and DIFICULTAD show up verbatim on the loaded clips."""
 
     clips = load_corpus(acceptance_corpus)
-    # The current fixture carries FACIL across the board; DIFICULTAD must
-    # be opaque-recorded (we do not allow-list values here).
+    # DIFICULTAD must be opaque-recorded whatever values the corpus carries
+    # (we do not allow-list or assert any particular distribution here).
     assert all(clip["dificultad"] for clip in clips)
     # ACERTIVIDAD may be anything; just assert it was preserved verbatim and
     # that nothing in the loader raised.

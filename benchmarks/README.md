@@ -60,14 +60,31 @@ contributor directory requires no code change.
    transcribed 900" is a discrete failure, not a fractional penalty. This is
    the primary claim.
 2. **Hallucination rate on garbage clips** — the share of clips labelled
-   `is_garbage` (or, in XLSX-only corpora, signalled through an explicit
-   benchmark field/config) that produced inventory-shaped output. Computed
-   over **all** garbage clips, never a sample.
+   `is_garbage` that produced inventory-shaped output. Computed over **all**
+   garbage clips, never a sample. Only the CSV layout carries this label
+   today: the XLSX loader sets `is_garbage: False` for every clip, so on an
+   XLSX-only corpus the denominator is empty and the rate reports `n/a`.
+   A garbage-marking mechanism for XLSX corpora is future work.
 3. **WER** — token-level Levenshtein, secondary sanity signal only. It must
    not be quoted as the headline number.
 
 Every metric is also split by clip condition (`clean` / `noisy` /
 `spontaneous` / `unknown`); one blended number hides the case that matters.
+
+## Current limitations with XLSX corpora
+
+The XLSX loader hardcodes `items: []`, `is_garbage: False`, and
+`condition: "unknown"` for every clip. On a real `BD_Pruebas` run this means:
+
+* **Digit accuracy is `n/a`** — no labelled quantity tokens, so the
+  denominator is 0.
+* **Hallucination rate is `n/a`** — no clip is marked garbage.
+* **The per-condition split collapses** to a single `unknown` bucket.
+
+Only WER carries signal on an XLSX corpus today — and, as stated above, WER
+must not be quoted as the headline number. Do not quote the harness as
+producing the full metric set on `BD_Pruebas` until item labels, a garbage
+signal, and conditions exist for the XLSX layout.
 
 ## How a hallucination is detected
 

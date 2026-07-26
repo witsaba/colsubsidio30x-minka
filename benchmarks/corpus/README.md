@@ -85,15 +85,19 @@ schema is frozen) but never reads it.
 
 ## Acoustic `condition`
 
-Acoustic `condition` (`clean` / `noisy` / `spontaneous`) is **optional**. When
-no benchmark field/config supplies it, the matrix and the aggregate both
-record `condition="unknown"`. The runner never infers `condition` from
-`DIFICULTAD`.
+Acoustic `condition` (`clean` / `noisy` / `spontaneous`) is **optional**. The
+CSV layout supplies it through the `condition` column; the XLSX layout has no
+way to supply it today, so the loader records `condition="unknown"` for every
+XLSX clip and the per-condition split collapses to that single bucket. The
+runner never infers `condition` from `DIFICULTAD`.
 
 ## Hallucination signal
 
-Hallucination rate is gated by the explicit `is_garbage` signal (CSV) or its
-XLSX equivalent (config). Relevance classes like `irrelevante`, `filler`,
+Hallucination rate is gated by the explicit `is_garbage` signal, which only
+the CSV layout carries. The XLSX loader sets `is_garbage: False` for every
+clip, so on an XLSX-only corpus the hallucination rate reports `n/a`; an
+XLSX garbage-marking mechanism is future work (see the harness README's
+"Current limitations with XLSX corpora"). Relevance classes like `irrelevante`, `filler`,
 `cancion`, `mixto`, `silencio` are recorded verbatim in the matrix but do NOT
 change whether a clip is transcribed or scored — every voice-bearing clip is
 POSTed to `/transcribe` and compared against `TEXTO_AUDIO`.
