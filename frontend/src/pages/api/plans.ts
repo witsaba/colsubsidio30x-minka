@@ -45,16 +45,33 @@ export async function handlePlans(db: Db, request: Request): Promise<Response> {
 
   const { data: plans } = await db
     .from('audit_plans')
-    .select('id, name, status, warehouse_id, catalogue_id')
+    .select('id, name, status, warehouse_id')
     .in('id', planIds)
     .eq('status', ACTIVE);
 
-  const summaries: PlanSummary[] = (plans ?? []).map((plan) => ({
-    id: String(plan.id),
-    name: String(plan.name ?? ''),
-    warehouseId: String(plan.warehouse_id),
-    catalogueId: typeof plan.catalogue_id === 'string' ? plan.catalogue_id : null,
-  }));
+  const rows = plans ?? [];
+
+  // `audit_plans` has no `catalogue_id` column; the catalogue vocabulary IS
+  // `warehouses.code` (change `redis-catalogue-cache`). One batched lookup
+  // over the distinct warehouses, not one query per plan.
+  const warehouseIds = [...new Set(rows.map((plan) => String(plan.warehouse_id)))];
+  const { data: warehouses } =
+    warehouseIds.length > 0
+      ? await db.from('warehouses').select('id, code').in('id', warehouseIds)
+      : { data: [] as Array<{ id: unknown; code: unknown }> };
+  const codeByWarehouseId = new Map(
+    (warehouses ?? []).map((warehouse) => [String(warehouse.id), warehouse.code]),
+  );
+
+  const summaries: PlanSummary[] = rows.map((plan) => {
+    const code = codeByWarehouseId.get(String(plan.warehouse_id));
+    return {
+      id: String(plan.id),
+      name: String(plan.name ?? ''),
+      warehouseId: String(plan.warehouse_id),
+      catalogueId: typeof code === 'string' ? code : null,
+    };
+  });
 
   return json(summaries);
 }

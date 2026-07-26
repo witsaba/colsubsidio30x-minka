@@ -6,6 +6,11 @@
  * flags as the wrong flow. The route therefore must NEVER be able to answer
  * with a raw plan listing: an operator with no assignments gets `[]`, not
  * "everything".
+ *
+ * Fixtures mirror the LIVE tables: `audit_plans` has NO `catalogue_id` column
+ * (same fact as `authz.test.ts` — PostgREST errors the whole select on an
+ * unknown column, silently). The catalogue id lives on `warehouses.code`
+ * (change `redis-catalogue-cache`) and is resolved by a second lookup.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -20,9 +25,14 @@ function db() {
   return createStubDb({
     tables: {
       audit_plans: [
-        { id: 'plan-1', status: 'active', name: 'Bodega A y B', warehouse_id: 'wh-1', catalogue_id: 'cat-1' },
-        { id: 'plan-2', status: 'active', name: 'Bodega C', warehouse_id: 'wh-2', catalogue_id: 'cat-2' },
-        { id: 'plan-3', status: 'closed', name: 'Cerrado', warehouse_id: 'wh-3', catalogue_id: 'cat-3' },
+        { id: 'plan-1', status: 'active', name: 'Bodega A y B', warehouse_id: 'wh-1' },
+        { id: 'plan-2', status: 'active', name: 'Bodega C', warehouse_id: 'wh-2' },
+        { id: 'plan-3', status: 'closed', name: 'Cerrado', warehouse_id: 'wh-3' },
+      ],
+      warehouses: [
+        { id: 'wh-1', code: 'STOCK_RESTAURANTE_FUENTES_AYB' },
+        { id: 'wh-2', code: 'STOCK_ALMACEN_SUMINISTROS' },
+        { id: 'wh-3', code: 'ZOOLOGICO' },
       ],
       plan_operators: [
         { plan_id: 'plan-1', profile_id: 'op-1' },
@@ -47,7 +57,38 @@ describe('GET /api/plans', () => {
     const plans = await plansFor('op-1');
 
     expect(plans).toEqual([
-      { id: 'plan-1', name: 'Bodega A y B', warehouseId: 'wh-1', catalogueId: 'cat-1' },
+      {
+        id: 'plan-1',
+        name: 'Bodega A y B',
+        warehouseId: 'wh-1',
+        catalogueId: 'STOCK_RESTAURANTE_FUENTES_AYB',
+      },
+    ]);
+  });
+
+  it('never names catalogue_id in the audit_plans select — the live table has no such column', async () => {
+    const stub = db();
+
+    await handlePlans(stub, request('?operator=op-1'));
+
+    const plan = stub.calls.find((call) => call.table === 'audit_plans');
+    expect(plan?.columns).toEqual(['id', 'name', 'status', 'warehouse_id']);
+  });
+
+  it('still returns the plan with a null catalogue when the warehouse has no code row', async () => {
+    const stub = createStubDb({
+      tables: {
+        audit_plans: [{ id: 'plan-1', status: 'active', name: 'Sin bodega', warehouse_id: 'wh-x' }],
+        warehouses: [],
+        plan_operators: [{ plan_id: 'plan-1', profile_id: 'op-1' }],
+      },
+    });
+
+    const response = await handlePlans(stub, request('?operator=op-1'));
+    const plans = (await response.json()) as Array<{ catalogueId: string | null }>;
+
+    expect(plans).toEqual([
+      { id: 'plan-1', name: 'Sin bodega', warehouseId: 'wh-x', catalogueId: null },
     ]);
   });
 
