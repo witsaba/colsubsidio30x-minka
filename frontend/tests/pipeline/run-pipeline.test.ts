@@ -23,7 +23,7 @@ import { fixtureAnomalyEngine } from '../../src/lib/anomaly/fixtureEngine';
 /* Builders                                                                   */
 /* -------------------------------------------------------------------------- */
 
-const CATALOGUE = 'stock_restaurante_fuentes_ayb';
+const CATALOGUE = 'STOCK_RESTAURANTE_FUENTES_AYB';
 
 function audio(): CapturedAudio {
   return { blob: new Blob(['x'], { type: 'audio/webm' }), mimeType: 'audio/webm', durationMs: 3200 };

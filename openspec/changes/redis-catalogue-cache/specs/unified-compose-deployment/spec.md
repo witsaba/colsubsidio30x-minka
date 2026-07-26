@@ -30,8 +30,8 @@ The root Compose SHALL declare a `redis` service. No service SHALL declare `depe
 
 ### Requirement: Root Compose is the sole canonical deployment surface (REQ-UCD-1)
 
-The repository root SHALL contain exactly one Compose file named `docker-compose.yml` that defines the `stt`, `matcher`, `product_identification`, and `redis` services as the project's canonical deployment surface. No other Compose file SHALL exist inside the repository tree. Every documented operator command (root quick path, single-service start, both-service start, validation, build) SHALL resolve through this root file.
-(Previously: declared exactly the `services` keys `stt` and `matcher`; the compose has since gained `product_identification`, and this change adds `redis`.)
+The repository root SHALL contain exactly one Compose file named `docker-compose.yml` that defines the `stt`, `matcher`, `product_identification`, `frontend`, and `redis` services as the project's canonical deployment surface. No other Compose file SHALL exist inside the repository tree. Every documented operator command (root quick path, single-service start, both-service start, validation, build) SHALL resolve through this root file.
+(Previously: declared exactly the `services` keys `stt` and `matcher`; the compose has since gained `product_identification` and `frontend`, and this change adds `redis`.)
 
 #### Scenario: Exactly one Compose file is committed
 
@@ -43,7 +43,7 @@ The repository root SHALL contain exactly one Compose file named `docker-compose
 
 - GIVEN the root `docker-compose.yml`
 - WHEN it is parsed
-- THEN it declares exactly the `services` keys `stt`, `matcher`, `product_identification`, and `redis`
+- THEN it declares exactly the `services` keys `stt`, `matcher`, `product_identification`, `frontend`, and `redis`
 
 ### Requirement: Preserved per-service deployment contracts (REQ-UCD-3)
 

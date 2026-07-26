@@ -534,6 +534,97 @@ scores. Ranking must not depend on the order the source happens to return rows i
     says so. `matcher.ports.Row` already carries it (REQ-CSS-2) and the decision
     layer's own `RowLike` is unchanged — it still reads no identity at all.
 
+## WU-12: INTEGRATION — merge `origin/main` and close the two verify CRITICALs
+
+`sdd-verify` returned **FAIL** on two findings, neither of which is a defect inside this
+change's diff: `origin/main` moved **39 commits** while the branch was implemented (merge
+base `d60e934`, `origin/main` now `3ea308d`). PR #13 merged the frontend into main and
+PR #16 added the root README/LICENSE. This work unit integrates main and repairs the two
+integration breaks. **Conflict resolution is mechanical, not TDD** — there is no behaviour
+to drive out, only two intents to union. The frontend `catalogue_id` migration IS
+behavioural and follows the full RED → GREEN cycle.
+
+- [x] 12.1 **Merge, not rebase** — `git merge origin/main`. A rebase would replay the same
+      conflicts across all 13 commits; the commit-by-commit story is deliberately readable
+      for the reviewer and must survive. Merge commit `f106a04`.
+- [x] 12.2 **C2 — `docker-compose.yml` service-set union** (mechanical). main added
+      `frontend` (`6a48647`); this branch added `redis` and rewired `matcher` onto
+      Supabase/Redis. The blocks are independent, so both are kept: the file now declares
+      **all five** of `stt`, `matcher`, `product_identification`, `frontend`, `redis`.
+      `redis` regained the `restart: unless-stopped` the conflict hunk had left attached to
+      whichever block won. `docker compose config -q` exits 0.
+- [x] 12.3 **C2 — deployment tests take the 5-service union** (mechanical). Both
+      `test_root_compose.py` and `test_compose_config.py` assert the service set by
+      EQUALITY. main's `EXPECTED_SERVICES` constant is kept as the single source of truth
+      and gains `redis`; `test_compose_config.py` grows the same constant as
+      `set(SERVICE_PORTS) | {"redis"}`, because `redis` publishes no port and therefore
+      cannot live in the port map. The port-independent contracts (`restart`,
+      `depends_on`) widen from `SERVICE_PORTS` to that union so they cover `redis` as this
+      branch's version did. Every other assertion from **both** sides is kept, including
+      main's two new frontend contracts. `test_smoke_compose.py` auto-merged.
+- [x] 12.4 **Dependency union** (mechanical) — `pyproject.toml` keeps this branch's
+      `fakeredis>=2` alongside main's `requests>=2.31`. `uv.lock` was **regenerated** with
+      `uv sync` from the merged manifest rather than hand-resolved; `uv lock --check`
+      reports no drift and the lock is committed deliberately.
+- [x] 12.5 **`services/product_identification/README.md`** (mechanical) — this branch's fix
+      (the service-local compose file it referenced does not exist) is kept, merged with
+      main's wording of the same correction, without duplicating the statement the prose
+      above the block already makes.
+- [x] 12.6 **RED — C1: pin the 8 catalogue ids to the warehouse-code form.**
+      `frontend/tests/catalogues/catalogues.test.ts`: `REAL_CATALOGUES` re-keyed to the
+      warehouse codes, plus two NEW guards — `speaks the warehouse-code vocabulary, never a
+      retired SQLite table name` (asserts the exact 8-string list, in size order) and
+      `rejects every retired SQLite table name` (over a `RETIRED_CATALOGUE_IDS` list of all
+      8 legacy names). **Observed RED: 8 failed | 10 passed.**
+- [x] 12.7 **GREEN — migrate `frontend/src/lib/catalogues.ts`.** All 8 `catalogueId` values
+      and `DEMO_CATALOGUE_ID` move to `warehouses.code`. Row counts, labels and size order
+      are unchanged — the mapping is 1:1 and the counts already matched exactly. The
+      `ZOOLOGICO_SUMINISTROS_2` entry carries an inline comment explaining that the `_2` is
+      a real load-time code collision and that dropping it 404s all 193 rows.
+- [x] 12.8 **Migrate every other frontend site.** The ids are re-exported and consumed
+      beyond `catalogues.ts`: `tests/components/operator/plans-screen.test.tsx`,
+      `count-screen.test.tsx`, `tests/session/reducer.test.ts`, `no-soft-lock.test.ts`,
+      `transcript-continuity.test.ts`, `tests/pipeline/on-transcript.test.ts`,
+      `run-pipeline.test.ts`, `tests/api/client.test.ts`, `tests/api-routes/proxy.test.ts`.
+      `src/fixtures/auditorSeed.ts` needed no change — it DERIVES its warehouse name from
+      `labelFor(DEMO_CATALOGUE_ID)` and the labels did not move.
+- [x] 12.9 **C1 verify** — `npm test` in `frontend/` → **31 files, 667 passed** (was 665;
+      +2 from the new guards). `npm run check` (astro check, 83 files) → 0 errors,
+      0 warnings, 0 hints. A full-tree grep leaves the 8 legacy strings only inside the
+      deliberate `RETIRED_CATALOGUE_IDS` guard list and the explanatory docstring.
+- [x] 12.10 **C2 spec** — `specs/unified-compose-deployment/spec.md` REQ-UCD-1 omitted
+      `frontend`; both the requirement sentence and its "Root file defines the full service
+      set" scenario now name all five services.
+- [x] 12.11 **Verify** — `uv run pytest` → **1 failed, 540 passed, 1 skipped**. Same single
+      deliberate failure as before the merge, and it is **also main's own only failure**
+      (`origin/main` @ `3ea308d` baseline, measured in a clean worktree: 1 failed, 385
+      passed). No failure exists that is in neither baseline. `.env.example` lines 103/109
+      untouched. `docker compose up` deliberately NOT run.
+
+### WU-12 deviations, recorded at apply time
+
+36. **Six files conflicted, not the seven expected.** `tests/deployment/test_smoke_compose.py`
+    auto-merged cleanly; its service-set assertion derives from the other modules rather
+    than restating the set, so it needed no edit.
+37. **`test_exactly_one_compose_file_is_tracked` went red mid-merge and is not a real
+    failure.** `tracked_files()` reads `git ls-files`, which during an unresolved merge
+    lists `docker-compose.yml` three times, once per conflict stage. Staging the resolution
+    restores it. Recorded because the same false alarm will greet anyone who runs the suite
+    before finishing a merge.
+38. **`RF11_LIMITATION_NOTE` prose was corrected too.** It told the operator the audit
+    categories were "las 8 **tablas** de stock reales"; the SQLite tables are retired, so it
+    now says "los 8 **catálogos** de stock reales". User-facing Spanish, unchanged in
+    meaning; the covering assertions (`48 bodegas`, `categorías`) still hold.
+39. **`tests/api/client.test.ts` carried an invented ninth id, `stock_cafeteria`.** It was
+    never one of the 8 — it exists to prove the client passes the service's list through
+    unfiltered. Uppercased to `STOCK_CAFETERIA` for vocabulary consistency and given a
+    comment saying why it is deliberately not a real catalogue.
+40. **The C1 mitigation recorded in Engram #144 expired rather than failed.** Decision 2
+    premised the clean break on "the unmerged `feat/voice-counter-frontend` branch, which
+    adopts the new IDs before merging". That branch merged first (PR #13, `59c6541`). The
+    decision itself — clean break, no server-side shim — is unchanged and was NOT reopened;
+    only its coordination assumption needed repair, and the repair is entirely client-side.
+
 ## Requirement traceability
 
 | Requirement | Covering tasks |
@@ -548,13 +639,13 @@ scores. Ranking must not depend on the order the source happens to return rows i
 | REQ-RCC-3 (soft dependencies, zero per-request I/O) | 2.1, 7.2, 7.8 |
 | REQ-RCC-4 (stampede control) | 2.2, 7.3, 7.4, 7.5, 7.6 |
 | REQ-RCC-5 (snapshot content safety) | 1.2, 6.2 |
-| REQ-API-1 / REQ-API-2 (warehouse-code `catalogue_id`, `/catalogues`) | 5.3, 5.5 |
+| REQ-API-1 / REQ-API-2 (warehouse-code `catalogue_id`, `/catalogues`) | 5.3, 5.5, 12.6-12.9 (the merged frontend, the only other consumer) |
 | REQ-API-4 (config; no `CATALOGUE_DB`) | 5.1 |
 | REQ-API-6 (containerized deployment, no mount) | 8.6-8.10 |
 | REQ-API-7 (startup retry, exit 3) | 5.7 |
 | REQ-API-8 (observability, log privacy) | 5.6 |
 | REQ-API-5 (read-only SQLite catalogue) | **REMOVED** — retired with its tests in 5.8 |
-| REQ-UCD-1 (sole surface, full service set) | 8.1, 8.2, 8.4 |
+| REQ-UCD-1 (sole surface, full service set) | 8.1, 8.2, 8.4, 12.2, 12.3, 12.10 |
 | REQ-UCD-3 / REQ-UCD-6 (per-service contracts, daemon-free validation) | 8.5-8.11 |
 | REQ-UCD-12 (redis soft dependency, env flow) | 8.3, 8.9, 8.11, 8.12 |
 | REQ-ENG-2 (stock never a matching prior) | 1.1, 3.1 — extended: stock is now never even loaded |

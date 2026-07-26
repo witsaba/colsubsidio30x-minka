@@ -21,7 +21,7 @@ import { runPipeline, type PipelineDeps } from '../../src/lib/pipeline';
 import type { ExtractedItem, ExtractionAdapter } from '../../src/lib/extraction/adapter';
 import type { AnomalyEngine } from '../../src/lib/anomaly/engine';
 
-const CATALOGUE = 'stock_restaurante_fuentes_ayb';
+const CATALOGUE = 'STOCK_RESTAURANTE_FUENTES_AYB';
 
 const audio: CapturedAudio = {
   blob: new Blob(['x'], { type: 'audio/webm' }),

@@ -103,7 +103,7 @@ const EVERY_EVENT: SessionEvent[] = [
   { type: 'MIC_REQUESTED' },
   { type: 'MIC_GRANTED' },
   { type: 'MIC_DENIED' },
-  { type: 'PLAN_STARTED', catalogueId: 'stock_restaurante_fuentes_ayb' },
+  { type: 'PLAN_STARTED', catalogueId: 'STOCK_RESTAURANTE_FUENTES_AYB' },
   { type: 'REC_STARTED' },
   { type: 'REC_STOPPED', audio },
   { type: 'REC_REJECTED', reason: 'too_large' },

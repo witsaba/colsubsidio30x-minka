@@ -132,7 +132,7 @@ describe('REQ-PRX-1 — same-origin endpoints, server-rendered', () => {
       ),
     );
 
-    const payload = { spoken_name: 'arroz', catalogue_id: 'stock_restaurante_fuentes_ayb', unit: 'kg' };
+    const payload = { spoken_name: 'arroz', catalogue_id: 'STOCK_RESTAURANTE_FUENTES_AYB', unit: 'kg' };
     const res = await matchPost(
       ctx(
         new Request('http://localhost:4321/api/match', {
