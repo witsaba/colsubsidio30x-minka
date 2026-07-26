@@ -42,7 +42,8 @@ function db(options: { assigned?: boolean; errors?: Record<string, string> } = {
   return createStubDb({
     errors: options.errors,
     tables: {
-      audit_plans: [{ id: 'plan-1', status: 'active', warehouse_id: 'wh-1', catalogue_id: 'cat-1' }],
+      audit_plans: [{ id: 'plan-1', status: 'active', warehouse_id: 'wh-1' }],
+      warehouses: [{ id: 'wh-1', code: 'STOCK_RESTAURANTE_FUENTES_AYB' }],
       plan_operators: assigned ? [{ plan_id: 'plan-1', profile_id: 'op-1' }] : [],
       product_count_ranges: [
         {
@@ -50,7 +51,7 @@ function db(options: { assigned?: boolean; errors?: Record<string, string> } = {
           warehouse_id: 'wh-1',
           expected_min: 10,
           expected_max: 30,
-          expected_unit_code: 'KG',
+          unit_code: 'KG',
         },
       ],
       warehouse_stock_balances: [{ product_id: 'prod-1', warehouse_id: 'wh-1', theoretical_qty: 500 }],

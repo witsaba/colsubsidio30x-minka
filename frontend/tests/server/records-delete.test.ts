@@ -23,7 +23,8 @@ function db(options: { assigned?: boolean } = {}) {
   const { assigned = true } = options;
   return createStubDb({
     tables: {
-      audit_plans: [{ id: 'plan-1', status: 'active', warehouse_id: 'wh-1', catalogue_id: 'cat-1' }],
+      audit_plans: [{ id: 'plan-1', status: 'active', warehouse_id: 'wh-1' }],
+      warehouses: [{ id: 'wh-1', code: 'STOCK_RESTAURANTE_FUENTES_AYB' }],
       plan_operators: assigned ? [{ plan_id: 'plan-1', profile_id: 'op-1' }] : [],
       count_records: [
         { id: 'rec-1', plan_id: 'plan-1', quantity: 20, is_deleted: false },

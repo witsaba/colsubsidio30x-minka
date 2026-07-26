@@ -31,7 +31,14 @@ function facts(overrides: Partial<CountFacts> = {}): CountFacts {
   };
 }
 
-/** A catalogue where the product is counted in KG, 10–30 is normal, 500 in stock. */
+/**
+ * A catalogue where the product is counted in KG, 10–30 is normal, 500 in stock.
+ *
+ * The `product_count_ranges` fixture mirrors the LIVE table: the unit column is
+ * `unit_code`, NOT `expected_unit_code`. Naming it wrong makes PostgREST error
+ * the whole select, which (the error being discarded) silently disables both
+ * `unit_mismatch` and `atypical_quantity` detection in production.
+ */
 function catalogueDb(overrides: { range?: Record<string, unknown>; balance?: Record<string, unknown> } = {}) {
   return createStubDb({
     tables: {
@@ -41,7 +48,7 @@ function catalogueDb(overrides: { range?: Record<string, unknown>; balance?: Rec
           warehouse_id: WAREHOUSE,
           expected_min: 10,
           expected_max: 30,
-          expected_unit_code: 'KG',
+          unit_code: 'KG',
           ...overrides.range,
         },
       ],
@@ -117,6 +124,25 @@ describe('validateCount', () => {
     const verdict = await validateCount(db, facts({ quantity: 999 }));
 
     expect(verdict).toEqual({ verdict: 'ok', anomaly: null });
+  });
+
+  it('never names expected_unit_code in the ranges select — the live column is unit_code', async () => {
+    const db = catalogueDb();
+
+    await validateCount(db, facts({ quantity: 20 }));
+
+    const ranges = db.calls.find((call) => call.table === 'product_count_ranges');
+    expect(ranges?.columns).toEqual(['expected_min', 'expected_max', 'unit_code']);
+  });
+
+  it('reads the expected unit from unit_code, so a mismatch is still detected', async () => {
+    const verdict = await validateCount(
+      catalogueDb({ range: { unit_code: 'UND' } }),
+      facts({ quantity: 20, unitCode: 'KG' }),
+    );
+
+    expect(verdict.verdict).toBe('error');
+    expect(verdict.anomaly).toMatchObject({ type: 'unit_mismatch', expectedUnitCode: 'UND' });
   });
 
   it('never reads anomaly_evidence, which is auditor-only material', async () => {

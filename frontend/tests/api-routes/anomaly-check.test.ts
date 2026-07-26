@@ -27,7 +27,7 @@ function catalogueDb() {
           warehouse_id: 'wh-1',
           expected_min: 10,
           expected_max: 30,
-          expected_unit_code: 'KG',
+          unit_code: 'KG',
         },
       ],
       warehouse_stock_balances: [{ product_id: 'prod-1', warehouse_id: 'wh-1', theoretical_qty: 500 }],

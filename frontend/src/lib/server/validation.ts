@@ -26,10 +26,10 @@ import type { Db } from './db';
 /**
  * Centralised so a schema delta is a one-line fix rather than a hunt.
  *
- * NOTE (task 1.1): these names come from `docs/database/*` plus the design's
- * column list. Live-schema re-verification via the Supabase MCP tools could not
- * be performed in this apply session (the tools were not available to the
- * executor), so they remain UNVERIFIED against the running project.
+ * These table and column names are VERIFIED against the live project schema
+ * (2026-07-25). In particular `product_count_ranges` carries `unit_code`, not
+ * `expected_unit_code`: an unknown column errors the entire PostgREST select, so
+ * a single wrong name here silently disables anomaly detection in production.
  */
 const RANGES_TABLE = 'product_count_ranges';
 const BALANCES_TABLE = 'warehouse_stock_balances';
@@ -112,7 +112,7 @@ function numberOrNull(value: unknown): number | null {
 async function readRange(db: Db, facts: CountFacts): Promise<CountRange | null> {
   const { data } = await db
     .from(RANGES_TABLE)
-    .select('expected_min, expected_max, expected_unit_code')
+    .select('expected_min, expected_max, unit_code')
     .eq('product_id', facts.productId)
     .eq('warehouse_id', facts.warehouseId)
     .maybeSingle();
@@ -121,7 +121,7 @@ async function readRange(db: Db, facts: CountFacts): Promise<CountRange | null> 
   return {
     expectedMin: numberOrNull(data.expected_min),
     expectedMax: numberOrNull(data.expected_max),
-    expectedUnitCode: typeof data.expected_unit_code === 'string' ? data.expected_unit_code : null,
+    expectedUnitCode: typeof data.unit_code === 'string' ? data.unit_code : null,
   };
 }
 
