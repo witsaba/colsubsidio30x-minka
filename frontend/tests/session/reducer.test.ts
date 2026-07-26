@@ -918,3 +918,91 @@ describe('record ids survive deletion (REQ-SDA-4, RF-20/21)', () => {
     expect(s.records[0]!.id).not.toBe(s.records[1]!.id);
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* SESSION_RESUMED — REQ-OCF-13, task 6.11                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Reloading `/conteo` mid-count used to drop the operator back on the consent
+ * screen with an EMPTY list while the rows were still in `count_records`.
+ * Because `CountRecord.id` is the client-minted idempotency key, re-dictating
+ * the same shelf then wrote a SECOND row for one physical count.
+ *
+ * This event is the reducer half of the fix: `CountSession` fetches the
+ * persisted records and hands them back, and the session picks up where it was.
+ */
+describe('SESSION_RESUMED', () => {
+  const restored: CountRecord[] = [
+    record({ id: 'rec-1000-1', serverId: 'srv-2', state: 'anom_noted', quantity: 7 }),
+    record({ id: 'rec-1000-0', serverId: 'srv-1', state: 'ok', quantity: 20 }),
+  ];
+
+  const resume = {
+    type: 'SESSION_RESUMED' as const,
+    catalogueId: 'cat-1',
+    planId: 'plan-1',
+    operatorId: 'op-1',
+    warehouseId: 'wh-1',
+    records: restored,
+  };
+
+  test('lands on the count screen instead of the consent screen', () => {
+    const s = sessionReducer(initialSessionState, resume);
+
+    expect(s.screen).toBe('count');
+    expect(s.micPermission).toBe('granted');
+  });
+
+  test('restores the records in the order the server sent them', () => {
+    const s = sessionReducer(initialSessionState, resume);
+
+    expect(s.records.map((r) => r.id)).toEqual(['rec-1000-1', 'rec-1000-0']);
+    expect(s.records.map((r) => r.serverId)).toEqual(['srv-2', 'srv-1']);
+  });
+
+  test('restores the plan scope every server write is guarded by', () => {
+    const s = sessionReducer(initialSessionState, resume);
+
+    expect(s).toMatchObject({
+      catalogueId: 'cat-1',
+      planId: 'plan-1',
+      operatorId: 'op-1',
+      warehouseId: 'wh-1',
+    });
+  });
+
+  test('no restored record is in sync, so nothing is written a second time', () => {
+    const s = sessionReducer(initialSessionState, resume);
+
+    expect(s.records.every((r) => r.state !== 'sync')).toBe(true);
+  });
+
+  test('advances recordSeq past the restored ids so a new count cannot reuse one', () => {
+    const s = sessionReducer(initialSessionState, resume);
+
+    expect(s.recordSeq).toBe(2);
+  });
+
+  test('counts the restored records towards progress', () => {
+    const s = sessionReducer(initialSessionState, resume);
+
+    expect(s.progress.counted).toBe(initialSessionState.progress.counted + 2);
+  });
+
+  test('an empty restore still opens the count screen for the chosen plan', () => {
+    const s = sessionReducer(initialSessionState, { ...resume, records: [] });
+
+    expect(s.screen).toBe('count');
+    expect(s.records).toEqual([]);
+    expect(s.recordSeq).toBe(0);
+  });
+
+  test('is ignored once the operator is already counting, so a late resume cannot wipe live work', () => {
+    const live = sessionReducer(initialSessionState, resume);
+
+    const again = sessionReducer(live, { ...resume, records: [] });
+
+    expect(again).toBe(live);
+  });
+});

@@ -194,6 +194,27 @@ export type SessionEvent =
       warehouseId?: string;
     }
 
+  /**
+   * Session resume after a reload (REQ-OCF-13, task 6.11).
+   *
+   * `CountRecord.id` is the client-minted `count_records.client_record_id`, so
+   * a reload that started from an empty list re-minted ids and wrote a SECOND
+   * row for a shelf that was already counted. `CountSession` fetches the
+   * persisted records for the plan+operator and hands them back here.
+   *
+   * All four scope fields are REQUIRED, unlike `PLAN_STARTED`: a resume with no
+   * plan has nothing to have restored records from.
+   */
+  | {
+      type: 'SESSION_RESUMED';
+      catalogueId: string;
+      planId: string;
+      operatorId: string;
+      warehouseId: string;
+      /** Already settled (`ok`/`anom_noted`) and carrying their `serverId`. */
+      records: CountRecord[];
+    }
+
   /* --- S3 recording ----------------------------------------------------- */
   /** Guard: `!blocked && overlay === null && !requestInFlight && micPermission === 'granted'`. */
   | { type: 'REC_STARTED' }

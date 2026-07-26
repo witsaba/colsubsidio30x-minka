@@ -33,7 +33,9 @@ interface OperatorVerdict {
  * Static, figure-free copy. Keyed by the server's anomaly type, which is the
  * ONLY discriminator that crosses the wire.
  */
-const COPY: Readonly<Record<ServerAnomalyType, Pick<Anomaly, 'kind' | 'reason' | 'hint'>>> = {
+export const ANOMALY_COPY: Readonly<
+  Record<ServerAnomalyType, Pick<Anomaly, 'kind' | 'reason' | 'hint'>>
+> = {
   unit_mismatch: {
     kind: 'unidad',
     reason: 'La unidad que dictaste no coincide con la unidad en que se cuenta este artículo.',
@@ -67,7 +69,7 @@ export interface AnomalyCheckContext {
 
 function toAnomaly(verdict: OperatorVerdict): Anomaly | null {
   if (!verdict.anomaly) return null;
-  const copy = COPY[verdict.anomaly.type];
+  const copy = ANOMALY_COPY[verdict.anomaly.type];
   if (!copy) return null;
   return { kind: copy.kind, title: verdict.anomaly.title, reason: copy.reason, hint: copy.hint };
 }

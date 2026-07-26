@@ -203,6 +203,41 @@ export function sessionReducer(state: SessionState, event: SessionEvent): Sessio
         warehouseId: event.warehouseId ?? null,
       };
 
+    /* --- session resume (REQ-OCF-13) ----------------------------------- */
+
+    /**
+     * Only from `permiso` — the screen a fresh mount starts on. Accepting it
+     * later would let a slow restore overwrite records the operator has
+     * dictated in the meantime, which is the very data loss this event exists
+     * to prevent.
+     *
+     * `micPermission` is set to `granted` because `CountSession` re-acquires the
+     * stream BEFORE dispatching: the browser remembers the origin's grant, so
+     * the resume is silent, and a failure keeps the operator on the consent
+     * screen instead of landing them on a count screen with a dead mic.
+     */
+    case 'SESSION_RESUMED':
+      if (state.screen !== 'permiso') return state;
+      return {
+        ...state,
+        screen: 'count',
+        overlay: null,
+        consentChecked: true,
+        micPermission: 'granted',
+        catalogueId: event.catalogueId,
+        planId: event.planId,
+        operatorId: event.operatorId,
+        warehouseId: event.warehouseId,
+        records: event.records,
+        // Past every restored id, so a newly dictated count cannot mint a
+        // `client_record_id` that collides with one already in the database.
+        recordSeq: state.recordSeq + event.records.length,
+        progress: {
+          ...state.progress,
+          counted: state.progress.counted + event.records.length,
+        },
+      };
+
     /* --- S3 recording -------------------------------------------------- */
 
     case 'REC_STARTED':

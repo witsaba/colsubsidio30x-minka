@@ -100,6 +100,47 @@ export function createRecord(input: CreateRecordInput): Promise<CreatedRecord> {
   return request<CreatedRecord>(RECORDS_URL, jsonInit('POST', input), OPERATIONAL_TIMEOUT_MS);
 }
 
+/**
+ * One persisted count as the resume path restores it (REQ-OCF-13).
+ *
+ * `id` is the CLIENT record id the row was written with, not the server uuid —
+ * restoring it is what stops a reloaded session from minting a fresh
+ * idempotency key and counting the same shelf twice.
+ *
+ * Blind by construction, like every operator payload: no bound, no theoretical
+ * stock, and the anomaly carries only the title the operator already saw.
+ */
+export interface RestoredRecordDto {
+  id: string;
+  serverId: string;
+  quantity: number;
+  unitCode: string | null;
+  unitDisplay: string | null;
+  articulo: string;
+  nrArticulo: string | null;
+  spokenName: string;
+  state: 'ok' | 'anom_noted';
+  anomaly: { type: string; severity: string; title: string } | null;
+  createdAt: string;
+}
+
+/**
+ * The records this operator already counted in this plan, newest first.
+ *
+ * Scoped by the SAME pair every write is scoped by; the route re-checks the
+ * assignment (RF-07), so this is a request claim and not an authorization.
+ */
+export function fetchRecords(
+  planId: string,
+  operatorId: string,
+  opts?: { signal?: AbortSignal },
+): Promise<RestoredRecordDto[]> {
+  const url =
+    `${RECORDS_URL}?planId=${encodeURIComponent(planId)}` +
+    `&operatorId=${encodeURIComponent(operatorId)}`;
+  return request<RestoredRecordDto[]>(url, { method: 'GET' }, OPERATIONAL_TIMEOUT_MS, opts?.signal);
+}
+
 /** Soft delete (RF-21). A redo is a NEW `createRecord`, never an update. */
 export function deleteRecord(
   id: string,

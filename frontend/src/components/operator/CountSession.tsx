@@ -32,11 +32,13 @@ import {
   createRecord as realCreateRecord,
   deleteRecord as realDeleteRecord,
   fetchPlans as realFetchPlans,
+  fetchRecords as realFetchRecords,
   postConsent as realPostConsent,
   type ConsentInput,
   type CreateRecordInput,
   type CreatedRecord,
   type PlanSummary,
+  type RestoredRecordDto,
 } from '../../lib/api/operational';
 import { UiError } from '../../lib/api/types';
 import type { Candidate, MatchFn, TranscribeFn } from '../../lib/api/types';
@@ -48,6 +50,7 @@ import { mockExtractionAdapter } from '../../lib/extraction/mock';
 import type { ExtractionAdapter } from '../../lib/extraction/adapter';
 import { runPipeline, type PipelineDeps } from '../../lib/pipeline';
 import { initialSessionState, sessionReducer } from '../../lib/session/reducer';
+import { readResumeContext, toCountRecord, writeResumeContext } from '../../lib/session/resume';
 import type { SessionEvent } from '../../lib/session/types';
 import { AnomalySheet } from './AnomalySheet';
 import { ConfirmSheet } from './ConfirmSheet';
@@ -86,6 +89,18 @@ export interface CountSessionProps {
     id: string,
     input: { operatorId: string; reason?: string },
   ) => Promise<{ id: string; deleted: boolean }>;
+  /** Session resume (REQ-OCF-13): the operator's already-counted records. */
+  loadRecords?: (
+    planId: string,
+    operatorId: string,
+    opts?: { signal?: AbortSignal },
+  ) => Promise<RestoredRecordDto[]>;
+  /**
+   * Where the active plan scope is remembered across a reload. Defaults to the
+   * real `sessionStorage`; tests inject an in-memory one, and `null` disables
+   * resume entirely.
+   */
+  resumeStorage?: Storage | null;
 }
 
 /**
@@ -112,6 +127,8 @@ export function CountSession({
   persistConsent = realPostConsent,
   persistRecord = realCreateRecord,
   removeRecord = realDeleteRecord,
+  loadRecords = realFetchRecords,
+  resumeStorage,
 }: CountSessionProps) {
   const [state, dispatch] = useReducer(sessionReducer, initialSessionState);
 
@@ -132,9 +149,80 @@ export function CountSession({
     if (state.screen === 'done' && finishedAt === null) setFinishedAt(now());
   }, [state.screen, startedAt, finishedAt, now]);
 
+  /* --------------------------------------------------- session resume (OCF-13) */
+
+  /**
+   * ONE attempt per mount. The effect is deliberately keyed on nothing: a
+   * resume is a mount-time question, and re-running it later could overwrite
+   * records the operator has since dictated.
+   */
+  const resumeAttempted = useRef(false);
+
+  useEffect(() => {
+    if (resumeAttempted.current) return;
+    resumeAttempted.current = true;
+
+    const scope = readResumeContext(resumeStorage);
+    if (scope === null) return;
+
+    const controller = new AbortController();
+
+    void (async () => {
+      // The stream did not survive the reload. Re-acquire it BEFORE resuming:
+      // the browser remembers this origin's grant, so it is silent, and a
+      // failure must land the operator on the consent screen rather than on a
+      // count screen whose mic button does nothing.
+      const mic = await requestMic();
+      if (!mic.ok) return;
+
+      let restored;
+      try {
+        restored = await loadRecords(scope.planId, scope.operatorId, { signal: controller.signal });
+      } catch {
+        // Resuming with an empty list would be WORSE than not resuming: the
+        // operator would re-dictate shelves that are already in the database,
+        // and every one of them would be written again under a new
+        // `client_record_id`. Staying on consent is the safe failure.
+        return;
+      }
+      if (controller.signal.aborted) return;
+
+      streamRef.current = mic.stream;
+      dispatch({ ...scope, type: 'SESSION_RESUMED', records: restored.map(toCountRecord) });
+    })();
+
+    return () => controller.abort();
+  }, [loadRecords, requestMic, resumeStorage]);
+
   /* ------------------------------------------------------- anomaly engine (D4) */
 
   const { planId, warehouseId } = state;
+  const { screen, catalogueId, operatorId: activeOperatorId } = state;
+
+  /**
+   * Remember (and forget) which plan is being counted.
+   *
+   * Only the four scope ids are stored — `resume.ts` projects them explicitly,
+   * so no figure can reach storage and RF-18 cannot be laundered through it.
+   * Cleared on `done` because the count is over: the next session must start
+   * from the plans screen, not silently reopen a finished plan.
+   */
+  useEffect(() => {
+    if (screen === 'done') {
+      writeResumeContext(null, resumeStorage);
+      return;
+    }
+    if (screen !== 'count') return;
+    if (catalogueId === null || planId === null || activeOperatorId === null || warehouseId === null) {
+      // The fixture/demo path has no plan behind it; there is nothing a resume
+      // could fetch, so nothing is remembered.
+      return;
+    }
+    writeResumeContext(
+      { catalogueId, planId, operatorId: activeOperatorId, warehouseId },
+      resumeStorage,
+    );
+  }, [screen, catalogueId, planId, activeOperatorId, warehouseId, resumeStorage]);
 
   /**
    * The one place the engine is chosen. With a plan in hand the REAL service is

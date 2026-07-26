@@ -184,3 +184,120 @@ export async function handleCreateRecord(db: Db, request: Request): Promise<Resp
 }
 
 export const POST: APIRoute = ({ request }) => handleCreateRecord(supabaseDb(supabase()), request);
+
+/* -------------------------------------------------------------------------- */
+/* GET — session resume (REQ-OCF-13)                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One persisted count, as the OPERATOR's own list restores it.
+ *
+ * `id` is the CLIENT-minted `client_record_id`, not the server uuid. That is the
+ * whole point of the route: the id is also the idempotency key, so a resumed
+ * session that invented a new one would write a second row for the same shelf.
+ *
+ * The shape is deliberately the blind one. `anomaly` carries the same
+ * `{type, severity, title}` triple `toOperatorVerdict` allows through on the
+ * write path and nothing else — no `detail`, no bound, no theoretical stock
+ * (RF-18). This is an operator route; blindness is not relaxed just because the
+ * facts were already shown once.
+ */
+export interface RestoredRecord {
+  /** `count_records.client_record_id` — the idempotency key, reused verbatim. */
+  id: string;
+  /** `count_records.id` — what a later soft delete is issued against. */
+  serverId: string;
+  quantity: number;
+  unitCode: string | null;
+  /** `units.label_es`; null when the code has no Spanish label (REQ-OCF-7). */
+  unitDisplay: string | null;
+  articulo: string;
+  nrArticulo: string | null;
+  spokenName: string;
+  state: 'ok' | 'anom_noted';
+  anomaly: { type: string; severity: string; title: string } | null;
+  createdAt: string;
+}
+
+export async function handleListRecords(db: Db, request: Request): Promise<Response> {
+  const params = new URL(request.url).searchParams;
+  const planId = params.get('planId');
+  const operatorId = params.get('operatorId');
+  if (!planId || !operatorId) return badRequest('Faltan los parámetros planId y operatorId.');
+
+  // RF-07 FIRST, exactly as on the write path. A read is not a lesser right:
+  // this list is what was counted in a plan, and an unassigned caller must not
+  // be able to enumerate it — or to probe which plans hold data.
+  const assignment = await assertPlanAssignment(db, planId, operatorId);
+  if (!assignment.ok) return forbidden(assignment.reason);
+
+  const { data: rows } = await db
+    .from('count_records')
+    .select(
+      'id, client_record_id, product_id, quantity, unit_code, status, dictated_text, created_at, is_deleted',
+    )
+    .eq('plan_id', planId)
+    .eq('counted_by', operatorId)
+    // RF-21: a soft-deleted row was CORRECTED. Restoring it would show the
+    // operator their own shelf counted twice.
+    .eq('is_deleted', false)
+    .order('created_at', { ascending: false });
+
+  const records = rows ?? [];
+  if (records.length === 0) return json([]);
+
+  const ids = records.map((row) => String(row.id));
+  const { data: anomalyRows } = await db
+    .from('record_anomalies')
+    // The projection is the guard: `detail` and `expected_unit_code` are not
+    // selected at all, so there is no field to forget to strip later.
+    .select('record_id, type, severity, title')
+    .in('record_id', ids);
+
+  const anomalyByRecord = new Map(
+    (anomalyRows ?? []).map((row) => [
+      String(row.record_id),
+      {
+        type: String(row.type),
+        severity: String(row.severity),
+        title: String(row.title ?? ''),
+      },
+    ]),
+  );
+
+  const { data: productRows } = await db
+    .from('products')
+    .select('id, sku, name')
+    .in('id', [...new Set(records.map((row) => String(row.product_id)))]);
+  const products = new Map((productRows ?? []).map((row) => [String(row.id), row]));
+
+  const unitCodes = [...new Set(records.map((row) => row.unit_code).filter(Boolean))];
+  const { data: unitRows } = unitCodes.length
+    ? await db.from('units').select('code, label_es').in('code', unitCodes)
+    : { data: [] };
+  const unitLabels = new Map((unitRows ?? []).map((row) => [String(row.code), row.label_es ?? null]));
+
+  const payload: RestoredRecord[] = records.map((row) => {
+    const product = products.get(String(row.product_id));
+    const anomaly = anomalyByRecord.get(String(row.id)) ?? null;
+    return {
+      id: String(row.client_record_id ?? row.id),
+      serverId: String(row.id),
+      quantity: Number(row.quantity),
+      unitCode: row.unit_code ?? null,
+      unitDisplay: row.unit_code ? (unitLabels.get(String(row.unit_code)) ?? null) : null,
+      articulo: String(product?.name ?? ''),
+      nrArticulo: product?.sku ?? null,
+      spokenName: String(row.dictated_text ?? ''),
+      // A restored record is SETTLED. It can never come back as `sync`, or the
+      // client would fire a write for a row that already exists.
+      state: row.status === COUNT_STATUS.anomaly ? 'anom_noted' : 'ok',
+      anomaly,
+      createdAt: String(row.created_at ?? ''),
+    };
+  });
+
+  return json(payload);
+}
+
+export const GET: APIRoute = ({ request }) => handleListRecords(supabaseDb(supabase()), request);
