@@ -33,6 +33,22 @@ SECRET_ENV = (
     "ELEVENLABS_API_KEY",
 )
 
+#: `{service: published host port}` — the whole stack, in one place, so a new
+#: service is one line here and every contract below covers it.
+SERVICE_PORTS = {
+    "stt": "8001",
+    "matcher": "8002",
+    "product_identification": "8003",
+    "frontend": "4321",
+}
+
+SERVICE_PORT_CASES = sorted(SERVICE_PORTS.items())
+
+#: Every service the rendered file must define. `redis` publishes no port —
+#: it is reachable on the Compose network only — so it cannot live in
+#: SERVICE_PORTS, but the port-independent contracts below still cover it.
+EXPECTED_SERVICES = set(SERVICE_PORTS) | {"redis"}
+
 pytestmark = pytest.mark.skipif(
     shutil.which("docker") is None,
     reason="docker CLI not installed; the text contracts in "
@@ -78,14 +94,9 @@ def published(port: dict) -> str:
 
 class TestRenderedContract:
     def test_it_validates(self, rendered: dict) -> None:
-        assert set(rendered["services"]) == {
-            "stt",
-            "matcher",
-            "product_identification",
-            "redis",
-        }
+        assert set(rendered["services"]) == EXPECTED_SERVICES
 
-    @pytest.mark.parametrize("name, port", [("stt", "8001"), ("matcher", "8002")])
+    @pytest.mark.parametrize("name, port", SERVICE_PORT_CASES)
     def test_each_service_publishes_its_documented_port(
         self, rendered: dict, name: str, port: str
     ) -> None:
@@ -94,14 +105,14 @@ class TestRenderedContract:
         assert published(ports[0]) == port
         assert str(ports[0]["target"]) == port
 
-    @pytest.mark.parametrize("name, port", [("stt", "8001"), ("matcher", "8002")])
+    @pytest.mark.parametrize("name, port", SERVICE_PORT_CASES)
     def test_each_service_probes_its_own_health_endpoint(
         self, rendered: dict, name: str, port: str
     ) -> None:
         probe = " ".join(rendered["services"][name]["healthcheck"]["test"])
         assert f"http://localhost:{port}/health" in probe
 
-    @pytest.mark.parametrize("name", ["stt", "matcher"])
+    @pytest.mark.parametrize("name", sorted(EXPECTED_SERVICES))
     def test_each_service_restarts_unless_stopped(
         self, rendered: dict, name: str
     ) -> None:
@@ -136,9 +147,22 @@ class TestRenderedContract:
         build = rendered["services"]["stt"]["build"]
         assert Path(build["context"]) == REPO_ROOT / "services" / "stt"
 
-    @pytest.mark.parametrize(
-        "name", ["stt", "matcher", "product_identification", "redis"]
-    )
+    def test_the_frontend_builds_from_its_own_directory(self, rendered: dict) -> None:
+        build = rendered["services"]["frontend"]["build"]
+        assert Path(build["context"]) == REPO_ROOT / "frontend"
+
+    def test_the_frontend_resolves_its_upstreams_to_the_service_names(
+        self, rendered: dict
+    ) -> None:
+        """Rendered with an EMPTY env file: these must hold with no `.env` at
+        all, because they are container-internal addresses, not settings."""
+        environment = rendered["services"]["frontend"]["environment"]
+        assert environment["STT_BASE_URL"] == "http://stt:8001"
+        assert environment["MATCHER_BASE_URL"] == "http://matcher:8002"
+        assert environment["HOST"] == "0.0.0.0"
+        assert str(environment["PORT"]) == "4321"
+
+    @pytest.mark.parametrize("name", sorted(EXPECTED_SERVICES))
     def test_no_service_waits_for_the_other(
         self, rendered: dict, name: str
     ) -> None:

@@ -1,0 +1,731 @@
+/*
+ * Operator component stylesheet — T20 addition (design contract §1, §2).
+ *
+ * T14 froze `tokens.css` (the values) and `global.css` (reset, type roles, a11y
+ * floor); neither implements a single component class. The T16/T17 screens ship
+ * class names with nothing behind them, so without this file `/conteo` renders
+ * as an unstyled document. This is that missing layer and nothing more: it
+ * implements exactly the classes the operator components emit.
+ *
+ * TWO RULES HOLD IN EVERY DECLARATION BELOW:
+ *   1. No raw colour. Every value resolves through a `var(--*)` token, so the
+ *      palette stays editable in one file. Where the design used a translucent
+ *      white literal, `color-mix()` derives it from the surface token instead
+ *      of re-hardcoding a colour.
+ *   2. Motion is opt-out. `tokens.css` already kills animation globally under
+ *      `prefers-reduced-motion`; the block at the end repeats it for this
+ *      sheet's own animated elements so the rule survives a future refactor of
+ *      either file.
+ *
+ * The bottom sheets style themselves inline (T18/T19) and only rely on
+ * `global.css` for `.scrim` and `[role='dialog'].sheet`; nothing here overrides
+ * them.
+ */
+
+/* ------------------------------------------------------------------ shared */
+
+/**
+ * Material Symbols Rounded renders as LIGATURE TEXT, not SVG. The screens emit
+ * `msr` and the sheets emit `icon`; without this rule every icon renders as the
+ * literal word ("mic", "task_alt") in the UI font.
+ */
+.msr {
+  font-family: var(--font-icon);
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  direction: ltr;
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/** Mono meta text that is not a `.mono-meta` block (SKU sub-lines, ids). */
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  color: var(--text-faint-3);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  width: 100%;
+  height: var(--h-primary);
+  border-radius: var(--r-btn);
+  font-weight: 700;
+  font-size: var(--fs-body);
+}
+
+.btn--primary {
+  background: var(--brand-blue);
+  color: var(--surface);
+}
+
+.btn--primary:hover:not([disabled]) {
+  background: var(--brand-blue-hover);
+}
+
+.btn--primary[disabled] {
+  background: var(--disabled-bg);
+  color: var(--disabled-fg);
+}
+
+.btn--secondary {
+  height: var(--h-secondary);
+  border: 1.5px solid var(--border-4);
+  color: var(--text-muted);
+  background: var(--surface);
+}
+
+.btn--secondary[disabled] {
+  background: var(--disabled-bg-3);
+  color: var(--disabled-fg-2);
+  border-color: var(--border-6);
+}
+
+.btn--ghost {
+  height: var(--h-secondary);
+  color: var(--text-soft-2);
+  font-weight: 600;
+}
+
+/* -------------------------------------------------------- S1 consent screen */
+
+.consent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  padding-bottom: var(--sp-6);
+  background: var(--app-bg);
+  min-height: 100dvh;
+}
+
+.consent__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-6) var(--sp-5);
+  background: var(--brand-blue);
+  color: var(--surface);
+  border-end-start-radius: var(--r-card-lg);
+  border-end-end-radius: var(--r-card-lg);
+}
+
+.consent__mark {
+  font-size: 40px;
+  color: var(--brand-yellow);
+}
+
+.consent__title {
+  font-size: var(--fs-h2);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.consent__sub {
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  color: var(--text-on-blue);
+}
+
+.consent__rows {
+  display: grid;
+  gap: var(--sp-3);
+  padding-inline: var(--sp-5);
+}
+
+.consent__row {
+  display: flex;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-row);
+}
+
+.consent__row-icon {
+  font-size: 22px;
+  color: var(--brand-blue);
+}
+
+.consent__row-title {
+  font-size: var(--fs-h3);
+  font-weight: 800;
+}
+
+.consent__row-body {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-soft-2);
+}
+
+.consent__legal {
+  margin-inline: var(--sp-5);
+  padding: var(--sp-4);
+  border-radius: var(--r-card);
+  background: var(--surface-alt);
+}
+
+.consent__legal-title {
+  font-size: 13px;
+  font-weight: 800;
+  margin-bottom: var(--sp-2);
+}
+
+.consent__legal-body {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-soft);
+}
+
+.consent__legal-link {
+  display: inline-block;
+  margin-top: var(--sp-2);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.consent__check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding-inline: var(--sp-5);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.consent__check input {
+  inline-size: 22px;
+  block-size: 22px;
+  accent-color: var(--brand-blue);
+  flex: none;
+}
+
+.consent__fallback {
+  margin-inline: var(--sp-5);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--warn-border);
+  border-radius: var(--r-card);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.consent__actions {
+  display: grid;
+  gap: var(--sp-2);
+  padding-inline: var(--sp-5);
+  margin-top: auto;
+}
+
+/* ---------------------------------------------------------- S2 plans screen */
+
+.plans {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+  padding-bottom: var(--sp-6);
+  background: var(--app-bg);
+  min-height: 100dvh;
+}
+
+.plans__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-6) var(--sp-5);
+  background: var(--brand-blue);
+  color: var(--surface);
+  border-end-start-radius: var(--r-card-lg);
+  border-end-end-radius: var(--r-card-lg);
+}
+
+.plans__eyebrow {
+  font-size: var(--fs-eyebrow);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-on-blue-2);
+}
+
+.plans__title {
+  font-size: var(--fs-h1);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.plans__sub {
+  font-size: var(--fs-body);
+  color: var(--text-on-blue);
+}
+
+.plans__list {
+  display: grid;
+  gap: var(--sp-3);
+  padding-inline: var(--sp-5);
+}
+
+.plan-card {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-5);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-card-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-row);
+}
+
+.plan-card:first-child {
+  border-color: var(--brand-blue);
+}
+
+.plan-card__title {
+  font-size: 19px;
+  font-weight: 800;
+}
+
+.plan-card__id {
+  color: var(--text-faint-3);
+}
+
+.plan-card__detail {
+  font-size: 13px;
+  color: var(--text-soft-2);
+}
+
+.plans__footer {
+  display: grid;
+  gap: var(--sp-2);
+  padding-inline: var(--sp-5);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-soft);
+}
+
+.plans__limitation {
+  padding: var(--sp-3);
+  border-radius: var(--r-card);
+  background: var(--surface-alt);
+  color: var(--text-soft-3);
+}
+
+/* ---------------------------------------------------------- S3 count screen */
+
+.count {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: var(--app-bg);
+  /* Room for the fixed mic dock so the last record is never trapped behind it. */
+  padding-bottom: 220px;
+}
+
+.count__header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-5);
+  background: var(--brand-blue);
+  color: var(--surface);
+  border-end-start-radius: var(--r-card-lg);
+  border-end-end-radius: var(--r-card-lg);
+}
+
+.count__eyebrow {
+  font-size: var(--fs-eyebrow);
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-on-blue-2);
+}
+
+.count__title {
+  font-size: var(--fs-h2);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.count__progress {
+  height: 6px;
+  border-radius: var(--r-pill);
+  /* The design's 28% white track, derived from the surface token. */
+  background: color-mix(in srgb, var(--surface) 28%, transparent);
+  overflow: hidden;
+}
+
+.count__progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  transition: width 0.25s ease;
+}
+
+.count__progress-label {
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-on-blue);
+}
+
+.count__list-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: var(--sp-5) var(--sp-5) var(--sp-3);
+}
+
+.count__list-header h2 {
+  font-size: var(--fs-h3);
+  font-weight: 800;
+}
+
+.count__list-header p {
+  font-size: 12px;
+  color: var(--text-faint-2);
+}
+
+.count__blind-footer {
+  padding: var(--sp-4) var(--sp-5);
+  font-size: 12px;
+  color: var(--text-soft-3);
+}
+
+.count__actions {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 30;
+  display: grid;
+  gap: var(--sp-3);
+  width: 100%;
+  max-width: var(--operator-max-width);
+  margin-inline: auto;
+  padding: 0 var(--sp-5) var(--sp-5);
+}
+
+/**
+ * The failure surface (T20). It sits ABOVE the dock rather than inside a sheet:
+ * a 502 must be readable while the mic is still reachable, so the operator can
+ * simply dictate again.
+ */
+.count__error {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 200px;
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  max-width: var(--operator-max-width);
+  margin-inline: auto;
+  padding: var(--sp-4);
+  border: 1.5px solid var(--warn-border-2);
+  border-radius: var(--r-card);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.count__error button {
+  flex: none;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-pill);
+  background: var(--warn);
+  color: var(--surface);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ------------------------------------------------------------- record rows */
+
+.records {
+  display: grid;
+  gap: var(--sp-2);
+  padding-inline: var(--sp-5);
+}
+
+.record {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-row);
+}
+
+.record__qty {
+  /* Tabular figures are a requirement, not a flourish: 305 must never read as
+     30,5 when the column is scanned. */
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-qty);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.record__unit {
+  font-size: var(--fs-eyebrow);
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--text-soft-2);
+}
+
+.record__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.record__name {
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+.record__meta {
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono-meta);
+  color: var(--text-faint-3);
+}
+
+.record__state {
+  font-size: 22px;
+  color: var(--brand-blue);
+}
+
+.record__delete {
+  flex: none;
+  color: var(--text-faint-3);
+}
+
+/* The four RecordState variants (design contract §2 S3). */
+
+.record--ok {
+  border-color: var(--border-2);
+}
+
+.record--anom_open,
+.record--anom_noted {
+  border: 1.5px solid var(--warn-border-2);
+  background: var(--warn-bg-2);
+}
+
+.record--anom_open .record__qty,
+.record--anom_noted .record__qty,
+.record--anom_open .record__state,
+.record--anom_noted .record__state {
+  color: var(--warn);
+}
+
+/* `sync` is an in-session PENDING UPLOAD only; RNF-08 was removed (C2). */
+.record--sync .record__state {
+  color: var(--text-faint-3);
+}
+
+/* ---------------------------------------------------------------- mic dock */
+
+.mic-dock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  padding-top: var(--sp-6);
+  /* The design's fade from transparent into the app background. */
+  background: linear-gradient(180deg, transparent 0%, var(--app-bg) 34%);
+}
+
+.mic-dock__banner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--warn-border);
+  border-radius: var(--r-pill);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.mic-dock__hint {
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-soft-2);
+}
+
+.mic-dock__live {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.mic-dock__wave {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 30px;
+}
+
+.mic-dock__bar {
+  display: block;
+  width: 4px;
+  border-radius: var(--r-pill);
+  background: var(--brand-blue);
+  /* The component overrides duration and delay per bar inline, so the shorthand
+     here is only the fallback rhythm for a bar rendered without them. */
+  animation: vbar 0.7s ease-in-out infinite;
+}
+
+.mic-dock__timer {
+  font-size: var(--fs-eyebrow);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--brand-blue);
+}
+
+.mic-dock__button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 88px;
+  height: 88px;
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-mic);
+  font-size: 34px;
+  transition: transform 0.12s ease;
+}
+
+.mic-dock__button:active:not([disabled]) {
+  transform: scale(0.96);
+}
+
+.mic-dock__button[disabled] {
+  box-shadow: none;
+}
+
+.mic-dock__pulse {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  animation: vpulse 1.8s ease-out infinite;
+  pointer-events: none;
+}
+
+/* ----------------------------------------------------------- S9 done screen */
+
+.done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 100dvh;
+  padding: var(--sp-6) var(--sp-5);
+  background: var(--brand-blue);
+  color: var(--surface);
+  text-align: center;
+}
+
+.done__mark {
+  margin-top: var(--sp-6);
+  font-size: 56px;
+  color: var(--brand-yellow);
+}
+
+.done__title {
+  font-size: var(--fs-h1);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.done__subtitle {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--text-on-blue);
+}
+
+.done__body {
+  max-width: 30ch;
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  color: var(--text-on-blue);
+}
+
+.done__summary {
+  display: grid;
+  gap: var(--sp-1);
+  width: 100%;
+  margin: var(--sp-5) 0 auto;
+  padding: var(--sp-4) var(--sp-5);
+  border-radius: var(--r-card-lg);
+  background: color-mix(in srgb, var(--surface) 12%, transparent);
+}
+
+.done__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--surface) 18%, transparent);
+  text-align: start;
+}
+
+.done__row:last-child {
+  border-bottom: 0;
+}
+
+.done__row dt {
+  font-size: 13px;
+  color: var(--text-on-blue);
+}
+
+.done__row dd {
+  margin: 0;
+  font-size: 17px;
+}
+
+.done__cta {
+  width: 100%;
+  height: var(--h-primary);
+  border-radius: var(--r-btn);
+  background: var(--accent);
+  color: var(--text);
+  font-weight: 800;
+}
+
+.done__cta:hover {
+  background: var(--brand-yellow-hover);
+}
+
+/* --------------------------------------------------------------- motion */
+
+/*
+ * `tokens.css` already disables animation globally under reduced motion. This
+ * repeats it for this sheet's own animated elements so the guarantee survives
+ * either file being refactored independently.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .mic-dock__pulse,
+  .mic-dock__bar,
+  .count__progress-fill {
+    animation: none;
+    transition: none;
+  }
+}

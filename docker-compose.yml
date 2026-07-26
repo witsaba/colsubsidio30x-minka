@@ -159,3 +159,36 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  # The operator and auditor UI. An npm project with its own lockfile, so it
+  # builds from its own directory rather than the repository root.
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      # Astro's own default, and the port frontend/README.md, the frontend's
+      # tests and the manual verification steps already name. Kept rather than
+      # renumbered to 8004 for the sake of sitting next to the services.
+      - "4321:4321"
+    environment:
+      # Container-internal addresses, fixed by the default network rather than
+      # by the operator. frontend/.env.example points both at localhost because
+      # it documents `npm run dev` on the host; in here localhost is this
+      # container, and the upstreams answer to their Compose service names.
+      STT_BASE_URL: http://stt:8001
+      MATCHER_BASE_URL: http://matcher:8002
+      # The Node adapter binds 127.0.0.1 unless told otherwise, which no
+      # published port can reach.
+      HOST: 0.0.0.0
+      PORT: "4321"
+    healthcheck:
+      # Node, not python: this image carries no interpreter but its own. Same
+      # contract as the services above — a plain GET on /health.
+      test: ["CMD", "node", "-e",
+             "require('http').get('http://localhost:4321/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+

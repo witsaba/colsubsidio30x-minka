@@ -35,7 +35,9 @@ El `docker-compose.yml` de la raíz es la única superficie de despliegue del
 repositorio; este servicio no tiene un archivo Compose propio.
 
 ```bash
-# Iniciar solo este servicio, desde la raíz del repositorio
+# Iniciar solo este servicio, desde la raíz del repositorio.
+# El archivo raíz docker-compose.yml es la única superficie de despliegue:
+# el compose local de este servicio ya no existe.
 docker compose up --build product_identification
 ```
 

@@ -1,6 +1,14 @@
 # The single root env file. Vendor credentials never enter git; .env.example
 # is the committed template and ./scripts/setup-env.sh fills this in.
+# `.env.*` and the negations keep every `.env.example` template tracked
+# (root, and any per-service one) while nothing named `.env` ever is.
 .env
+.env.*
+!.env.example
+!*.env.example
+
+# Local test database dump / workspace (operator-only scratch).
+BD_Pruebas/
 
 # Python
 __pycache__/
@@ -14,11 +22,12 @@ __pycache__/
 .codegraph/
 .atl/
 
-# Environment and Credentials (Local preservation, ignored by Git)
-.env
-.env.*
-!.env.example
+# Frontend (Astro)
+frontend/node_modules/
+frontend/dist/
+frontend/.astro/
+
+# Service-account credentials (product_identification / Vertex AI).
 gen-lang-client-*.json
 *-key.json
 service-account*.json
-

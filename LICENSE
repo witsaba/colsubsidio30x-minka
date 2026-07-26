@@ -1,0 +1,217 @@
+Minka — Voice Inventory Counter
+Hackathon Colsubsidio x 30X · July 2026
+
+Copyright (c) 2026
+Braejan David Arias Heregua
+Daniel Rosas
+Adriana Durand (Invitado)
+Edith Lavado
+30X
+Colsubsidio
+
+All rights reserved.
+
+
+================================================================================
+0.  NOTICE — READ THIS FIRST
+================================================================================
+
+This repository is NOT released under an open-source licence. The Source Code,
+the documentation, the model weights, the prompts, the test corpora, the
+dataset derivatives and any other artefact in this repository
+(collectively, the "Work") are made available to a closed, named set of
+individuals and organisations (the "Authorised Recipients") solely for the
+purposes set out in Section 2 below. Any other use — including but not limited
+to copying, forking, publishing, sublicensing, selling, training other models
+on the Work, or making the Work available to anyone who is not an Authorised
+Recipient — requires prior written permission from all Copyright Holders named
+above. See Section 6 for the contact address.
+
+
+================================================================================
+1.  DEFINITIONS
+================================================================================
+
+1.1 "Work" means the entirety of the contents of this repository at any given
+    commit, including without limitation:
+
+      a. all source code, configuration, scripts, schemas, migrations and
+         fixtures;
+      b. all documentation under `docs/`, `openspec/`, `README.md`, and any
+         other prose or diagrams;
+      c. all data files, built catalogues, snapshots, transcriptions, audio
+         samples, benchmark corpora and any derivatives of the source
+         datasets (`docs/sources/bodegas-y-stock.xlsx`,
+         `docs/sources/discovery-consolidado.xlsx`, etc.);
+      d. all prompts, model configurations, fine-tuning artefacts, evaluation
+         harnesses and the contents of `benchmarks/`, `spikes/` and the
+         `services/` workspaces;
+      e. all design decisions, requirement IDs, scenarios and rationale
+         captured in the OpenSpec deliverables and in any
+         `openspec/changes/*` directory.
+
+1.2 "Authorised Recipients" means, **and only** means, the following natural
+    persons and legal entities, taken collectively:
+
+      a. Braejan David Arias Heregua
+      b. Daniel Rosas
+      c. Adriana Durand (Invitado) — <adriana.durandc@gmail.com>
+      d. Edith Lavado             — <edith.lavado04@gmail.com>
+      e. Daniel Rosas             — <danielrosas.business@gmail.com>
+      f. 30X
+      g. Colsubsidio
+
+    The email addresses above are associated with the named individuals for
+    identification only; this Licence does not grant any rights to any other
+    person who happens to share such an email address, and the absence of an
+    email address for a natural person does not exclude that person from the
+    list.
+
+1.3 "Authorised Purpose" means the development, demonstration, evaluation and
+    judging of the Voice Inventory Counter MVP for the Hospitality Challenge
+    of the Colsubsidio x 30X hackathon in July 2026, and any continuation,
+    integration or hand-off of that work that occurs **between** the
+    Authorised Recipients named above.
+
+1.4 "Personal Data" has the meaning given to it by Ley 1581 of 2012
+    (Colombia) and any successor regulation, and includes the dictated audio,
+    transcripts, product names, and any data that can be linked to an
+    identifiable operator or auditor.
+
+
+================================================================================
+2.  GRANT OF RIGHTS
+================================================================================
+
+Subject to the terms of this Licence, each Copyright Holder grants to each
+Authorised Recipient a personal, non-exclusive, non-transferable, revocable,
+royalty-free licence to:
+
+  a. read, copy, modify, and run the Work in any environment under the
+     Authorised Recipient's control;
+  b. incorporate the Work, in whole or in part, into internal demonstrations,
+     internal evaluations, and any submission to the Colsubsidio x 30X
+     hackathon and its judging panel;
+  c. discuss and screenshot the Work in the context of the Authorised
+     Purpose, including in private channels where every participant is
+     themselves an Authorised Recipient;
+  d. produce derivative configuration files, deployment scripts, evaluation
+     reports and design documents that are necessary for the Authorised
+     Purpose and that are shared only with other Authorised Recipients.
+
+This grant is conditional on the Authorised Recipient remaining bound by
+Sections 3, 4 and 5 below.
+
+
+================================================================================
+3.  PROHIBITIONS
+================================================================================
+
+Except as expressly permitted by Section 2, an Authorised Recipient MUST NOT:
+
+  a. sublicense, sell, rent, lease, lend, gift, or otherwise transfer the
+     Work, in whole or in part, to any natural person or legal entity that
+     is not an Authorised Recipient;
+  b. publish the Work, in whole or in part, on any public code-hosting
+     platform, public package registry, public docs site, public model hub,
+     or any other location accessible to the general public;
+  c. include the Work, in whole or in part, in any product, service, or
+     deliverable offered to a third party who is not an Authorised Recipient;
+  d. use the Work, in whole or in part, to train, fine-tune, evaluate,
+     benchmark, or otherwise improve any model, system, or product that is
+     not itself an Authorised-Recipient-only artefact;
+  e. use the Work in any manner that infringes the rights of any third
+     party, violates Ley 1581 of 2012 or any other applicable law, or
+     contravenes the non-functional requirements captured in the PRD
+     (RNF-04: voice is not stored; RNF-14: native Colombian Spanish only);
+  f. remove, alter, or obscure this Licence, the copyright notice, or any
+     other proprietary notice contained in the Work.
+
+For the avoidance of doubt: the Authorised Recipients are the team listed in
+the PRD and the two sponsor organisations. Family members, friends,
+employer-allocated contractors, students, interns, future hires, and any
+"guest" or "invited" contributor whose email is not on the list in
+Section 1.2 are NOT covered by Section 2.
+
+
+================================================================================
+4.  PERSONAL DATA, AUDIO AND PROVENANCE
+================================================================================
+
+4.1 The Work contains, or is designed to process, Personal Data that belongs
+    to Colsubsidio's operators and auditors. An Authorised Recipient who
+    handles such data MUST comply with the Privacy and security notes in
+    `README.md` and with the requirements RF-04, RF-12, RF-13, RNF-04,
+    RNF-05, RNF-13 and RNF-14 of the PRD.
+
+4.2 Voice is not stored by design. If, during the Authorised Purpose, an
+    Authorised Recipient needs to record, transcribe or replay voice audio
+    (for example, to evaluate a transcript), that Authorised Recipient MUST
+    obtain the speaker's informed consent, anonymise the recording where
+    possible, and delete the recording as soon as the evaluation is complete.
+
+4.3 The source datasets under `docs/sources/` are vendored from the
+    Colsubsidio x 30X discovery process. They are NOT covered by the grant
+    in Section 2 to the extent they contain Personal Data; an Authorised
+    Recipient MUST handle them under the same rule as 4.2.
+
+
+================================================================================
+5.  WARRANTIES, LIABILITY AND TERMINATION
+================================================================================
+
+5.1 THE WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE, ACCURACY, AND NONINFRINGEMENT. THE
+    ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE WORK IS WITH THE
+    AUTHORISED RECIPIENT.
+
+5.2 IN NO EVENT SHALL ANY COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM,
+    DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+    OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE WORK OR THE
+    USE OR OTHER DEALINGS IN THE WORK.
+
+5.3 Any material breach of Sections 3 or 4 terminates this Licence, and the
+    rights granted in Section 2, automatically and without notice. On
+    termination, the Authorised Recipient MUST cease all use of the Work,
+    destroy any copies in their control, and confirm destruction in writing
+    to the Copyright Holders.
+
+
+================================================================================
+6.  CONTACT — REQUESTS OUTSIDE THIS LICENCE
+================================================================================
+
+To request any use that is not covered by Section 2 — including public
+release, integration into a third-party product, use by a non-listed
+organisation, or use of the Work beyond the Authorised Purpose — contact all
+Copyright Holders in writing and obtain a signed addendum to this Licence
+before such use begins.
+
+The contact for the technical implementation team is the GitHub user
+`witsaba` (the repository owner). Contact with `30X` and `Colsubsidio` is
+through the official Colsubsidio x 30X challenge channels.
+
+
+================================================================================
+7.  GENERAL
+================================================================================
+
+7.1 If any provision of this Licence is held unenforceable, the remaining
+    provisions remain in full force and effect.
+
+7.2 This Licence is governed by the laws of the Republic of Colombia. Any
+    dispute arising out of or in connection with this Licence shall be
+    finally settled by the ordinary courts of Colombia.
+
+7.3 This Licence is the entire agreement between the Copyright Holders and
+    any Authorised Recipient concerning the Work, and supersedes any prior
+    or contemporaneous understanding on the same subject matter.
+
+7.4 The Authorised Recipients named in Section 1.2 are listed in the order
+    they appear in the PRD. The list is closed. Additions are made only by
+    a signed addendum under Section 6.
+
+---
+
+END OF TERMS AND CONDITIONS

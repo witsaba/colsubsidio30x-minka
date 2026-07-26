@@ -267,6 +267,7 @@ name = "colsubsidio30x-minka"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "inventory-extractor" },
     { name = "matcher" },
     { name = "openpyxl" },
     { name = "pandas" },
@@ -278,10 +279,12 @@ dev = [
     { name = "httpx" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "requests" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "inventory-extractor", editable = "services/product_identification" },
     { name = "matcher", editable = "services/matcher" },
     { name = "openpyxl", specifier = ">=3" },
     { name = "pandas", specifier = ">=2" },
@@ -293,6 +296,7 @@ dev = [
     { name = "httpx", specifier = ">=0.27" },
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
+    { name = "requests", specifier = ">=2.31" },
 ]
 
 [[package]]
