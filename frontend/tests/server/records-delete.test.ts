@@ -122,4 +122,21 @@ describe('DELETE /api/records/[id]', () => {
     expect(await response.json()).toMatchObject({ error: { code: 'db_unavailable' } });
     expect(stub.callsOf('update')).toEqual([]);
   });
+
+  /**
+   * Same argument one step further in: 403 claims the operator may not correct
+   * this record. An unreadable `plan_operators` is not evidence of that, and the
+   * operator would read the refusal as their own record belonging to somebody
+   * else.
+   */
+  it('answers 502, not 403, when the assignment lookup fails, and deletes nothing', async () => {
+    const stub = db({ errors: { 'select:plan_operators': 'connection reset' } });
+
+    const response = await handleDeleteRecord(stub, 'rec-1', request());
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({ error: { code: 'db_unavailable' } });
+    expect(stub.callsOf('update')).toEqual([]);
+    expect(stub.rows('count_records')[0]!.is_deleted).toBe(false);
+  });
 });

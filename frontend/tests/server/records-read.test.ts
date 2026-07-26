@@ -299,4 +299,23 @@ describe('GET /api/records — a failed query is never an empty resume', () => {
 
     expect(await response.json()).toMatchObject({ error: { code: 'db_unavailable' } });
   });
+
+  /**
+   * The RF-07 guard runs before the resume reads, so its own failure has to be
+   * covered here too. `403 forbidden` says the operator is not assigned to this
+   * plan; an unreadable `plan_operators` does not entitle the server to say that.
+   */
+  it('answers 502, NOT 403, when the assignment lookup itself fails', async () => {
+    const stub = db({ errors: { 'select:plan_operators': 'JWT expired' } });
+
+    const response = await handleListRecords(stub, request());
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({ error: { code: 'db_unavailable' } });
+    expect(stub.calls.map((call) => call.table)).not.toContain('count_records');
+  });
+
+  it('answers 502 when the plan lookup fails, rather than 403 "el plan no existe"', async () => {
+    expect(await statusFor({ 'select:audit_plans': 'connection reset' })).toBe(502);
+  });
 });

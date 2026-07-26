@@ -8,7 +8,7 @@
  * both call it so a count and its anomaly can never disagree about which
  * product they are talking about.
  */
-import type { Db } from './db';
+import { dataOrThrow, type Db } from './db';
 
 /**
  * The column on `products` that carries the matcher's `nr_articulo`.
@@ -63,7 +63,12 @@ async function findByColumn(db: Db, column: string, value: string): Promise<stri
   // `limit(1)` rather than `maybeSingle()`: two catalogue rows may legitimately
   // share a normalized name, and PostgREST turns that into an ERROR for
   // `maybeSingle`, which would fail the count instead of resolving it.
-  const { data } = await db.from('products').select('id').eq(column, value).limit(1);
+  //
+  // `dataOrThrow` keeps "no matching row" (the empty list below, a real absence)
+  // apart from "the catalogue could not be read". Both routes turn `null` into
+  // `400 "No encontramos ese artículo en el catálogo."` — a claim about the
+  // catalogue that an unreadable `products` table has not earned.
+  const data = dataOrThrow(await db.from('products').select('id').eq(column, value).limit(1));
   const row = data?.[0];
   return row ? String(row.id) : null;
 }

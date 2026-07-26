@@ -16,7 +16,15 @@ import type { APIRoute } from 'astro';
 import { supabase } from './_supabase';
 import { supabaseDb } from '../../lib/server/db';
 import type { Db } from '../../lib/server/db';
-import { badRequest, json, optionalString, readJsonBody, requireNumber, requireString } from '../../lib/server/http';
+import {
+  badRequest,
+  json,
+  optionalString,
+  readJsonBody,
+  requireNumber,
+  requireString,
+  respondingToDbFailure,
+} from '../../lib/server/http';
 import { resolveProductId } from '../../lib/server/products';
 import { toOperatorVerdict, validateCount, type CountFacts } from '../../lib/server/validation';
 
@@ -70,18 +78,29 @@ export async function handleAnomalyCheck(db: Db, request: Request): Promise<Resp
     return badRequest('Faltan planId, warehouseId, quantity o la identidad del artículo.');
   }
 
-  const productId = await resolveProductId(db, pending);
-  if (!productId) return badRequest('No encontramos ese artículo en el catálogo.');
+  /*
+   * Both remaining steps read the database, and both now refuse rather than
+   * guess: `resolveProductId` raises `DbUnavailableError` instead of the `null`
+   * that means "not in the catalogue", and `validateCount` instead of the `ok`
+   * that means "no statistic says otherwise". One boundary turns either into the
+   * same 502 the other Supabase routes already answer — this route previously had
+   * none, so a `200 {verdict:'ok'}` was the only thing an outage could produce,
+   * and the confirm sheet showed the operator no warning at all.
+   */
+  return respondingToDbFailure(async () => {
+    const productId = await resolveProductId(db, pending);
+    if (!productId) return badRequest('No encontramos ese artículo en el catálogo.');
 
-  const facts: CountFacts = {
-    planId: pending.planId,
-    warehouseId: pending.warehouseId,
-    productId,
-    quantity: pending.quantity,
-    unitCode: pending.unitCode,
-  };
+    const facts: CountFacts = {
+      planId: pending.planId,
+      warehouseId: pending.warehouseId,
+      productId,
+      quantity: pending.quantity,
+      unitCode: pending.unitCode,
+    };
 
-  return json(toOperatorVerdict(await validateCount(db, facts)));
+    return json(toOperatorVerdict(await validateCount(db, facts)));
+  });
 }
 
 export const POST: APIRoute = ({ request }) => handleAnomalyCheck(supabaseDb(supabase()), request);

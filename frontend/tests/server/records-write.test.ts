@@ -321,3 +321,86 @@ describe('POST /api/records — resolves nrArticulo to a product uuid', () => {
     expect(stub.rows('count_records')).toEqual([]);
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* A failed lookup is a 502 — never a 403, a 400, or a clean count            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The three `lib/server` modules this route composes — `authz`, `products` and
+ * `validation` — each raise `DbUnavailableError` rather than returning a verdict
+ * they could not compute. This block is where that becomes observable: every one
+ * of their reads must surface as ONE 502 from `respondingToDbFailure`, and the
+ * count must not be written.
+ *
+ * The `plan_operators` case is the important one. Before the fix it answered
+ * `403 forbidden` — an affirmative claim that the operator is not assigned to the
+ * plan — while the truth was that the server could not check. A failed lookup
+ * cannot support a 403.
+ */
+describe('POST /api/records — a lookup that FAILED never becomes a verdict', () => {
+  function catalogueDb(errors: Record<string, string>) {
+    const stub = db({ errors });
+    stub.rows('products').push({ id: 'prod-1', sku: 'SKU-1', name_normalized: 'ACEITE GIRASOL 900' });
+    return stub;
+  }
+
+  it('answers 502, NOT 403, when the plan_operators assignment lookup fails', async () => {
+    const stub = catalogueDb({ 'select:plan_operators': 'JWT expired' });
+
+    const response = await handleCreateRecord(stub, request());
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({ error: { code: 'db_unavailable' } });
+    expect(stub.rows('count_records')).toEqual([]);
+  });
+
+  it('answers 502, not 403 "el plan no existe", when the audit_plans lookup fails', async () => {
+    const stub = catalogueDb({ 'select:audit_plans': 'connection reset' });
+
+    const response = await handleCreateRecord(stub, request());
+
+    expect(response.status).toBe(502);
+    expect(stub.rows('count_records')).toEqual([]);
+  });
+
+  it('answers 502 when the warehouse lookup fails, rather than counting against a null catalogue', async () => {
+    const stub = catalogueDb({ 'select:warehouses': 'permission denied' });
+
+    const response = await handleCreateRecord(stub, request());
+
+    expect(response.status).toBe(502);
+    expect(stub.rows('count_records')).toEqual([]);
+  });
+
+  it('answers 502, not 400 "no encontramos ese artículo", when the catalogue lookup fails', async () => {
+    const stub = catalogueDb({ 'select:products': 'connection reset' });
+
+    const response = await handleCreateRecord(
+      stub,
+      request({ productId: undefined, nrArticulo: 'SKU-1' }),
+    );
+
+    expect(response.status).toBe(502);
+    expect(stub.rows('count_records')).toEqual([]);
+  });
+
+  it('answers 502 when the range lookup fails, rather than storing the count as clean', async () => {
+    const stub = catalogueDb({ 'select:product_count_ranges': 'JWT expired' });
+
+    const response = await handleCreateRecord(stub, request({ quantity: 90 }));
+
+    expect(response.status).toBe(502);
+    expect(stub.rows('count_records')).toEqual([]);
+    expect(stub.rows('record_anomalies')).toEqual([]);
+  });
+
+  it('answers 502 when the stock-balance lookup fails, rather than storing the count as clean', async () => {
+    const stub = catalogueDb({ 'select:warehouse_stock_balances': 'connection reset' });
+
+    const response = await handleCreateRecord(stub, request({ quantity: 90 }));
+
+    expect(response.status).toBe(502);
+    expect(stub.rows('count_records')).toEqual([]);
+  });
+});

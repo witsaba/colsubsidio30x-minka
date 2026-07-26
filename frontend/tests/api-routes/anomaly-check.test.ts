@@ -18,8 +18,9 @@ function request(body: unknown): Request {
   });
 }
 
-function catalogueDb() {
+function catalogueDb(options: { errors?: Record<string, string> } = {}) {
   return createStubDb({
+    errors: options.errors,
     tables: {
       product_count_ranges: [
         {
@@ -145,5 +146,53 @@ describe('POST /api/anomaly-check — accepts the matcher’s nr_articulo', () =
     );
 
     expect(response.status).toBe(400);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* A verdict the server could not compute is not `ok`                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * This route had NO `respondingToDbFailure` boundary, which mattered as soon as
+ * `products` and `validation` began raising `DbUnavailableError` instead of
+ * silently answering. Both reads it depends on now surface as one 502.
+ *
+ * `{verdict: 'ok'}` is the answer the confirm sheet treats as "nothing to warn
+ * the operator about", and `400 "no encontramos ese artículo"` is a claim about
+ * the catalogue. Neither is something an unreadable database has earned the right
+ * to say.
+ */
+describe('POST /api/anomaly-check — a failed read is a 502, never a clean verdict', () => {
+  it('answers 502, not 400, when the catalogue lookup fails', async () => {
+    const stub = catalogueDb({ errors: { 'select:products': 'JWT expired' } });
+    stub.rows('products').push({ id: 'prod-1', sku: 'SKU-1' });
+
+    const response = await handleAnomalyCheck(
+      stub,
+      request({ planId: 'plan-1', warehouseId: 'wh-1', nrArticulo: 'SKU-1', quantity: 90 }),
+    );
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({ error: { code: 'db_unavailable' } });
+  });
+
+  it('answers 502, not a clean verdict, when the range lookup fails', async () => {
+    const response = await handleAnomalyCheck(
+      catalogueDb({ errors: { 'select:product_count_ranges': 'connection reset' } }),
+      request(validBody),
+    );
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({ error: { code: 'db_unavailable' } });
+  });
+
+  it('answers 502, not a clean verdict, when the stock-balance lookup fails', async () => {
+    const response = await handleAnomalyCheck(
+      catalogueDb({ errors: { 'select:warehouse_stock_balances': 'permission denied' } }),
+      request(validBody),
+    );
+
+    expect(response.status).toBe(502);
   });
 });

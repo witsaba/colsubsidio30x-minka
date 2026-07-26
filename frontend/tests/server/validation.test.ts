@@ -9,6 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
+import { DbUnavailableError } from '../../src/lib/server/db';
 import {
   toOperatorVerdict,
   validateCount,
@@ -39,8 +40,15 @@ function facts(overrides: Partial<CountFacts> = {}): CountFacts {
  * the whole select, which (the error being discarded) silently disables both
  * `unit_mismatch` and `atypical_quantity` detection in production.
  */
-function catalogueDb(overrides: { range?: Record<string, unknown>; balance?: Record<string, unknown> } = {}) {
+function catalogueDb(
+  overrides: {
+    range?: Record<string, unknown>;
+    balance?: Record<string, unknown>;
+    errors?: Record<string, string>;
+  } = {},
+) {
   return createStubDb({
+    errors: overrides.errors,
     tables: {
       product_count_ranges: [
         {
@@ -151,6 +159,50 @@ describe('validateCount', () => {
     await validateCount(db, facts({ quantity: 90 }));
 
     expect(db.calls.map((call) => call.table)).not.toContain('anomaly_evidence');
+  });
+});
+
+/**
+ * A verdict this module cannot compute is not `ok` (`dataOrThrow`, `lib/server/db.ts`).
+ *
+ * "No learned range" and "the bounds could not be read" arrive from supabase-js
+ * in shapes one character apart — `{data: null, error: null}` versus
+ * `{data: null, error}` — and destructuring only `data` collapsed them. The
+ * consequence is not a missing badge: `POST /api/records` writes what THIS module
+ * returns into `record_anomalies`, so a silent read failure stores a count as
+ * clean and the auditor never learns there was anything to review (REQ-AV-2).
+ *
+ * The `DbUnavailableError` propagates to the route, which already answers 502.
+ * The genuine-absence verdicts above are untouched: a product with no range row
+ * and no balance row is still `ok`, because there was nothing to compare against
+ * and inventing an anomaly would be a false positive (RF-26).
+ */
+describe('validateCount — an unreadable statistic is never a clean verdict', () => {
+  it('refuses to return a verdict when product_count_ranges cannot be read', async () => {
+    const db = catalogueDb({ errors: { 'select:product_count_ranges': 'JWT expired' } });
+
+    await expect(validateCount(db, facts({ quantity: 90 }))).rejects.toBeInstanceOf(
+      DbUnavailableError,
+    );
+  });
+
+  it('refuses to return a verdict when warehouse_stock_balances cannot be read', async () => {
+    const db = catalogueDb({ errors: { 'select:warehouse_stock_balances': 'connection reset' } });
+
+    await expect(validateCount(db, facts({ quantity: 90 }))).rejects.toBeInstanceOf(
+      DbUnavailableError,
+    );
+  });
+
+  it('still answers ok when both statistics are genuinely absent', async () => {
+    // The control for the two tests above: absence of a row and inability to ask
+    // must stay two different facts.
+    const db = createStubDb({ tables: { product_count_ranges: [], warehouse_stock_balances: [] } });
+
+    await expect(validateCount(db, facts({ quantity: 999 }))).resolves.toEqual({
+      verdict: 'ok',
+      anomaly: null,
+    });
   });
 });
 

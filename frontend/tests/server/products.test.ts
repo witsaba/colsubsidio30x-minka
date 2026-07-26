@@ -19,12 +19,14 @@
  */
 import { describe, expect, it } from 'vitest';
 
+import { DbUnavailableError } from '../../src/lib/server/db';
 import { resolveProductId } from '../../src/lib/server/products';
 import { createStubDb } from './stub-db';
 
 /** A catalogue with BOTH shapes: one product with a sku, three without. */
-function catalogue() {
+function catalogue(options: { errors?: Record<string, string> } = {}) {
   return createStubDb({
+    errors: options.errors,
     tables: {
       products: [
         { id: 'p-sku', sku: '100482', name_normalized: 'GASEOSA POSTOBON 400 ML' },
@@ -107,5 +109,46 @@ describe('resolveProductId — the failure contract is unchanged', () => {
   it('does not resolve a blank name to an arbitrary product', async () => {
     const db = catalogue();
     expect(await resolveProductId(db, { articulo: '   ' })).toBeNull();
+  });
+});
+
+/**
+ * `null` means "not in the catalogue" — it may not also mean "we could not look"
+ * (`dataOrThrow`, `lib/server/db.ts`).
+ *
+ * Both routes turn `null` into `400 "No encontramos ese artículo en el catálogo."`
+ * — a statement about the CATALOGUE, and one the operator acts on by re-dictating
+ * an article that is in fact perfectly present. Reading `data?.[0]` out of a
+ * failed result made an unreadable `products` table say exactly that, on every
+ * article, for as long as the outage lasted.
+ *
+ * The propagated `DbUnavailableError` becomes a 502 at the route: honest, and
+ * retryable with the same dictation. The `null` contract above is unchanged.
+ */
+describe('resolveProductId — an unreadable catalogue is not an unknown article', () => {
+  it('refuses to answer when the sku lookup itself fails', async () => {
+    const db = catalogue({ errors: { 'select:products': 'JWT expired' } });
+
+    await expect(resolveProductId(db, { nrArticulo: '100482' })).rejects.toBeInstanceOf(
+      DbUnavailableError,
+    );
+  });
+
+  it('refuses to answer when the name_normalized fallback lookup fails', async () => {
+    const db = catalogue({ errors: { 'select:products': 'connection reset' } });
+
+    await expect(resolveProductId(db, { articulo: 'ACEITE' })).rejects.toBeInstanceOf(
+      DbUnavailableError,
+    );
+  });
+
+  it('still short-circuits an explicit productId without ever asking the catalogue', async () => {
+    // An outage cannot break the one path that needs no query at all.
+    const db = catalogue({ errors: { 'select:products': 'JWT expired' } });
+
+    await expect(resolveProductId(db, { productId: 'p-already-known' })).resolves.toBe(
+      'p-already-known',
+    );
+    expect(db.calls).toHaveLength(0);
   });
 });
