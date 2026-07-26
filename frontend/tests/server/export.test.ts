@@ -215,3 +215,90 @@ describe('POST /api/export', () => {
     expect(db.rows('export_batches')).toEqual([]);
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* Task 5.11 — the fallbacks `v_oracle_export_preview` already performs        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The live view is the contract the warehouse's Oracle load was specified
+ * against, confirmed via `pg_get_viewdef`:
+ *
+ *   COALESCE(p.sku, p.name_normalized)                       AS item
+ *   COALESCE(prof.counter_code,
+ *            upper(replace(prof.full_name, ' ', '.')))       AS counter
+ *
+ * ~18.4% of the real catalogue has NO sku, so `sku ?? ''` shipped a blank item
+ * name for almost one row in five — a file Oracle cannot reconcile and nobody
+ * would notice until the load failed.
+ */
+describe('POST /api/export — item and counter fall back exactly like the view', () => {
+  function db(over: { products?: unknown[]; profiles?: unknown[] } = {}) {
+    return createStubDb({
+      tables: {
+        audit_plans: [{ id: 'plan-1', warehouse_id: 'wh-1' }],
+        warehouses: [{ id: 'wh-1', code: 'BOD-A' }],
+        count_records: [
+          {
+            id: 'rec-1',
+            plan_id: 'plan-1',
+            product_id: 'prod-1',
+            quantity: 7,
+            unit_code: 'KG',
+            counted_by: 'op-1',
+            is_deleted: false,
+          },
+        ],
+        products: (over.products ?? [{ id: 'prod-1', sku: 'SKU-1', name_normalized: 'ACEITE' }]) as never,
+        profiles: (over.profiles ?? [{ id: 'op-1', counter_code: 'CNT-01', full_name: 'Pablo Ruiz' }]) as never,
+        record_anomalies: [],
+      },
+    });
+  }
+
+  async function lineOf(stub: ReturnType<typeof db>): Promise<Record<string, unknown>> {
+    const response = await handleExport(
+      stub,
+      new Request('http://localhost:4321/api/export', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ planId: 'plan-1', auditorId: AUDITOR }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    return stub.rows('export_lines')[0] as Record<string, unknown>;
+  }
+
+  it('uses the sku when the product has one', async () => {
+    expect(await lineOf(db())).toMatchObject({ item: 'SKU-1', counter: 'CNT-01' });
+  });
+
+  it('falls back to name_normalized for a product with no sku', async () => {
+    const line = await lineOf(
+      db({ products: [{ id: 'prod-1', sku: null, name_normalized: 'ACEITE DE OLIVA 500ML' }] }),
+    );
+
+    // NOT an empty string: an unnamed line is a line Oracle cannot import.
+    expect(line.item).toBe('ACEITE DE OLIVA 500ML');
+  });
+
+  it('falls back to the formatted full_name for a counter with no code', async () => {
+    const line = await lineOf(
+      db({ profiles: [{ id: 'op-1', counter_code: null, full_name: 'Pablo Ruiz Gómez' }] }),
+    );
+
+    expect(line.counter).toBe('PABLO.RUIZ.GÓMEZ');
+  });
+
+  it('leaves item and counter empty only when there is genuinely nothing to name them with', async () => {
+    const line = await lineOf(
+      db({
+        products: [{ id: 'prod-1', sku: null, name_normalized: null }],
+        profiles: [{ id: 'op-1', counter_code: null, full_name: null }],
+      }),
+    );
+
+    expect(line.item).toBe('');
+    expect(line.counter).toBeNull();
+  });
+});

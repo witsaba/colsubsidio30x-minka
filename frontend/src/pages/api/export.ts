@@ -36,6 +36,37 @@ async function lookup(db: Db, table: string, ids: string[]): Promise<Map<string,
   return new Map((data ?? []).map((row) => [String(row.id), row]));
 }
 
+/**
+ * The two fallbacks `v_oracle_export_preview` performs, reproduced exactly:
+ *
+ *   COALESCE(p.sku, p.name_normalized)                  AS item
+ *   COALESCE(prof.counter_code,
+ *            upper(replace(prof.full_name, ' ', '.')))  AS counter
+ *
+ * They are not cosmetic. About 18.4% of the real catalogue has no `sku` at all
+ * (the products Colsubsidio has not yet coded in Oracle), so taking the sku
+ * alone shipped a BLANK item name for nearly one line in five — a file the
+ * warehouse cannot import and whose emptiness nobody sees until the load fails.
+ *
+ * The route cannot simply select from the view: the view has no notion of an
+ * open `record_anomalies` row, and REQ-OE-1 excludes those records. So the
+ * projection is duplicated here, deliberately and identically.
+ */
+function itemOf(product: DbRow | undefined): string {
+  const sku = product?.sku;
+  if (typeof sku === 'string' && sku !== '') return sku;
+  const name = product?.name_normalized;
+  return typeof name === 'string' ? name : '';
+}
+
+function counterOf(profile: DbRow | undefined): string | null {
+  const code = profile?.counter_code;
+  if (typeof code === 'string' && code !== '') return code;
+  const fullName = profile?.full_name;
+  if (typeof fullName !== 'string' || fullName === '') return null;
+  return fullName.toUpperCase().replaceAll(' ', '.');
+}
+
 function exportCode(planId: string, at: Date): string {
   return `EXP-${planId}-${at.toISOString().replace(/[^0-9]/g, '').slice(0, 14)}`;
 }
@@ -79,10 +110,10 @@ export async function handleExport(db: Db, request: Request): Promise<Response> 
   const exportable: ExportableRecord[] = rows.map((row) => ({
     id: String(row.id),
     subinventory: String(warehouse?.code ?? ''),
-    item: String(products.get(String(row.product_id))?.sku ?? ''),
+    item: itemOf(products.get(String(row.product_id))),
     quantity: Number(row.quantity),
     unitCode: row.unit_code ?? null,
-    counter: profiles.get(String(row.counted_by))?.counter_code ?? null,
+    counter: counterOf(profiles.get(String(row.counted_by))),
     isDeleted: Boolean(row.is_deleted),
     hasOpenAnomaly: openAnomalies.has(String(row.id)),
   }));
