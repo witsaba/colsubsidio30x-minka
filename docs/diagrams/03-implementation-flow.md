@@ -29,12 +29,17 @@ flowchart LR
     end
 
     %% ────────────── ASTRO ──────────────
+    %% Node labels wrapped in double quotes: bare [/api/...] is Mermaid's
+    %% parallelogram shape syntax; the leading slash inside a quoted string
+    %% is treated as plain text. Each label also names the downstream service
+    %% that actually holds the endpoint — Astro is a same-origin proxy, not
+    %% the implementer of these routes.
     subgraph A[Astro · :4321 · same-origin proxy]
-        AT[/api/transcribe<br/>proxy forward]:::astro
-        AX[/api/extract<br/>proxy forward]:::astro
-        AM[/api/match<br/>proxy forward]:::astro
-        AA[/api/anomaly-check<br/>in-process engine]:::astro
-        AR[/api/records<br/>guard plan → resolve<br/>idempotency → validate<br/>INSERT count_records<br/>best-effort INSERT anomalies]:::astro
+        AT["/api/transcribe<br/>proxy → STT :8001"]:::astro
+        AX["/api/extract<br/>proxy → product_identification :8003"]:::astro
+        AM["/api/match<br/>proxy → matcher :8002"]:::astro
+        AA["/api/anomaly-check<br/>in-process Astro engine"]:::astro
+        AR["/api/records<br/>in-process → Supabase REST<br/>guard plan · resolve · idempotency<br/>validate · INSERT · best-effort anomaly"]:::astro
     end
 
     %% ────────────── PYTHON SERVICES ──────────────
@@ -45,7 +50,7 @@ flowchart LR
     end
 
     %% ────────────── SUPABASE ──────────────
-    subgraph DB[(Supabase · Postgres)]
+    subgraph DB[Supabase · Postgres]
         CR[(count_records<br/>source:voice)]:::db
         PR[(products<br/>name_normalized<br/>sku ~18% NULL)]:::db
         RA[(record_anomalies<br/>best-effort)]:::db
@@ -119,41 +124,43 @@ sequenceDiagram
     participant Mic as MicDock<br/>(browser)
     participant Rec as MediaRecorder<br/>(browser)
     participant Pipe as runPipeline<br/>(browser)
-    participant Astro as Astro routes
-    participant STT as STT :8001
-    participant EX as product_identification :8003
-    participant MA as matcher :8002
-    participant AC as /api/anomaly-check<br/>(in-process)
-    participant DB as Supabase
+    participant Astro as Astro<br/>:4321 same-origin proxy
+    participant STT as STT<br/>:8001 FastAPI
+    participant EX as product_identification<br/>:8003 FastAPI · dual-Gemini
+    participant MA as matcher<br/>:8002 FastAPI · trigram
+    participant AC as anomaly-check.ts<br/>in-process Astro engine
+    participant DB as Supabase<br/>Postgres · REST
 
     Op->>Mic: pointerdown (hold)
     Mic->>Rec: onStart
     Op->>Mic: pointerup (release)
     Mic->>Rec: onStop
     Rec-->>Pipe: CapturedAudio { blob, mimeType }
-    Note over Pipe: blob &gt; 1 MiB → REC_REJECTED (local)
+    Note over Pipe: blob exceeds 1 MiB → REC_REJECTED (local)
 
-    Pipe->>Astro: POST /api/transcribe (multipart)
-    Astro->>STT: POST /transcribe (forward)
+    Pipe->>Astro: POST /api/transcribe (multipart) — handled by STT :8001
+    Astro->>STT: POST /transcribe (FastAPI)
     STT-->>Astro: { raw_transcript, is_garbage, request_id }
     Astro-->>Pipe: TranscribeResponse
     Pipe-->>Pipe: reveal transcript on ProcessingSheet<br/>(BEFORE extraction runs)
 
-    Pipe->>Astro: POST /api/extract (transcript)
-    Astro->>EX: forward
-    EX-->>Astro: N ExtractedItem (dual-Gemini consensus)
+    Pipe->>Astro: POST /api/extract (transcript) — handled by product_identification :8003
+    Astro->>EX: POST /extract (FastAPI · dual-Gemini)
+    EX-->>Astro: N ExtractedItem (dual-model consensus)
     Astro-->>Pipe: items[]
 
     par fan-out N parallel
-        Pipe->>Astro: POST /api/match (item[i])
-        Astro->>MA: forward
-        MA-->>Pipe: { status, candidates, ... }
+        Pipe->>Astro: POST /api/match (item[i]) — handled by matcher :8002
+        Astro->>MA: POST /match (FastAPI · trigram)
+        MA-->>Astro: MatchResponse
+        Astro-->>Pipe: { status, candidates, ... }
     end
 
     par fan-out N parallel
-        Pipe->>Astro: POST /api/anomaly-check (item[i])
-        Astro->>AC: in-process engine
-        AC-->>Pipe: anomaly | clean
+        Pipe->>Astro: POST /api/anomaly-check (item[i]) — in-process Astro engine
+        Astro->>AC: anomaly-check.ts (no upstream call)
+        AC-->>Astro: anomaly | clean
+        Astro-->>Pipe: anomaly | clean
     end
 
     Note over Pipe: classify → bucket<br/>anomalies ▶ searches ▶ confirmables<br/>(ONE combined confirm sheet, RF-14)
@@ -162,7 +169,7 @@ sequenceDiagram
     Pipe->>Pipe: setState pending («Pendiente de subir»)
     Note over Pipe: useEffect fires exactly ONE POST
 
-    Pipe->>Astro: POST /api/records<br/>clientRecordId = rec-at-seq
+    Pipe->>Astro: POST /api/records<br/>clientRecordId = rec-at-seq<br/>— in-process Astro route → Supabase REST
     Astro->>DB: guard plan (RF-07)
     Astro->>DB: resolve product (id ← nrArticulo / name_normalized)
     Astro->>DB: check idempotency (client_record_id)
@@ -220,8 +227,8 @@ The `pending → pending` self-loop is intentional: by design, **a failed persis
 flowchart TD
     FE[Failure point]:::head --> Q{Where does it surface?}:::head
 
-    Q -- browser-local --> L1[blob &gt; 1 MiB<br/>REC_REJECTED]
-    Q -- browser-local --> L2[&gt; 20 s hold<br/>auto-stop MediaRecorder]
+    Q -- browser-local --> L1["blob > 1 MiB<br/>REC_REJECTED"]
+    Q -- browser-local --> L2["> 20 s hold<br/>auto-stop MediaRecorder"]
     Q -- browser-local --> L3[mic permission denied<br/>MicrophoneResult.denied]
 
     Q -- Astro / pipeline --> L4[STT 45 s deadline<br/>UiError vendor_error]
@@ -229,7 +236,7 @@ flowchart TD
     Q -- Astro / pipeline --> L6[extract → 0 items<br/>UiError nothing_extracted]
     Q -- Astro / pipeline --> L7[match 4xx / 5xx / abort<br/>UiError propagates]
 
-    Q -- /api/records --> L8[banner · stays pending<br/>NO auto-retry]
+    Q -->|"/api/records"| L8[banner · stays pending<br/>NO auto-retry]
 
     L1 --> H1[MicDock hint<br/>no upload]:::handle
     L2 --> H2[CapturedAudio<br/>resolved normally]:::handle
