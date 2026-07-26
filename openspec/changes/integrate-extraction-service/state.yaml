@@ -14,8 +14,8 @@ phases:
   spec: done           # specs/{extraction-adapter,service-proxy}/spec.md + engram obs #192
   design: done         # design.md + engram obs #193; fresh-context validation PASS (proposal client.ts row amended)
   tasks: done          # tasks.md (14 tasks, forecast ~600 lines, single-pr OK) + engram obs #194
-  apply: in_progress
-  verify: pending
+  apply: done          # 14/14, commits 062d80f..5d9b3bd, vitest 977 green, engram obs #195
+  verify: done         # PASS WITH WARNINGS (0C/4W/4S), verify-report.md + engram obs #196
   archive: pending
 orchestrator_decisions:
   - No operator-visible degraded indicator when extract falls back to the mock (demo scope).
