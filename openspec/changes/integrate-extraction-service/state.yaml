@@ -4,6 +4,7 @@ store: hybrid
 execution_mode: auto
 delivery_strategy: single-pr
 review_budget_lines: 5000
+pr: https://github.com/witsaba/colsubsidio30x-minka/pull/21
 strict_tdd: true
 worktree: /home/braejan/workspace/colsubsidio_30x/github_repo/colsubsidio30x-minka-worktrees/integrate-extraction-service
 branch: feat/integrate-extraction-service
@@ -16,7 +17,7 @@ phases:
   tasks: done          # tasks.md (14 tasks, forecast ~600 lines, single-pr OK) + engram obs #194
   apply: done          # 14/14, commits 062d80f..5d9b3bd, vitest 977 green, engram obs #195
   verify: done         # PASS WITH WARNINGS (0C/4W/4S), verify-report.md + engram obs #196
-  archive: pending
+  archive: pending        # after PR #21 merges
 orchestrator_decisions:
   - No operator-visible degraded indicator when extract falls back to the mock (demo scope).
   - 60s extract timeout accepted as backstop; normal Gemini latency is seconds.
