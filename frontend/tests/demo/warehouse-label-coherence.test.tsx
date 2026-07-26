@@ -35,11 +35,25 @@ const counting = (): SessionState => ({
 });
 
 describe('one bodega name across the whole demo', () => {
-  it('names the same bodega on the plan card, the count header, the done screen and the auditor review header', () => {
+  it('names the same bodega on the plan card, the count header, the done screen and the auditor review header', async () => {
     const noop = () => undefined;
 
-    const plans = render(<PlansScreen dispatch={noop} assignedCatalogueIds={[DEMO_CATALOGUE_ID]} />);
-    const planLabel = plans.container.querySelector('.plan-card__title')?.textContent;
+    // The plan card no longer reads `lib/catalogues.ts`: the name comes from
+    // `audit_plans` now (REQ-OCF-8 as modified). The coherence requirement is
+    // unchanged and is now a requirement on the SEEDED PLAN — the demo plan must
+    // be named after the catalogue it is bound to, or the operator and the
+    // auditor are again looking at two different bodegas.
+    const plans = render(
+      <PlansScreen
+        dispatch={noop}
+        operatorId="op-demo"
+        loadPlans={async () => [
+          { id: 'plan-demo', name: LABEL, warehouseId: 'wh-demo', catalogueId: DEMO_CATALOGUE_ID },
+        ]}
+      />,
+    );
+    const card = await plans.findByRole('heading', { level: 2 });
+    const planLabel = card.textContent;
     plans.unmount();
 
     const count = render(<CountScreen state={counting()} dispatch={noop} />);
@@ -52,7 +66,17 @@ describe('one bodega name across the whole demo', () => {
     const doneLabel = done.container.querySelector('#done-title')?.textContent;
     done.unmount();
 
-    const auditor = render(<AuditorReview clock={() => '9:05 a.m.'} />);
+    // The auditor island no longer imports the seed itself (task 5.6): the
+    // bodega pane is passed in, and the records arrive through the fetch seam.
+    const auditor = render(
+      <AuditorReview
+        planId="plan-demo"
+        auditorId="aud-demo"
+        warehouses={AUDITOR_WAREHOUSES}
+        clock={() => '9:05 a.m.'}
+        loadRecords={async () => AUDITOR_RECORDS}
+      />,
+    );
     const auditorTitle = auditor.container.querySelector('.review__title')?.textContent;
 
     // Non-trivial by construction: the label is a real catalogue label, and an
@@ -64,13 +88,21 @@ describe('one bodega name across the whole demo', () => {
     expect(auditorTitle).toBe(`${LABEL} · revisión`);
   });
 
-  it('opens the auditor on the very bodega the operator counted', () => {
+  it('opens the auditor on the very bodega the operator counted', async () => {
     const selected = AUDITOR_WAREHOUSES.filter((w) => w.selected);
     expect(selected).toHaveLength(1);
     expect(selected[0]?.name).toBe(LABEL);
 
-    render(<AuditorReview clock={() => '9:05 a.m.'} />);
-    const warehouses = screen.getByRole('list', { name: 'Bodegas' });
+    render(
+      <AuditorReview
+        planId="plan-demo"
+        auditorId="aud-demo"
+        warehouses={AUDITOR_WAREHOUSES}
+        clock={() => '9:05 a.m.'}
+        loadRecords={async () => AUDITOR_RECORDS}
+      />,
+    );
+    const warehouses = await screen.findByRole('list', { name: 'Bodegas' });
     const current = within(warehouses).getAllByRole('button', { current: true });
     expect(current).toHaveLength(1);
     expect(current[0]?.textContent).toContain(LABEL);

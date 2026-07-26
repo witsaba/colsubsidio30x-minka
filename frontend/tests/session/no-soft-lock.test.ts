@@ -104,6 +104,17 @@ const EVERY_EVENT: SessionEvent[] = [
   { type: 'MIC_GRANTED' },
   { type: 'MIC_DENIED' },
   { type: 'PLAN_STARTED', catalogueId: 'STOCK_RESTAURANTE_FUENTES_AYB' },
+  // Session resume (REQ-OCF-13): it jumps straight to the count screen with
+  // records already in the list, so the walk has to prove THAT entry point is
+  // escapable too — not only the one that goes through consent and plans.
+  {
+    type: 'SESSION_RESUMED',
+    catalogueId: 'STOCK_RESTAURANTE_FUENTES_AYB',
+    planId: 'plan-1',
+    operatorId: 'op-1',
+    warehouseId: 'wh-1',
+    records: [],
+  },
   { type: 'REC_STARTED' },
   { type: 'REC_STOPPED', audio },
   { type: 'REC_REJECTED', reason: 'too_large' },
@@ -127,6 +138,10 @@ const EVERY_EVENT: SessionEvent[] = [
   { type: 'SEARCH_PICKED', candidate: candidate() },
   { type: 'SEARCH_DISMISSED' },
   { type: 'RECORD_DELETED', id: 'nope' },
+  // Persistence outcomes (D5): the walk must prove that a failed write cannot
+  // strand the operator either — `sync` plus a banner is always escapable.
+  { type: 'RECORD_PERSISTED', id: 'nope', serverId: 'srv-1' },
+  { type: 'RECORD_PERSIST_FAILED', id: 'nope', error: new UiError('proxy_unreachable') },
   { type: 'COUNT_FINISHED' },
   { type: 'BACK_TO_PLANS' },
   { type: 'ERROR_DISMISSED' },

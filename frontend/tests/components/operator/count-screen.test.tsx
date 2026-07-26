@@ -26,6 +26,7 @@ function record(patch: Partial<CountRecord> = {}): CountRecord {
     id: 'rec-1',
     quantity: 3,
     unitDisplay: 'kilos',
+    unitCode: null,
     articulo: 'LECHUGA BATAVIA',
     nrArticulo: '100221',
     spokenName: 'tres kilos de lechuga',

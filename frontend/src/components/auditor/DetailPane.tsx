@@ -8,8 +8,8 @@
  * The RF-32 trace is a real `<table>` with row headers; the design draws it as
  * label/value divs, which announces as an undifferentiated run of text.
  */
-import type { AuditorRecord } from '../../fixtures/auditorSeed';
-import { badgeOf, diffOf } from '../../fixtures/auditorSeed';
+import type { AuditorRecord } from '../../lib/auditor/types';
+import { badgeOf, diffOf } from '../../lib/auditor/types';
 
 export interface DetailPaneProps {
   record: AuditorRecord | null;

@@ -66,6 +66,7 @@ function record(over: Partial<CountRecord> = {}): CountRecord {
     id: 'r-seed-1',
     quantity: 12,
     unitDisplay: 'unidades',
+    unitCode: null,
     articulo: 'GASEOSA 350ML',
     nrArticulo: '20031',
     spokenName: 'gaseosas',
@@ -295,7 +296,9 @@ describe('S5 confirmation', () => {
     expect(s.records).toHaveLength(2);
     expect(s.progress.counted).toBe(counting().progress.counted + 2);
     expect(s.overlay).toBeNull();
-    expect(s.records.every((r) => r.state === 'ok')).toBe(true);
+    // Optimistic persistence (design D5): a confirmed record enters `sync` and
+    // only becomes `ok` once `RECORD_PERSISTED` reports the server accepted it.
+    expect(s.records.every((r) => r.state === 'sync')).toBe(true);
     expect(new Set(s.records.map((r) => r.id)).size).toBe(2);
   });
 
@@ -314,8 +317,46 @@ describe('S5 confirmation', () => {
     });
     const [r] = sessionReducer(nulled, { type: 'CONFIRM_ACCEPTED', at: AT }).records;
     expect(r?.nrArticulo).toBeNull();
+    // REQ-OCF-7 is about what is RENDERED: `unitDisplay` is the only unit any
+    // screen reads, and a null one renders nothing rather than a guess. The
+    // render-path guard lives where rendering happens
+    // (`count-session.test.tsx`: the English unit never reaches the DOM).
     expect(r?.unitDisplay).toBeNull();
-    expect(JSON.stringify(r)).not.toContain('Kilogram');
+  });
+
+  test('records carry the canonical unit code for the SERVER write only (REQ-SDA-4)', () => {
+    // `POST /api/records` writes `count_records.unit_code` and re-validates the
+    // unit against the catalogue. The Spanish `unidad_display` is a rendering,
+    // not an identity, so the record has to keep the canonical code too — it is
+    // simply never read by a screen.
+    const s = sessionReducer(
+      counting({
+        overlay: {
+          kind: 'confirm',
+          transcript: 't',
+          items: [confirmable({ picked: candidate({ unidad: 'Kilogram', unidad_display: 'kilos' }) })],
+        },
+      }),
+      { type: 'CONFIRM_ACCEPTED', at: AT },
+    );
+
+    expect(s.records[0]?.unitCode).toBe('Kilogram');
+    expect(s.records[0]?.unitDisplay).toBe('kilos');
+  });
+
+  test('a dictation the matcher could not give a unit keeps a null unit code', () => {
+    const s = sessionReducer(
+      counting({
+        overlay: {
+          kind: 'confirm',
+          transcript: 't',
+          items: [confirmable({ picked: candidate({ unidad: null, unidad_display: null }) })],
+        },
+      }),
+      { type: 'CONFIRM_ACCEPTED', at: AT },
+    );
+
+    expect(s.records[0]?.unitCode).toBeNull();
   });
 
   test('newest records come first', () => {
@@ -406,10 +447,11 @@ describe('S6 anomaly block', () => {
     expect(blocked(s)).toBe(false);
   });
 
-  test('ANOMALY_KEEP_NOTED appends an anom_noted record carrying the anomaly, then pops the queue', () => {
+  test('ANOMALY_KEEP_NOTED appends a kept record carrying the anomaly, then pops the queue', () => {
     const s = sessionReducer(anomalyOverlay, { type: 'ANOMALY_KEEP_NOTED', at: AT });
     expect(s.records).toHaveLength(1);
-    expect(s.records[0]?.state).toBe('anom_noted');
+    // Optimistic (design D5): `sync` until the server confirms, then `anom_noted`.
+    expect(s.records[0]?.state).toBe('sync');
     expect(s.records[0]?.anomaly).toEqual(anomaly);
     expect(s.records[0]?.createdAt).toBe(AT);
     expect(s.progress.counted).toBe(counting().progress.counted + 1);
@@ -623,8 +665,20 @@ describe('blind counting invariant', () => {
       counting({ overlay: { kind: 'confirm', transcript: 't', items: [confirmable()] } }),
       { type: 'CONFIRM_ACCEPTED', at: AT },
     );
+    // `unitCode` joins the whitelist: it is the unit the operator DICTATED,
+    // carried for the server write, not a reference value from the system.
     expect(Object.keys(s.records[0] ?? {}).sort()).toEqual(
-      ['articulo', 'createdAt', 'id', 'nrArticulo', 'quantity', 'spokenName', 'state', 'unitDisplay'].sort(),
+      [
+        'articulo',
+        'createdAt',
+        'id',
+        'nrArticulo',
+        'quantity',
+        'spokenName',
+        'state',
+        'unitCode',
+        'unitDisplay',
+      ].sort(),
     );
   });
 });
@@ -751,5 +805,204 @@ describe('the reducer is total', () => {
     const snapshot = JSON.stringify(s);
     for (const event of everyEvent) sessionReducer(s, event);
     expect(JSON.stringify(s)).toBe(snapshot);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Persistence events (REQ-OCF-13, design D5)                                  */
+/* -------------------------------------------------------------------------- */
+
+describe('optimistic record persistence', () => {
+  const anomaly: Anomaly = {
+    kind: 'cantidad',
+    title: 'Cantidad fuera de lo habitual',
+    reason: 'r',
+    hint: 'h',
+  };
+
+  function withPending(overrides: Partial<CountRecord> = {}) {
+    return counting({ records: [record({ id: 'rec-1', state: 'sync', ...overrides })] });
+  }
+
+  test('RECORD_PERSISTED settles a clean record as ok and stores the server id', () => {
+    const s = sessionReducer(withPending(), {
+      type: 'RECORD_PERSISTED',
+      id: 'rec-1',
+      serverId: 'srv-9',
+    });
+    expect(s.records[0]?.state).toBe('ok');
+    expect(s.records[0]?.serverId).toBe('srv-9');
+    expect(s.error).toBeNull();
+  });
+
+  test('RECORD_PERSISTED settles a flagged record as anom_noted, keeping the anomaly', () => {
+    const s = sessionReducer(withPending({ anomaly }), {
+      type: 'RECORD_PERSISTED',
+      id: 'rec-1',
+      serverId: 'srv-9',
+    });
+    expect(s.records[0]?.state).toBe('anom_noted');
+    expect(s.records[0]?.anomaly).toEqual(anomaly);
+  });
+
+  test('RECORD_PERSISTED for an unknown id returns the identical state', () => {
+    const s = withPending();
+    expect(sessionReducer(s, { type: 'RECORD_PERSISTED', id: 'ghost', serverId: 'x' })).toBe(s);
+  });
+
+  test('RECORD_PERSIST_FAILED keeps the record in sync and raises the error banner', () => {
+    const error = new UiError('proxy_unreachable');
+    const s = sessionReducer(withPending(), { type: 'RECORD_PERSIST_FAILED', id: 'rec-1', error });
+    expect(s.records[0]?.state).toBe('sync');
+    expect(s.error).toBe(error);
+  });
+
+  test('a failed persist never removes the record — the count is not lost', () => {
+    const s = sessionReducer(withPending(), {
+      type: 'RECORD_PERSIST_FAILED',
+      id: 'rec-1',
+      error: new UiError('vendor_error'),
+    });
+    expect(s.records).toHaveLength(1);
+    expect(s.progress.counted).toBe(withPending().progress.counted);
+  });
+
+  test('PLAN_STARTED stores the plan and operator alongside the catalogue', () => {
+    const s = sessionReducer(counting({ screen: 'plans' }), {
+      type: 'PLAN_STARTED',
+      catalogueId: 'cat-1',
+      planId: 'plan-1',
+      operatorId: 'op-1',
+      warehouseId: 'wh-1',
+    });
+    expect(s.planId).toBe('plan-1');
+    expect(s.operatorId).toBe('op-1');
+    expect(s.warehouseId).toBe('wh-1');
+    expect(s.catalogueId).toBe('cat-1');
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Record ids are idempotency keys, so they must never be reused              */
+/* -------------------------------------------------------------------------- */
+
+describe('record ids survive deletion (REQ-SDA-4, RF-20/21)', () => {
+  test('a record created after a delete does NOT reuse the deleted record’s id', () => {
+    // The id is sent as `count_records.client_record_id`, which is unique and is
+    // how a retried POST resolves to an existing row. Deriving it from
+    // `records.length` made a delete-then-redictate mint the SAME key, so the
+    // redictation would resolve to the soft-deleted row instead of creating one.
+    const sheet = { kind: 'confirm' as const, transcript: 't', items: [confirmable()] };
+
+    const first = sessionReducer(counting({ overlay: sheet }), { type: 'CONFIRM_ACCEPTED', at: AT });
+    const firstId = first.records[0]!.id;
+
+    const emptied = sessionReducer(first, { type: 'RECORD_DELETED', id: firstId });
+    expect(emptied.records).toEqual([]);
+
+    const second = sessionReducer({ ...emptied, overlay: sheet }, { type: 'CONFIRM_ACCEPTED', at: AT });
+
+    expect(second.records).toHaveLength(1);
+    expect(second.records[0]!.id).not.toBe(firstId);
+  });
+
+  test('two items confirmed in one sheet still get distinct ids', () => {
+    const s = sessionReducer(
+      counting({
+        overlay: { kind: 'confirm', transcript: 't', items: [confirmable(), confirmable()] },
+      }),
+      { type: 'CONFIRM_ACCEPTED', at: AT },
+    );
+
+    expect(s.records).toHaveLength(2);
+    expect(s.records[0]!.id).not.toBe(s.records[1]!.id);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* SESSION_RESUMED — REQ-OCF-13, task 6.11                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Reloading `/conteo` mid-count used to drop the operator back on the consent
+ * screen with an EMPTY list while the rows were still in `count_records`.
+ * Because `CountRecord.id` is the client-minted idempotency key, re-dictating
+ * the same shelf then wrote a SECOND row for one physical count.
+ *
+ * This event is the reducer half of the fix: `CountSession` fetches the
+ * persisted records and hands them back, and the session picks up where it was.
+ */
+describe('SESSION_RESUMED', () => {
+  const restored: CountRecord[] = [
+    record({ id: 'rec-1000-1', serverId: 'srv-2', state: 'anom_noted', quantity: 7 }),
+    record({ id: 'rec-1000-0', serverId: 'srv-1', state: 'ok', quantity: 20 }),
+  ];
+
+  const resume = {
+    type: 'SESSION_RESUMED' as const,
+    catalogueId: 'cat-1',
+    planId: 'plan-1',
+    operatorId: 'op-1',
+    warehouseId: 'wh-1',
+    records: restored,
+  };
+
+  test('lands on the count screen instead of the consent screen', () => {
+    const s = sessionReducer(initialSessionState, resume);
+
+    expect(s.screen).toBe('count');
+    expect(s.micPermission).toBe('granted');
+  });
+
+  test('restores the records in the order the server sent them', () => {
+    const s = sessionReducer(initialSessionState, resume);
+
+    expect(s.records.map((r) => r.id)).toEqual(['rec-1000-1', 'rec-1000-0']);
+    expect(s.records.map((r) => r.serverId)).toEqual(['srv-2', 'srv-1']);
+  });
+
+  test('restores the plan scope every server write is guarded by', () => {
+    const s = sessionReducer(initialSessionState, resume);
+
+    expect(s).toMatchObject({
+      catalogueId: 'cat-1',
+      planId: 'plan-1',
+      operatorId: 'op-1',
+      warehouseId: 'wh-1',
+    });
+  });
+
+  test('no restored record is in sync, so nothing is written a second time', () => {
+    const s = sessionReducer(initialSessionState, resume);
+
+    expect(s.records.every((r) => r.state !== 'sync')).toBe(true);
+  });
+
+  test('advances recordSeq past the restored ids so a new count cannot reuse one', () => {
+    const s = sessionReducer(initialSessionState, resume);
+
+    expect(s.recordSeq).toBe(2);
+  });
+
+  test('counts the restored records towards progress', () => {
+    const s = sessionReducer(initialSessionState, resume);
+
+    expect(s.progress.counted).toBe(initialSessionState.progress.counted + 2);
+  });
+
+  test('an empty restore still opens the count screen for the chosen plan', () => {
+    const s = sessionReducer(initialSessionState, { ...resume, records: [] });
+
+    expect(s.screen).toBe('count');
+    expect(s.records).toEqual([]);
+    expect(s.recordSeq).toBe(0);
+  });
+
+  test('is ignored once the operator is already counting, so a late resume cannot wipe live work', () => {
+    const live = sessionReducer(initialSessionState, resume);
+
+    const again = sessionReducer(live, { ...resume, records: [] });
+
+    expect(again).toBe(live);
   });
 });

@@ -80,7 +80,7 @@ function staticExtraction(items: ExtractedItem[]): ExtractionAdapter {
   return { extract: () => items };
 }
 
-const noAnomalies: AnomalyEngine = { check: () => null };
+const noAnomalies: AnomalyEngine = { check: async () => null };
 
 function deps(over: Partial<PipelineDeps> = {}): PipelineDeps {
   return {
@@ -318,7 +318,7 @@ describe('runPipeline — status routing (REQ-OCF-6, D8)', () => {
   });
 
   test('the anomaly engine runs ONLY on matched items, and its verdict routes the entry', async () => {
-    const check = vi.fn((): Anomaly | null => anomaly);
+    const check = vi.fn(async (): Promise<Anomaly | null> => anomaly);
     const outcome = await runPipeline(
       audio(),
       CATALOGUE,
@@ -333,7 +333,7 @@ describe('runPipeline — status routing (REQ-OCF-6, D8)', () => {
   });
 
   test('the anomaly engine is NOT consulted for ambiguous or no_match items', async () => {
-    const check = vi.fn((): Anomaly | null => anomaly);
+    const check = vi.fn(async (): Promise<Anomaly | null> => anomaly);
     await runPipeline(
       audio(),
       CATALOGUE,
@@ -413,7 +413,10 @@ describe('runPipeline — queue ordering', () => {
       deps({
         extraction: staticExtraction(items),
         match: async (req: MatchRequest) => byName[req.spoken_name]!,
-        anomalies: { check: (item) => (item.extracted.spokenName === 'anomalous' ? anomaly : null) },
+        anomalies: {
+          check: async (item) =>
+            item.extracted.spokenName === 'anomalous' ? anomaly : null,
+        },
       }),
     );
 

@@ -18,7 +18,16 @@ export interface Anomaly {
 }
 
 export interface AnomalyEngine {
-  /** `null` means "nothing suspicious" — the common case, and the only result
-   *  the three script-1 items may produce (no false positives). */
-  check(item: ConfirmableItem): Anomaly | null;
+  /**
+   * `null` means "nothing suspicious" — the common case, and the only result
+   * the three script-1 items may produce (no false positives).
+   *
+   * ASYNC (design D4) so `HttpAnomalyEngine` can answer from the server-side
+   * validation route. The contract is UNIFORMLY `Promise<Anomaly | null>`, not
+   * a union with the synchronous shape: a union forces every call site to prove
+   * which implementation it is holding, which is exactly the coupling this seam
+   * exists to remove. `FixtureAnomalyEngine`'s rules stay synchronous pure
+   * functions internally; only the seam is awaited.
+   */
+  check(item: ConfirmableItem): Promise<Anomaly | null>;
 }

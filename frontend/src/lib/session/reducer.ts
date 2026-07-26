@@ -31,8 +31,12 @@ export const initialSessionState: SessionState = {
   recording: false,
   requestInFlight: false,
   records: [],
+  recordSeq: 0,
   progress: { counted: 45, total: 107 },
   catalogueId: null,
+  planId: null,
+  operatorId: null,
+  warehouseId: null,
   lastTranscript: null,
   error: null,
 };
@@ -116,6 +120,7 @@ function toRecord(
     id: `rec-${at}-${seq}`,
     quantity: item.extracted.quantity,
     unitDisplay: item.picked.unidad_display,
+    unitCode: item.picked.unidad,
     articulo: item.picked.articulo,
     nrArticulo: item.picked.nr_articulo,
     spokenName: item.extracted.spokenName,
@@ -125,11 +130,18 @@ function toRecord(
   };
 }
 
-/** Newest first (design §6). Voice only ever prepends — never edits (RF-20). */
+/**
+ * Newest first (design §6). Voice only ever prepends — never edits (RF-20).
+ *
+ * `recordSeq` advances by the number created and is never wound back, so the
+ * ids handed to the server as idempotency keys stay unique for the whole
+ * session even after a delete-and-redictate.
+ */
 function appendRecords(state: SessionState, created: CountRecord[]): SessionState {
   return {
     ...state,
     records: [...created, ...state.records],
+    recordSeq: state.recordSeq + created.length,
     progress: { ...state.progress, counted: state.progress.counted + created.length },
   };
 }
@@ -179,7 +191,52 @@ export function sessionReducer(state: SessionState, event: SessionEvent): Sessio
 
     case 'PLAN_STARTED':
       if (state.screen !== 'plans') return state;
-      return { ...state, screen: 'count', overlay: null, catalogueId: event.catalogueId };
+      return {
+        ...state,
+        screen: 'count',
+        overlay: null,
+        catalogueId: event.catalogueId,
+        // Absent on the fixture/demo path; every server write is guarded by the
+        // route anyway, so a null here simply means "nothing to persist against".
+        planId: event.planId ?? null,
+        operatorId: event.operatorId ?? null,
+        warehouseId: event.warehouseId ?? null,
+      };
+
+    /* --- session resume (REQ-OCF-13) ----------------------------------- */
+
+    /**
+     * Only from `permiso` — the screen a fresh mount starts on. Accepting it
+     * later would let a slow restore overwrite records the operator has
+     * dictated in the meantime, which is the very data loss this event exists
+     * to prevent.
+     *
+     * `micPermission` is set to `granted` because `CountSession` re-acquires the
+     * stream BEFORE dispatching: the browser remembers the origin's grant, so
+     * the resume is silent, and a failure keeps the operator on the consent
+     * screen instead of landing them on a count screen with a dead mic.
+     */
+    case 'SESSION_RESUMED':
+      if (state.screen !== 'permiso') return state;
+      return {
+        ...state,
+        screen: 'count',
+        overlay: null,
+        consentChecked: true,
+        micPermission: 'granted',
+        catalogueId: event.catalogueId,
+        planId: event.planId,
+        operatorId: event.operatorId,
+        warehouseId: event.warehouseId,
+        records: event.records,
+        // Past every restored id, so a newly dictated count cannot mint a
+        // `client_record_id` that collides with one already in the database.
+        recordSeq: state.recordSeq + event.records.length,
+        progress: {
+          ...state.progress,
+          counted: state.progress.counted + event.records.length,
+        },
+      };
 
     /* --- S3 recording -------------------------------------------------- */
 
@@ -245,8 +302,10 @@ export function sessionReducer(state: SessionState, event: SessionEvent): Sessio
 
     case 'CONFIRM_ACCEPTED': {
       if (state.overlay?.kind !== 'confirm') return state;
+      // `sync` until the server confirms (design D5): the record is on screen
+      // immediately, but it does not claim to be settled until it really is.
       const created = state.overlay.items.map((item, i) =>
-        toRecord(item, event.at, state.records.length + i, 'ok'),
+        toRecord(item, event.at, state.recordSeq + i, 'sync'),
       );
       return { ...appendRecords(state, created), overlay: null };
     }
@@ -267,7 +326,9 @@ export function sessionReducer(state: SessionState, event: SessionEvent): Sessio
     case 'ANOMALY_KEEP_NOTED': {
       if (state.overlay?.kind !== 'anomaly') return state;
       const { item, anomaly, queue } = state.overlay;
-      const kept = toRecord(item, event.at, state.records.length, 'anom_noted', anomaly);
+      // Also optimistic: it settles as `anom_noted` on `RECORD_PERSISTED`,
+      // which reads the anomaly back off the record itself.
+      const kept = toRecord(item, event.at, state.recordSeq, 'sync', anomaly);
       return { ...appendRecords(state, [kept]), overlay: openNext(queue, state.lastTranscript ?? '') };
     }
 
@@ -310,6 +371,29 @@ export function sessionReducer(state: SessionState, event: SessionEvent): Sessio
         records,
         progress: { ...state.progress, counted: Math.max(0, state.progress.counted - removed) },
       };
+    }
+
+    /* --- persistence outcomes (REQ-OCF-13, D5) -------------------------- */
+
+    case 'RECORD_PERSISTED': {
+      const index = state.records.findIndex((r) => r.id === event.id);
+      if (index === -1) return state;
+      const target = state.records[index]!;
+      // The settled state is DERIVED from the record, not carried on the event:
+      // the reducer already knows whether the operator kept an anomaly, and a
+      // second source of truth could disagree with the badge on screen.
+      const settled = target.anomaly ? 'anom_noted' : 'ok';
+      const records = [...state.records];
+      records[index] = { ...target, state: settled, serverId: event.serverId };
+      return { ...state, records };
+    }
+
+    case 'RECORD_PERSIST_FAILED': {
+      const index = state.records.findIndex((r) => r.id === event.id);
+      if (index === -1) return state;
+      // The record STAYS. Dropping it would silently lose a physical count the
+      // operator already performed; `sync` plus the banner tells the truth.
+      return { ...state, error: event.error };
     }
 
     /* --- S9 «Terminar conteo» (REQ-OCF-9, D9 — authored control) -------- */

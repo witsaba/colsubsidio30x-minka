@@ -19,16 +19,21 @@
  */
 import { useState } from 'preact/hooks';
 
+import { postConsent, type ConsentInput } from '../../lib/api/operational';
 import { requestMicrophone, type MicrophoneResult } from '../../lib/audio/capture';
 import type { SessionEvent, SessionState } from '../../lib/session/types';
 
 export interface ConsentScreenProps {
   state: SessionState;
   dispatch: (event: SessionEvent) => void;
+  /** The identity the consent row is written for (design D2 — client-supplied). */
+  operatorId: string;
   /** Injectable for tests; production uses the real `requestMicrophone`. */
   requestMic?: () => Promise<MicrophoneResult>;
   /** Handed the live stream so the session can build recorders from it. */
   onGranted?: (stream: MediaStream) => void;
+  /** Injectable for tests; production uses the real `POST /api/consent`. */
+  persistConsent?: (input: ConsentInput) => Promise<unknown>;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -41,6 +46,14 @@ const CHECKBOX_LABEL =
 const FALLBACK_NOTE =
   'Sin autorización el conteo se hace escribiendo artículo por artículo. ' +
   'Puedes autorizar más tarde desde tu perfil.';
+
+/**
+ * REQ-SDA-2: a failed consent write must be visible and retryable. It must NOT
+ * read like a microphone problem — the microphone is already granted at this
+ * point — and it must never let the flow continue as if consent were recorded.
+ */
+const PERSIST_ERROR =
+  'No pudimos registrar tu autorización. Revisa la conexión e inténtalo de nuevo.';
 
 interface InfoRow {
   icon: string;
@@ -88,11 +101,34 @@ const INFO_ROWS: readonly InfoRow[] = [
 export function ConsentScreen({
   state,
   dispatch,
+  operatorId,
   requestMic = requestMicrophone,
   onGranted,
+  persistConsent = postConsent,
 }: ConsentScreenProps) {
   const [pending, setPending] = useState(false);
   const [showFallback, setShowFallback] = useState(state.micPermission === 'denied');
+  const [persistFailed, setPersistFailed] = useState(false);
+
+  /**
+   * The BLOCKING half (design D5). `MIC_GRANTED` is the transition to S2, so it
+   * is dispatched only once `voice_consents` really carries the row: an operator
+   * must never count under an authorisation the system failed to record.
+   */
+  const persist = async (): Promise<void> => {
+    setPending(true);
+    try {
+      await persistConsent({ operatorId });
+      setPersistFailed(false);
+      dispatch({ type: 'MIC_GRANTED' });
+    } catch {
+      // The concrete transport reason is deliberately not rendered: it is an
+      // English `UiError` code and tells the operator nothing actionable.
+      setPersistFailed(true);
+    } finally {
+      setPending(false);
+    }
+  };
 
   const allow = async (): Promise<void> => {
     // Belt and braces: the button is disabled, and the handler still refuses.
@@ -107,7 +143,10 @@ export function ConsentScreen({
 
     if (result.ok) {
       onGranted?.(result.stream);
-      dispatch({ type: 'MIC_GRANTED' });
+      // Consent is written only for an operator who can actually dictate: a
+      // denied microphone means the voice flow never starts, so there is no
+      // voice processing to authorise.
+      await persist();
       return;
     }
     // Denied or unavailable: stay on this screen and offer the manual path.
@@ -175,6 +214,18 @@ export function ConsentScreen({
         <p class="consent__fallback" role="status">
           {FALLBACK_NOTE}
         </p>
+      ) : null}
+
+      {persistFailed ? (
+        <div class="consent__error" role="alert">
+          <p>{PERSIST_ERROR}</p>
+          {/* Retries the WRITE only. The microphone is already granted, and
+              re-prompting for it would be a second permission dialog for a
+              failure that has nothing to do with the microphone. */}
+          <button type="button" class="btn btn--ghost" disabled={pending} onClick={() => void persist()}>
+            Reintentar
+          </button>
+        </div>
       ) : null}
 
       <footer class="consent__actions">

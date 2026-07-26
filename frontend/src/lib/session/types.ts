@@ -64,6 +64,14 @@ export interface CountRecord {
   /** Rendered from `Candidate.unidad_display` only. Null renders no unit text;
    *  the English `unidad` is NEVER rendered (REQ-OCF-7). */
   unitDisplay: string | null;
+  /**
+   * The canonical `Candidate.unidad`, kept ONLY for the server write
+   * (`count_records.unit_code`) and the server-side unit re-validation
+   * (REQ-SDA-4, REQ-AV-1). No screen reads this field — `RecordList` renders a
+   * whitelist and `unitDisplay` is the only unit in it — so REQ-OCF-7 holds by
+   * the same structural argument as before: there is no code path that prints it.
+   */
+  unitCode: string | null;
   /** The catalogue article name that was matched. */
   articulo: string;
   /** Null renders the SKU line without a code (REQ-OCF-7). */
@@ -73,6 +81,12 @@ export interface CountRecord {
   state: RecordState;
   /** Set when the record was kept despite an anomaly (`anom_noted`). */
   anomaly?: Anomaly;
+  /**
+   * `count_records.id` once the server accepted the write (REQ-OCF-13, D5).
+   * Null while the record is still `sync`. The local `id` stays the client-minted
+   * one — it is also the idempotency key, so it must not be rewritten.
+   */
+  serverId?: string | null;
   /** Epoch ms; supplied by the caller so the reducer stays pure. */
   createdAt: number;
 }
@@ -92,6 +106,17 @@ export interface SessionState {
   requestInFlight: boolean;
   /** Newest first. */
   records: CountRecord[];
+  /**
+   * MONOTONIC record counter, never decremented.
+   *
+   * `CountRecord.id` is sent as `count_records.client_record_id`, the unique
+   * idempotency key. Deriving the id from `records.length` meant a
+   * delete-then-redictate minted the SAME key as the row it replaced, so the
+   * redictation resolved to the soft-deleted record instead of creating a new
+   * one — the exact opposite of RF-20/21. This counter is why an id can never
+   * be reused within a session.
+   */
+  recordSeq: number;
   /** Seeded 45/107 from the operator fixture. */
   progress: { counted: number; total: number };
   /**
@@ -100,6 +125,18 @@ export interface SessionState {
    * request needs it, so it is authored into the state here.
    */
   catalogueId: string | null;
+  /**
+   * The audit plan chosen on the plans screen, and the operator counting it
+   * (REQ-SDA-3/4). Null before `PLAN_STARTED`. Every server write is scoped by
+   * this pair — the route re-checks the assignment, so these are a REQUEST
+   * claim, not an authorization (design D2).
+   *
+   * `warehouseId` is carried alongside because the anomaly check needs it and
+   * the plan is the only place it is known.
+   */
+  planId: string | null;
+  operatorId: string | null;
+  warehouseId: string | null;
   /**
    * The transcript of the utterance currently being resolved; null before the
    * first one.
@@ -145,7 +182,38 @@ export type SessionEvent =
   | { type: 'MIC_DENIED' }
 
   /* --- S2 plans --------------------------------------------------------- */
-  | { type: 'PLAN_STARTED'; catalogueId: string }
+  /**
+   * The plan fields are OPTIONAL so the fixture/demo path (catalogue only) and
+   * the plan-backed path (REQ-SDA-3) share one event instead of two.
+   */
+  | {
+      type: 'PLAN_STARTED';
+      catalogueId: string;
+      planId?: string;
+      operatorId?: string;
+      warehouseId?: string;
+    }
+
+  /**
+   * Session resume after a reload (REQ-OCF-13, task 6.11).
+   *
+   * `CountRecord.id` is the client-minted `count_records.client_record_id`, so
+   * a reload that started from an empty list re-minted ids and wrote a SECOND
+   * row for a shelf that was already counted. `CountSession` fetches the
+   * persisted records for the plan+operator and hands them back here.
+   *
+   * All four scope fields are REQUIRED, unlike `PLAN_STARTED`: a resume with no
+   * plan has nothing to have restored records from.
+   */
+  | {
+      type: 'SESSION_RESUMED';
+      catalogueId: string;
+      planId: string;
+      operatorId: string;
+      warehouseId: string;
+      /** Already settled (`ok`/`anom_noted`) and carrying their `serverId`. */
+      records: CountRecord[];
+    }
 
   /* --- S3 recording ----------------------------------------------------- */
   /** Guard: `!blocked && overlay === null && !requestInFlight && micPermission === 'granted'`. */
@@ -186,6 +254,17 @@ export type SessionEvent =
    * design §6's table, which has no delete transition.
    */
   | { type: 'RECORD_DELETED'; id: string }
+  /**
+   * Optimistic persistence outcomes (design D5, REQ-OCF-13).
+   *
+   * A confirmed record is appended in `sync` and the component fires the write.
+   * `RECORD_PERSISTED` settles it — `anom_noted` when it carries an anomaly,
+   * `ok` otherwise — and stores `count_records.id`. `RECORD_PERSIST_FAILED`
+   * leaves it in `sync` and raises the banner: the count is NEVER dropped, and
+   * `sync` never becomes a claim of offline capability (REQ-OCF-11).
+   */
+  | { type: 'RECORD_PERSISTED'; id: string; serverId: string }
+  | { type: 'RECORD_PERSIST_FAILED'; id: string; error: UiError }
 
   /* --- finishing -------------------------------------------------------- */
   /** Guard: `overlay === null && !requestInFlight` (REQ-OCF-9, D9). */

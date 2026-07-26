@@ -42,19 +42,17 @@ function confirmable(
 }
 
 describe('rule (a) — mass vs volume mismatch, RF-26(b)', () => {
-  const anomaly = engine.check(
-    confirmable(
-      { quantity: 900, unit: 'gramos', spokenName: 'aceite de oliva extra virgen' },
-      { articulo: 'ACEITE DE OLIVA EXTRA VIRGEN 500ML', unidad_display: 'litros' },
-    ),
+  const mismatched = confirmable(
+    { quantity: 900, unit: 'gramos', spokenName: 'aceite de oliva extra virgen' },
+    { articulo: 'ACEITE DE OLIVA EXTRA VIRGEN 500ML', unidad_display: 'litros' },
   );
 
-  it('fires with kind "unidad"', () => {
-    expect(anomaly?.kind).toBe('unidad');
+  it('fires with kind "unidad"', async () => {
+    expect((await engine.check(mismatched))?.kind).toBe('unidad');
   });
 
-  it('carries the design contract copy verbatim', () => {
-    expect(anomaly).toEqual({
+  it('carries the design contract copy verbatim', async () => {
+    expect(await engine.check(mismatched)).toEqual({
       kind: 'unidad',
       title: 'Revisa la unidad antes de seguir',
       reason:
@@ -63,15 +61,15 @@ describe('rule (a) — mass vs volume mismatch, RF-26(b)', () => {
     });
   });
 
-  it('takes precedence over the range rule when both would fire', () => {
+  it('takes precedence over the range rule when both would fire', async () => {
     // 900 is also outside the learned 2-8 L range for this oil; the unit
     // problem is the one the operator must see first.
-    expect(anomaly?.kind).toBe('unidad');
+    expect((await engine.check(mismatched))?.kind).toBe('unidad');
   });
 
-  it('does not fire when the spoken unit agrees in dimension', () => {
+  it('does not fire when the spoken unit agrees in dimension', async () => {
     expect(
-      engine.check(
+      await engine.check(
         confirmable(
           { quantity: 4, unit: 'litros', spokenName: 'aceite de oliva extra virgen' },
           { articulo: 'ACEITE DE OLIVA EXTRA VIRGEN 500ML', unidad_display: 'litros' },
@@ -80,9 +78,9 @@ describe('rule (a) — mass vs volume mismatch, RF-26(b)', () => {
     ).toBeNull();
   });
 
-  it('does not fire when the operator said no unit at all', () => {
+  it('does not fire when the operator said no unit at all', async () => {
     expect(
-      engine.check(
+      await engine.check(
         confirmable(
           { quantity: 5, unit: null, spokenName: 'tablas para picar blancas' },
           { articulo: 'TABLA ACRILICA PICAR BLANCO 50X38CM FB', unidad_display: 'unidades' },
@@ -91,9 +89,9 @@ describe('rule (a) — mass vs volume mismatch, RF-26(b)', () => {
     ).toBeNull();
   });
 
-  it('does not fire when the catalogue article has no unit', () => {
+  it('does not fire when the catalogue article has no unit', async () => {
     expect(
-      engine.check(
+      await engine.check(
         confirmable(
           { quantity: 900, unit: 'gramos', spokenName: 'algo sin unidad' },
           { articulo: 'ARTICULO SIN UNIDAD', unidad_display: null },
@@ -104,19 +102,17 @@ describe('rule (a) — mass vs volume mismatch, RF-26(b)', () => {
 });
 
 describe('rule (b) — quantity outside the learned range, RF-26(c)', () => {
-  const anomaly = engine.check(
-    confirmable(
-      { quantity: 305, unit: 'unidades', spokenName: 'gaseosa personal' },
-      { articulo: 'GASEOSA PERSONAL 400ML', unidad_display: 'unidades' },
-    ),
+  const outOfRange = confirmable(
+    { quantity: 305, unit: 'unidades', spokenName: 'gaseosa personal' },
+    { articulo: 'GASEOSA PERSONAL 400ML', unidad_display: 'unidades' },
   );
 
-  it('fires with kind "cantidad"', () => {
-    expect(anomaly?.kind).toBe('cantidad');
+  it('fires with kind "cantidad"', async () => {
+    expect((await engine.check(outOfRange))?.kind).toBe('cantidad');
   });
 
-  it('carries the design contract copy verbatim', () => {
-    expect(anomaly).toEqual({
+  it('carries the design contract copy verbatim', async () => {
+    expect(await engine.check(outOfRange)).toEqual({
       kind: 'cantidad',
       title: 'Cantidad fuera de lo habitual',
       reason:
@@ -125,9 +121,9 @@ describe('rule (b) — quantity outside the learned range, RF-26(c)', () => {
     });
   });
 
-  it('does not fire inside the range', () => {
+  it('does not fire inside the range', async () => {
     expect(
-      engine.check(
+      await engine.check(
         confirmable(
           { quantity: 32, unit: 'unidades', spokenName: 'gaseosa personal' },
           { articulo: 'GASEOSA PERSONAL 400ML', unidad_display: 'unidades' },
@@ -136,9 +132,9 @@ describe('rule (b) — quantity outside the learned range, RF-26(c)', () => {
     ).toBeNull();
   });
 
-  it('does not fire for an article with no learned range', () => {
+  it('does not fire for an article with no learned range', async () => {
     expect(
-      engine.check(
+      await engine.check(
         confirmable(
           { quantity: 4000, unit: 'unidades', spokenName: 'servilletas' },
           { articulo: 'SERVILLETA BLANCA X 100', unidad_display: 'unidades' },
@@ -147,8 +143,8 @@ describe('rule (b) — quantity outside the learned range, RF-26(c)', () => {
     ).toBeNull();
   });
 
-  it('fires below the range too', () => {
-    const low = engine.check(
+  it('fires below the range too', async () => {
+    const low = await engine.check(
       confirmable(
         { quantity: 1, unit: 'unidades', spokenName: 'gaseosa personal' },
         { articulo: 'GASEOSA PERSONAL 400ML', unidad_display: 'unidades' },
@@ -179,8 +175,8 @@ describe('no false positives on demo script 1 — the three container items', ()
 
   it.each(scriptOneItems.map((item, i) => [i + 1, item] as const))(
     'item %i returns null',
-    (_n, item) => {
-      expect(engine.check(item)).toBeNull();
+    async (_n, item) => {
+      expect(await engine.check(item)).toBeNull();
     },
   );
 });
@@ -198,16 +194,16 @@ describe('the learned-ranges fixture', () => {
 });
 
 describe('REQ-OCF-5 — deterministic and swappable', () => {
-  it('returns an equal result for the same item', () => {
+  it('returns an equal result for the same item', async () => {
     const item = confirmable(
       { quantity: 305, unit: 'unidades', spokenName: 'gaseosa personal' },
       { articulo: 'GASEOSA PERSONAL 400ML', unidad_display: 'unidades' },
     );
-    expect(engine.check(item)).toEqual(engine.check(item));
+    expect(await engine.check(item)).toEqual(await engine.check(item));
   });
 
   it('satisfies the frozen AnomalyEngine interface, so a real service can replace it', () => {
-    const swapped: AnomalyEngine = { check: () => null };
+    const swapped: AnomalyEngine = { check: async () => null };
     expect(swapped.check).toBeTypeOf('function');
     expect(engine.check).toBeTypeOf('function');
   });

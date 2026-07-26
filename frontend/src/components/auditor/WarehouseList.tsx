@@ -6,7 +6,7 @@
  * explicitly stretch (S4), and faking eight record sets would be inventing
  * data the design never specified.
  */
-import type { Warehouse } from '../../fixtures/auditorSeed';
+import type { Warehouse } from '../../lib/auditor/types';
 
 export interface WarehouseListProps {
   warehouses: readonly Warehouse[];
