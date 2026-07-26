@@ -16,8 +16,15 @@
  *
  * `anomaly_evidence` is auditor-only material and is NEVER joined from any code
  * path reachable by an operator request.
+ *
+ * Both reads go through `dataOrThrow`, so a statistic that could not be READ
+ * raises `DbUnavailableError` instead of becoming a missing statistic. The
+ * distinction is not cosmetic: `POST /api/records` writes THIS module's verdict
+ * into `record_anomalies` (REQ-AV-2), so a swallowed error stored the count as
+ * clean and the auditor never learned there was anything to review. A product
+ * with genuinely no row still validates as `ok` — see `readRange`/`readTheoretical`.
  */
-import type { Db } from './db';
+import { dataOrThrow, type Db } from './db';
 
 /* -------------------------------------------------------------------------- */
 /* Column names                                                               */
@@ -109,13 +116,23 @@ function numberOrNull(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+/**
+ * The learned bounds, or `null` when this product has none in this warehouse.
+ *
+ * That `null` is a real answer and the rules below rely on it: with no learned
+ * range there is nothing to compare against, so `checkUnit` and `checkRange` both
+ * stay silent rather than invent a false positive (RF-26). A read that FAILED is
+ * not that answer, and `dataOrThrow` keeps the two apart.
+ */
 async function readRange(db: Db, facts: CountFacts): Promise<CountRange | null> {
-  const { data } = await db
-    .from(RANGES_TABLE)
-    .select('expected_min, expected_max, unit_code')
-    .eq('product_id', facts.productId)
-    .eq('warehouse_id', facts.warehouseId)
-    .maybeSingle();
+  const data = dataOrThrow(
+    await db
+      .from(RANGES_TABLE)
+      .select('expected_min, expected_max, unit_code')
+      .eq('product_id', facts.productId)
+      .eq('warehouse_id', facts.warehouseId)
+      .maybeSingle(),
+  );
 
   if (!data) return null;
   return {
@@ -125,13 +142,22 @@ async function readRange(db: Db, facts: CountFacts): Promise<CountRange | null> 
   };
 }
 
+/**
+ * The theoretical stock, or `null` when the warehouse carries no balance row.
+ *
+ * `null` must stay `null` and never become 0: `checkBalance` treats it as "no
+ * balance to exceed" and stays silent, whereas 0 would flag every single count as
+ * a negative balance. A failed read is a third case and refuses outright.
+ */
 async function readTheoretical(db: Db, facts: CountFacts): Promise<number | null> {
-  const { data } = await db
-    .from(BALANCES_TABLE)
-    .select('theoretical_qty')
-    .eq('product_id', facts.productId)
-    .eq('warehouse_id', facts.warehouseId)
-    .maybeSingle();
+  const data = dataOrThrow(
+    await db
+      .from(BALANCES_TABLE)
+      .select('theoretical_qty')
+      .eq('product_id', facts.productId)
+      .eq('warehouse_id', facts.warehouseId)
+      .maybeSingle(),
+  );
 
   return data ? numberOrNull(data.theoretical_qty) : null;
 }

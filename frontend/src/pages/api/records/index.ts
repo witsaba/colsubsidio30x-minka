@@ -122,15 +122,24 @@ export async function handleCreateRecord(db: Db, request: Request): Promise<Resp
     return badRequest('Faltan clientRecordId, planId, operatorId, quantity o la identidad del artículo.');
   }
 
-  const assignment = await assertPlanAssignment(db, input.planId, input.operatorId);
-  if (!assignment.ok) return forbidden(assignment.reason);
-
-  // AFTER the RF-07 guard: an unauthorized caller must not be able to probe the
-  // catalogue for which article codes exist.
-  const productId: string | null = await resolveProductId(db, input);
-  if (!productId) return badRequest('No encontramos ese artículo en el catálogo.');
-
+  /*
+   * The boundary opens HERE, not at the idempotency read.
+   *
+   * `assertPlanAssignment` and `resolveProductId` both raise
+   * `DbUnavailableError` rather than returning a verdict they could not compute,
+   * and both used to run outside this wrapper — so their throw would have
+   * escaped the handler entirely instead of becoming the 502 that says so. The
+   * decode above stays outside on purpose: a 400 is decided without the database.
+   */
   return respondingToDbFailure(async () => {
+    const assignment = await assertPlanAssignment(db, input.planId, input.operatorId);
+    if (!assignment.ok) return forbidden(assignment.reason);
+
+    // AFTER the RF-07 guard: an unauthorized caller must not be able to probe the
+    // catalogue for which article codes exist.
+    const productId: string | null = await resolveProductId(db, input);
+    if (!productId) return badRequest('No encontramos ese artículo en el catálogo.');
+
     /*
      * Idempotency: a retried POST must resolve, not duplicate.
      *
@@ -247,13 +256,17 @@ export async function handleListRecords(db: Db, request: Request): Promise<Respo
   const operatorId = params.get('operatorId');
   if (!planId || !operatorId) return badRequest('Faltan los parámetros planId y operatorId.');
 
-  // RF-07 FIRST, exactly as on the write path. A read is not a lesser right:
-  // this list is what was counted in a plan, and an unassigned caller must not
-  // be able to enumerate it — or to probe which plans hold data.
-  const assignment = await assertPlanAssignment(db, planId, operatorId);
-  if (!assignment.ok) return forbidden(assignment.reason);
-
   return respondingToDbFailure(async () => {
+    // RF-07 FIRST, exactly as on the write path. A read is not a lesser right:
+    // this list is what was counted in a plan, and an unassigned caller must not
+    // be able to enumerate it — or to probe which plans hold data.
+    //
+    // Inside the boundary, also exactly as on the write path: the guard reads
+    // three tables, and a 403 it could not actually decide would tell the
+    // operator their own plan is not theirs.
+    const assignment = await assertPlanAssignment(db, planId, operatorId);
+    if (!assignment.ok) return forbidden(assignment.reason);
+
     const rows = dataOrThrow(
       await db
         .from('count_records')

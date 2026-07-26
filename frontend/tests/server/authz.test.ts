@@ -11,6 +11,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { assertPlanAssignment } from '../../src/lib/server/authz';
+import { DbUnavailableError } from '../../src/lib/server/db';
 import { createStubDb } from './stub-db';
 
 const PLAN = 'plan-1';
@@ -25,9 +26,17 @@ const CATALOGUE = 'STOCK_RESTAURANTE_FUENTES_AYB';
  * failure this suite exists to catch — PostgREST errors the entire select on an
  * unknown column, so a single wrong name refuses every plan unconditionally.
  */
-function db(options: { assigned?: boolean; status?: string; warehouses?: boolean } = {}) {
+function db(
+  options: {
+    assigned?: boolean;
+    status?: string;
+    warehouses?: boolean;
+    errors?: Record<string, string>;
+  } = {},
+) {
   const { assigned = true, status = 'active', warehouses = true } = options;
   return createStubDb({
+    errors: options.errors,
     tables: {
       audit_plans: [{ id: PLAN, status, warehouse_id: 'wh-1' }],
       warehouses: warehouses ? [{ id: 'wh-1', code: CATALOGUE }] : [],
@@ -108,5 +117,61 @@ describe('assertPlanAssignment', () => {
 
     const assignment = stub.calls.find((call) => call.table === 'plan_operators');
     expect(assignment?.filters.map((f) => f.column).sort()).toEqual(['plan_id', 'profile_id']);
+  });
+});
+
+/**
+ * A failed lookup is NOT a refusal (`dataOrThrow`, `lib/server/db.ts`).
+ *
+ * This is the sharpest instance of the swallowed-error defect in the codebase.
+ * `{ ok: false, reason }` is an AFFIRMATIVE claim — the route turns it into
+ * `403 forbidden`, which states that this operator is not assigned to this plan.
+ * A bad service key, an RLS denial or a dropped connection resolves
+ * `{ data: null, error }`, and destructuring only `data` made every one of those
+ * indistinguishable from "no `plan_operators` row". The server was answering a
+ * question it had not been able to ask.
+ *
+ * `DbUnavailableError` propagates out of this module on purpose: the callers are
+ * routes that already wrap their body in `respondingToDbFailure`, so one throw
+ * becomes one 502. Returning a third variant here would put the check back at
+ * every call site, which is the shape of the bug.
+ *
+ * The refusals above still refuse: an ABSENT row keeps its meaning exactly.
+ */
+describe('assertPlanAssignment — a failed lookup is never a refusal', () => {
+  it('refuses to answer at all when plan_operators cannot be read, rather than reporting the operator unassigned', async () => {
+    const stub = db({ errors: { 'select:plan_operators': 'JWT expired' } });
+
+    await expect(assertPlanAssignment(stub, PLAN, OPERATOR)).rejects.toBeInstanceOf(
+      DbUnavailableError,
+    );
+  });
+
+  it('never reads audit_plans once the assignment lookup has failed', async () => {
+    const stub = db({ errors: { 'select:plan_operators': 'JWT expired' } });
+
+    await expect(assertPlanAssignment(stub, PLAN, OPERATOR)).rejects.toThrow();
+
+    expect(stub.calls.map((call) => call.table)).not.toContain('audit_plans');
+  });
+
+  it('refuses to answer when audit_plans cannot be read, rather than claiming the plan does not exist', async () => {
+    const stub = db({ errors: { 'select:audit_plans': 'connection reset' } });
+
+    await expect(assertPlanAssignment(stub, PLAN, OPERATOR)).rejects.toBeInstanceOf(
+      DbUnavailableError,
+    );
+  });
+
+  it('refuses to answer when warehouses cannot be read, rather than granting a null catalogue', async () => {
+    // The distinction the `warehouses: false` case above depends on: a warehouse
+    // with no row is a real absence and still grants the plan with a null
+    // catalogue. An ERRORING lookup is a different fact, and silently granting a
+    // null catalogue would count the plan against no catalogue at all.
+    const stub = db({ errors: { 'select:warehouses': 'permission denied' } });
+
+    await expect(assertPlanAssignment(stub, PLAN, OPERATOR)).rejects.toBeInstanceOf(
+      DbUnavailableError,
+    );
   });
 });
