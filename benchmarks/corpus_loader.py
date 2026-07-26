@@ -224,7 +224,16 @@ def load_xlsx_corpus(dataset_dir: Path) -> list[CorpusClip]:
     acertividad_idx = header_index["ACERTIVIDAD"]
     dificultad_idx = header_index["DIFICULTAD"]
 
-    body = [tuple(row) for row in rows[1:] if any(cell not in (None, "") for cell in row)]
+    # openpyxl (read-only) yields SHORT tuples for rows whose trailing cells
+    # are absent — e.g. workbooks without a trustworthy ``<dimension>`` record.
+    # Pad to the header width so an absent trailing cell behaves exactly like
+    # an explicit empty cell instead of raising a raw IndexError.
+    width = len(headers)
+    body = [
+        tuple(row) + (None,) * (width - len(row))
+        for row in rows[1:]
+        if any(cell not in (None, "") for cell in row)
+    ]
 
     # First pass: collect canonical ids + audio paths so a duplicate id or
     # missing audio fails before the unlabeled-audio check.

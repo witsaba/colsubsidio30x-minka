@@ -94,6 +94,58 @@ def two_dataset_corpus(tmp_path: Path, write_xlsx) -> Path:
 
 
 @pytest.fixture
+def write_ragged_xlsx():
+    """Write a workbook whose short rows come back as genuinely ragged tuples.
+
+    ``openpyxl`` normally pads every row to the sheet ``<dimension>`` width,
+    but real-world exports (Google Sheets, some Excel builds) omit or
+    under-report that record, and read-only iteration then yields SHORT
+    tuples for rows whose trailing cells are absent. The writer strips the
+    ``<dimension>`` element to reproduce that shape deterministically.
+    """
+
+    import re as _re
+    import shutil
+    import zipfile
+
+    from openpyxl import Workbook
+
+    def _write(path: Path, header: list[str], rows: Iterable[list]) -> None:
+        wb = Workbook()
+        sheet = wb.active
+        sheet.title = "Sheet1"
+        sheet.append(header)
+        for row in rows:
+            sheet.append(row)
+        wb.save(path)
+
+        patched = path.with_suffix(".patched.xlsx")
+        with zipfile.ZipFile(path) as zin, zipfile.ZipFile(
+            patched, "w", zipfile.ZIP_DEFLATED
+        ) as zout:
+            for item in zin.infolist():
+                data = zin.read(item.filename)
+                if item.filename.startswith("xl/worksheets/"):
+                    data = _re.sub(rb"<dimension[^/]*/>", b"", data)
+                zout.writestr(item, data)
+        shutil.move(str(patched), str(path))
+
+    return _write
+
+
+def _row_tuples(path: Path) -> list[tuple]:
+    """Read raw row tuples the same way the loader does (read-only mode)."""
+
+    from openpyxl import load_workbook
+
+    wb = load_workbook(path, read_only=True, data_only=True)
+    try:
+        return list(wb[wb.sheetnames[0]].iter_rows(values_only=True))
+    finally:
+        wb.close()
+
+
+@pytest.fixture
 def csv_corpus(tmp_path: Path) -> Path:
     labels = tmp_path / "labels.csv"
     labels.write_text(
@@ -373,6 +425,63 @@ def test_condition_is_never_inferred_from_dificultad(tmp_path: Path, write_xlsx)
     clips = load_xlsx_corpus(dataset)
     assert clips[0]["condition"] == "unknown"
     assert clips[0]["dificultad"] == "DIFICIL"
+
+
+# --- ragged rows (openpyxl omits absent trailing cells) ----------------------
+
+
+def test_ragged_row_with_missing_optional_cells_loads_like_empty_cells(
+    tmp_path: Path, write_ragged_xlsx
+) -> None:
+    dataset = tmp_path / "Daniel"
+    dataset.mkdir()
+    notas = dataset / "NOTAS_VOZ"
+    notas.mkdir()
+    write_ragged_xlsx(
+        dataset / "BD_AUDIOS.xlsx",
+        ["ID_UNICO", "TEXTO_AUDIO", "ACERTIVIDAD", "DIFICULTAD", "JSON PRODUCTOS"],
+        [[1.0, "uno"]],  # ACERTIVIDAD / DIFICULTAD / JSON PRODUCTOS cells absent
+    )
+    (notas / "1.ogg").write_bytes(b"x")
+
+    # Prove the fixture is genuinely ragged: openpyxl must yield a 2-tuple.
+    rows = _row_tuples(dataset / "BD_AUDIOS.xlsx")
+    assert len(rows[1]) == 2
+
+    clips = load_xlsx_corpus(dataset)
+    assert len(clips) == 1
+    assert clips[0]["transcript"] == "uno"
+    # Absent trailing cells behave exactly like explicit empty cells.
+    assert clips[0]["acertividad"] == ""
+    assert clips[0]["dificultad"] == ""
+
+
+def test_ragged_row_missing_required_cell_raises_validation_error(
+    tmp_path: Path, write_ragged_xlsx
+) -> None:
+    dataset = tmp_path / "Daniel"
+    dataset.mkdir()
+    notas = dataset / "NOTAS_VOZ"
+    notas.mkdir()
+    # The loader keys columns by header name, not position, so ID_UNICO may
+    # legally sit last — and a ragged short row then drops the required id
+    # cell entirely.
+    write_ragged_xlsx(
+        dataset / "BD_AUDIOS.xlsx",
+        ["TEXTO_AUDIO", "ACERTIVIDAD", "DIFICULTAD", "JSON PRODUCTOS", "ID_UNICO"],
+        [["uno", "irrelevante", "FACIL", "{}"]],  # ID_UNICO cell absent
+    )
+    (notas / "1.ogg").write_bytes(b"x")
+
+    # Prove the fixture is genuinely ragged: openpyxl must yield a 4-tuple.
+    rows = _row_tuples(dataset / "BD_AUDIOS.xlsx")
+    assert len(rows[1]) == 4
+
+    with pytest.raises(CorpusValidationError) as excinfo:
+        load_xlsx_corpus(dataset)
+    assert "BD_AUDIOS.xlsx" in str(excinfo.value)
+    assert "row 2" in str(excinfo.value)
+    assert "ID_UNICO" in str(excinfo.value)
 
 
 # --- Required columns -------------------------------------------------------
