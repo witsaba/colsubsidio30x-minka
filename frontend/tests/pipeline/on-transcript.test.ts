@@ -65,7 +65,7 @@ const extraction: ExtractionAdapter = {
   ],
 };
 
-const noAnomalies: AnomalyEngine = { check: () => null };
+const noAnomalies: AnomalyEngine = { check: async () => null };
 
 function deps(patch: Partial<PipelineDeps> = {}): PipelineDeps {
   return {

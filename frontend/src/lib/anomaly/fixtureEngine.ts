@@ -133,7 +133,11 @@ function checkQuantityRange(item: ConfirmableItem): Anomaly | null {
 }
 
 export class FixtureAnomalyEngine implements AnomalyEngine {
-  check(item: ConfirmableItem): Anomaly | null {
+  /**
+   * `async` only to satisfy the seam (design D4). The two rules below stay
+   * synchronous pure functions; nothing here awaits anything.
+   */
+  async check(item: ConfirmableItem): Promise<Anomaly | null> {
     return checkUnitMismatch(item) ?? checkQuantityRange(item);
   }
 }

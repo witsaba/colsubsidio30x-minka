@@ -66,6 +66,7 @@ function record(over: Partial<CountRecord> = {}): CountRecord {
     id: 'r-seed-1',
     quantity: 12,
     unitDisplay: 'unidades',
+    unitCode: null,
     articulo: 'GASEOSA 350ML',
     nrArticulo: '20031',
     spokenName: 'gaseosas',

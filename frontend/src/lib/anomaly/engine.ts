@@ -22,12 +22,12 @@ export interface AnomalyEngine {
    * `null` means "nothing suspicious" — the common case, and the only result
    * the three script-1 items may produce (no false positives).
    *
-   * WIDENED (design D4) so `HttpAnomalyEngine` can answer from the server-side
-   * validation route. The result is AWAITABLE rather than strictly a `Promise`:
-   * `FixtureAnomalyEngine` is a synchronous pure function and stays one, and
-   * `runPipeline` awaits either shape. Forcing the fixture engine to return a
-   * promise would buy nothing and would break its (still valuable) synchronous
-   * rule tests.
+   * ASYNC (design D4) so `HttpAnomalyEngine` can answer from the server-side
+   * validation route. The contract is UNIFORMLY `Promise<Anomaly | null>`, not
+   * a union with the synchronous shape: a union forces every call site to prove
+   * which implementation it is holding, which is exactly the coupling this seam
+   * exists to remove. `FixtureAnomalyEngine`'s rules stay synchronous pure
+   * functions internally; only the seam is awaited.
    */
-  check(item: ConfirmableItem): Anomaly | null | Promise<Anomaly | null>;
+  check(item: ConfirmableItem): Promise<Anomaly | null>;
 }
