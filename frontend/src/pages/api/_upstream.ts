@@ -1,10 +1,11 @@
 /**
- * Shared plumbing for the three proxy endpoints (design §3, REQ-PRX-1..5).
+ * Shared plumbing for the four proxy endpoints (design §3, REQ-PRX-1..6).
  *
- * Why these endpoints exist at all: neither Python service ships CORS, so a
- * browser cannot call `:8001` / `:8002` cross-origin — and neither service has
- * auth, so exposing them publicly is not an option either. Same-origin Astro
- * routes solve both at once without touching `services/`.
+ * Why these endpoints exist at all: the Python services either ship no CORS or
+ * ship a blanket `*`, so a browser must not call `:8001` / `:8002` / `:8003`
+ * cross-origin — and none of them has auth, so exposing them publicly is not an
+ * option either. Same-origin Astro routes solve both at once without touching
+ * `services/`.
  *
  * The proxy decides NOTHING. It forwards, and it surfaces whatever the upstream
  * said — status and body untouched. Every mapping to UI semantics belongs to
@@ -14,9 +15,17 @@
  * never becomes a route.
  */
 
-/** Documented defaults (REQ-PRX-5). Overridable via env, never via request. */
+/**
+ * Documented defaults (REQ-PRX-5). Overridable via env, never via request.
+ *
+ * These ARE the documentation: the repo ships no `frontend/.env.example`, and
+ * compose supplies the in-network values (`EXTRACTOR_BASE_URL:
+ * http://product_identification:8003`). Running the frontend bare against a
+ * locally started stack needs no env at all.
+ */
 export const STT_BASE_DEFAULT = 'http://localhost:8001';
 export const MATCHER_BASE_DEFAULT = 'http://localhost:8002';
+export const EXTRACTOR_BASE_DEFAULT = 'http://localhost:8003';
 
 /**
  * STT's worst case is `STT_TOTAL_DEADLINE_S = 45 s`. The proxy budget must
@@ -25,6 +34,14 @@ export const MATCHER_BASE_DEFAULT = 'http://localhost:8002';
  */
 export const TRANSCRIBE_TIMEOUT_MS = 50_000;
 export const MATCH_TIMEOUT_MS = 10_000;
+
+/**
+ * The extractor runs a dual-Gemini consensus and ships NO server-side deadline
+ * of its own, so this abort is the only backstop the caller has. It cannot
+ * reuse `MATCH_TIMEOUT_MS`: 10 s is tuned for an in-process sqlite lookup,
+ * while a legitimate consensus routinely runs tens of seconds (REQ-PRX-6).
+ */
+export const EXTRACT_TIMEOUT_MS = 60_000;
 
 function base(envValue: string | undefined, fallback: string): string {
   return (envValue ?? fallback).replace(/\/+$/, '');
@@ -41,6 +58,10 @@ export function sttBase(): string {
 
 export function matcherBase(): string {
   return base(process.env.MATCHER_BASE_URL, MATCHER_BASE_DEFAULT);
+}
+
+export function extractorBase(): string {
+  return base(process.env.EXTRACTOR_BASE_URL, EXTRACTOR_BASE_DEFAULT);
 }
 
 /** The error envelope both services emit; the proxy reproduces its shape. */

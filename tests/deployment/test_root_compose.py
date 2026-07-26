@@ -280,6 +280,9 @@ class TestPerServiceContract:
         frontend = service_blocks(compose)["frontend"]
         assert "STT_BASE_URL: http://stt:8001" in frontend
         assert "MATCHER_BASE_URL: http://matcher:8002" in frontend
+        assert (
+            "EXTRACTOR_BASE_URL: http://product_identification:8003" in frontend
+        )
 
     def test_the_frontend_binds_every_interface(self, compose: str) -> None:
         """The Node adapter defaults to 127.0.0.1, which no published port can

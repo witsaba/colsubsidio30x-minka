@@ -9,9 +9,9 @@
  *     so a denial lands where the manual fallback is, not mid-count;
  *   - the recorder lifecycle — exactly one `RecorderHandle` per take;
  *   - the `runPipeline` invocation and its `PipelineDeps`, which is the one
- *     place `MockExtractionAdapter` (Module 2 seam) and `FixtureAnomalyEngine`
- *     (Module 4 seam) are named. Swapping either for a real service is a
- *     one-line change in this file and nowhere else;
+ *     place the extraction composition (Module 2 seam) and
+ *     `FixtureAnomalyEngine` (Module 4 seam) are named. The seam held: swapping
+ *     extraction from the mock to the real service was one line here;
  *   - the live `match()` re-query behind the manual-search sheet.
  *
  * The reducer stays pure precisely because this component exists: every effect
@@ -47,6 +47,8 @@ import { createRecorder, exceedsSizeLimit, requestMicrophone } from '../../lib/a
 import type { MicrophoneResult } from '../../lib/audio/capture';
 import type { RecorderHandle } from '../../lib/audio/types';
 import { mockExtractionAdapter } from '../../lib/extraction/mock';
+import { httpExtractionAdapter } from '../../lib/extraction/http';
+import { withFallback } from '../../lib/extraction/fallback';
 import type { ExtractionAdapter } from '../../lib/extraction/adapter';
 import { runPipeline, type PipelineDeps } from '../../lib/pipeline';
 import { initialSessionState, sessionReducer } from '../../lib/session/reducer';
@@ -112,10 +114,23 @@ function toUiError(error: unknown): UiError {
   return error instanceof UiError ? error : new UiError('vendor_error');
 }
 
+/**
+ * The shipped extraction wiring (REQ-EXT-5, REQ-EXT-7).
+ *
+ * The real service leads; the deterministic mock catches any failure for that
+ * one utterance. Built once at module level because it is stateless — putting
+ * it in the default parameter would rebuild the composition on every render and
+ * churn the `deps` memo.
+ *
+ * ROLLBACK: pass `mockExtractionAdapter` here instead. The route and the HTTP
+ * adapter go inert without any other edit.
+ */
+const realExtraction: ExtractionAdapter = withFallback(httpExtractionAdapter, mockExtractionAdapter);
+
 export function CountSession({
   transcribe = realTranscribe,
   match = realMatch,
-  extraction = mockExtractionAdapter,
+  extraction = realExtraction,
   anomalies,
   requestMic = requestMicrophone,
   openRecorder = createRecorder,

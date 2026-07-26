@@ -172,11 +172,18 @@ services:
       - "4321:4321"
     environment:
       # Container-internal addresses, fixed by the default network rather than
-      # by the operator. frontend/.env.example points both at localhost because
-      # it documents `npm run dev` on the host; in here localhost is this
-      # container, and the upstreams answer to their Compose service names.
+      # by the operator. The documented defaults in `src/pages/api/_upstream.ts`
+      # point at localhost because they cover `npm run dev` on the host; in here
+      # localhost is this container, and the upstreams answer to their Compose
+      # service names.
+      #
+      # Knowing an address is not waiting for it: no start-up ordering is
+      # declared for any of them (REQ-UCD-4). A missing upstream surfaces as a
+      # 502 from the route that needed it — and extraction degrades further
+      # still, to the offline mock, so the count survives a dead extractor.
       STT_BASE_URL: http://stt:8001
       MATCHER_BASE_URL: http://matcher:8002
+      EXTRACTOR_BASE_URL: http://product_identification:8003
       # Server-only Supabase credentials for the operational routes
       # (consent, plans, count records, auditor actions, Oracle export).
       # NOT `PUBLIC_`-prefixed on purpose: Astro inlines every PUBLIC_ variable

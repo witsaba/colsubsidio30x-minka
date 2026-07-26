@@ -2,11 +2,11 @@
  * `MockExtractionAdapter` — the Module 2 seam (REQ-EXT-1, REQ-EXT-3,
  * REQ-EXT-4, REQ-EXT-5).
  *
- * Module 2 (extraction / ITN / 3-model consensus) does NOT exist. This is a
- * deterministic, offline, keyword-tolerant stand-in that implements the frozen
- * `ExtractionAdapter` interface and nothing else. A real Module 2 later ships
- * as another `ExtractionAdapter` and no caller changes, because extraction is
- * injected at exactly one swap point (`PipelineDeps.extraction`).
+ * The real Module 2 is `HttpExtractionAdapter` (`http.ts`), the production
+ * default since REQ-EXT-6. This deterministic, offline, keyword-tolerant
+ * adapter remains as the silent per-utterance fallback (REQ-EXT-7) and the
+ * test double, injected at the same single swap point
+ * (`PipelineDeps.extraction`).
  *
  * The algorithm, in one pass over the normalized tokens:
  *   1. split the utterance into segments at commas and at a CONJUNCTION "y"
@@ -106,7 +106,9 @@ function extractSegment(tokens: string[]): ExtractedItem | null {
 }
 
 export class MockExtractionAdapter implements ExtractionAdapter {
-  extract(rawTranscript: string): ExtractedItem[] {
+  // `async` only to satisfy the shared interface: the body is pure, offline and
+  // synchronous, which is exactly what keeps the fallback deterministic.
+  async extract(rawTranscript: string): Promise<ExtractedItem[]> {
     return splitSegments(tokenize(rawTranscript))
       .map(extractSegment)
       .filter((item): item is ExtractedItem => item !== null);

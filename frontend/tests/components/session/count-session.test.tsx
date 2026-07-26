@@ -4,10 +4,15 @@
  * D3, D4).
  *
  * This is the only file in the operator vertical slice that exercises the whole
- * machine at once: real reducer, real `runPipeline`, real `MockExtractionAdapter`,
- * real `FixtureAnomalyEngine`, real screens and sheets. Only the three genuine
- * boundaries are stubbed — the microphone, the recorder and the two HTTP calls —
- * because those are exactly what the browser owns and a test cannot.
+ * machine at once: real reducer, real `runPipeline`, the real shipped extraction
+ * composition, real `FixtureAnomalyEngine`, real screens and sheets. Only the
+ * genuine boundaries are stubbed — the microphone, the recorder and the HTTP
+ * calls — because those are exactly what the browser owns and a test cannot.
+ *
+ * Extraction is deliberately NOT injected anywhere in this file: `fetch` is the
+ * only seam, so every test also proves the default wiring. Unless a test scripts
+ * `/api/extract`, the extractor is unreachable and the mock fallback carries the
+ * utterance — which is exactly what the demo host does when Vertex is down.
  *
  * The demo narrative is the acceptance bar, so the happy path here walks it end
  * to end: consent -> plans -> press-and-hold -> transcribe -> extract -> match
@@ -120,6 +125,18 @@ interface Stubs {
   removeRecord?: (id: string, input: { operatorId: string }) => Promise<{ id: string; deleted: boolean }>;
   /** Omit to exercise the REAL composition-root engine (the HTTP one). */
   anomalies?: AnomalyEngine;
+  /**
+   * Answers `POST /api/extract`. Omit and the extractor is unreachable, which
+   * is what routes every other test in this file through the mock fallback —
+   * the exact behaviour the demo host degrades to when Vertex is down.
+   */
+  extractFetch?: (input: RequestInfo | URL, init?: RequestInit) => Response | Promise<Response>;
+  /**
+   * `null` disables session resume. Tests that end mid-count need it: the real
+   * `sessionStorage` is shared across the file, so a left-over resume context
+   * would make the NEXT mount re-acquire the microphone.
+   */
+  resumeStorage?: Storage | null;
 }
 
 function mount(stubs: Stubs = {}) {
@@ -150,6 +167,17 @@ function mount(stubs: Stubs = {}) {
     stubs.removeRecord ?? (async (id: string) => ({ id, deleted: true })),
   );
 
+  // `extraction` is NOT injected: the point is to exercise whatever the
+  // composition root wires by default. `fetch` is the only seam left.
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    // Only `/api/extract` is scriptable. Every other URL keeps the harness's
+    // standing rule that the suite never reaches the network, so a stray call
+    // fails loudly instead of being answered by the extractor's stub body.
+    if (String(input) === '/api/extract' && stubs.extractFetch) return stubs.extractFetch(input, init);
+    throw new TypeError('fetch failed');
+  });
+  vi.stubGlobal('fetch', fetchMock);
+
   const view = render(
     <CountSession
       transcribe={transcribe}
@@ -164,6 +192,7 @@ function mount(stubs: Stubs = {}) {
       persistRecord={persistRecord}
       removeRecord={removeRecord}
       {...(stubs.anomalies ? { anomalies: stubs.anomalies } : {})}
+      {...(stubs.resumeStorage !== undefined ? { resumeStorage: stubs.resumeStorage } : {})}
     />,
   );
 
@@ -180,6 +209,7 @@ function mount(stubs: Stubs = {}) {
     persistConsent,
     persistRecord,
     removeRecord,
+    fetchMock,
   };
 }
 
@@ -216,6 +246,78 @@ async function dictate(view: ReturnType<typeof mount>): Promise<void> {
 /* -------------------------------------------------------------------------- */
 /* The demo narrative                                                         */
 /* -------------------------------------------------------------------------- */
+
+/* -------------------------------------------------------------------------- */
+/* The default extraction wiring (REQ-EXT-5, REQ-EXT-7)                       */
+/* -------------------------------------------------------------------------- */
+
+/** The extractor's wire body for a one-item consensus. */
+function consensus(producto: string, unidad: string, cantidad: number): Response {
+  return new Response(
+    JSON.stringify({
+      validated_inventory: [{ producto, unidad, cantidad }],
+      consensus_status: 'FULL_CONSENSUS',
+      confidence_score: 0.96,
+    }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  );
+}
+
+describe('CountSession — the production default is the real extraction service', () => {
+  it('calls POST /api/extract with the transcript when no adapter is injected', async () => {
+    const view = mount({
+      resumeStorage: null,
+      extractFetch: async () => consensus('LECHUGA BATAVIA', 'KILOGRAMO', 3),
+    });
+
+    await reachCountScreen(view);
+    await dictate(view);
+    await view.findByTestId('confirm-sheet');
+
+    const extractCalls = view.fetchMock.mock.calls.filter(([url]) => String(url) === '/api/extract');
+    expect(extractCalls).toHaveLength(1);
+    const [, init] = extractCalls[0] as [string, RequestInit];
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ transcription: SCRIPT_1 });
+  });
+
+  it("drives the confirm sheet from the SERVICE's answer, not the mock's", async () => {
+    // The service canonicalises: `KILOGRAMO`, not the spoken "kilos". Seeing
+    // that reach the matcher request is what proves the mock is out of the path.
+    const view = mount({
+      resumeStorage: null,
+      extractFetch: async () => consensus('LECHUGA BATAVIA', 'KILOGRAMO', 7),
+    });
+
+    await reachCountScreen(view);
+    await dictate(view);
+
+    const sheet = await view.findByTestId('confirm-sheet');
+    expect(within(sheet).getByTestId('confirm-item').textContent).toContain('7');
+    expect(view.match).toHaveBeenCalledWith(
+      expect.objectContaining({ spoken_name: 'LECHUGA BATAVIA', unit: 'kilogramo' }),
+    );
+  });
+
+  it('falls back to the mock silently when the extractor is unreachable', async () => {
+    // No `extractFetch`: `fetch` throws, so the whole utterance is replayed
+    // through the deterministic mock — with no error copy and no degraded badge
+    // anywhere on screen (REQ-EXT-7).
+    const view = mount({ resumeStorage: null });
+
+    await reachCountScreen(view);
+    await dictate(view);
+
+    const sheet = await view.findByTestId('confirm-sheet');
+    expect(within(sheet).getAllByTestId('confirm-item')).toHaveLength(1);
+    // The mock's spoken units, which the service would have canonicalised.
+    expect(view.match).toHaveBeenCalledWith(
+      expect.objectContaining({ spoken_name: 'lechuga batavia', unit: 'kilos' }),
+    );
+    expect(view.queryByText(/modo degradado/i)).toBeNull();
+    expect(view.queryByText(/sin conexión/i)).toBeNull();
+  });
+});
 
 describe('CountSession — the operator walk-through, end to end', () => {
   it('runs consent -> plans -> dictation -> confirm -> record -> done', async () => {

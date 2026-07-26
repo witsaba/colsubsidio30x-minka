@@ -1,0 +1,24 @@
+change: integrate-extraction-service
+created: 2026-07-26
+store: hybrid
+execution_mode: auto
+delivery_strategy: single-pr
+review_budget_lines: 5000
+pr: https://github.com/witsaba/colsubsidio30x-minka/pull/21
+strict_tdd: true
+worktree: /home/braejan/workspace/colsubsidio_30x/github_repo/colsubsidio30x-minka-worktrees/integrate-extraction-service
+branch: feat/integrate-extraction-service
+base: origin/main @ 64d826f
+phases:
+  explore: done        # engram sdd/integrate-extraction-service/explore (obs-450be6a6d571fae9)
+  proposal: done       # proposal.md + engram obs-2b817f5934800e41
+  spec: done           # specs/{extraction-adapter,service-proxy}/spec.md + engram obs #192
+  design: done         # design.md + engram obs #193; fresh-context validation PASS (proposal client.ts row amended)
+  tasks: done          # tasks.md (14 tasks, forecast ~600 lines, single-pr OK) + engram obs #194
+  apply: done          # 14/14, commits 062d80f..5d9b3bd, vitest 977 green, engram obs #195
+  verify: done         # PASS WITH WARNINGS (0C/4W/4S), verify-report.md + engram obs #196
+  archive: pending        # after PR #21 merges
+orchestrator_decisions:
+  - No operator-visible degraded indicator when extract falls back to the mock (demo scope).
+  - 60s extract timeout accepted as backstop; normal Gemini latency is seconds.
+  - Pre-demo GCP-creds smoke check is an explicit task; owner Braejan, demo host, morning of 26 Jul.
