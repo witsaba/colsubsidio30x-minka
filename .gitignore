@@ -30,4 +30,5 @@ frontend/.astro/
 # Service-account credentials (product_identification / Vertex AI).
 gen-lang-client-*.json
 *-key.json
+key-gcp.json
 service-account*.json

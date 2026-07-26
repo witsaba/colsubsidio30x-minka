@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Diagnóstico de Benchmarking - Inventario por Voz</title>
+  <!-- Chart.js via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
+      --card-bg: rgba(30, 41, 59, 0.7);
+      --card-border: rgba(255, 255, 255, 0.1);
+      --accent-cyan: #06b6d4;
+      --accent-purple: #8b5cf6;
+      --accent-green: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-pink: #ec4899;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg-gradient);
+      color: var(--text-main);
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .header-title h1 {
+      font-size: 1.8rem;
+      font-weight: 800;
+      background: linear-gradient(90deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .header-title p {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
+    }
+
+    .badge-live {
+      background: rgba(16, 185, 129, 0.2);
+      border: 1px solid var(--accent-green);
+      color: var(--accent-green);
+      padding: 0.5rem 1rem;
+      border-radius: 9999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .badge-dot {
+      width: 8px;
+      height: 8px;
+      background-color: var(--accent-green);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--accent-green);
+    }
+
+    /* KPI Grid */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2rem;
+    }
+
+    .kpi-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(12px);
+      border-radius: 1rem;
+      padding: 1.25rem;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .kpi-card:hover {
+      transform: translateY(-3px);
+      border-color: rgba(56, 189, 248, 0.4);
+    }
+
+    .kpi-label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    .kpi-value {
+      font-size: 1.9rem;
+      font-weight: 800;
+      color: #ffffff;
+    }
+
+    .kpi-subtext {
+      font-size: 0.75rem;
+      color: var(--accent-cyan);
+      margin-top: 0.4rem;
+    }
+
+    /* Charts Grid */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.5rem;
+      margin-bottom: 2.5rem;
+    }
+
+    @media (max-width: 992px) {
+      .charts-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .chart-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(12px);
+      border-radius: 1rem;
+      padding: 1.5rem;
+    }
+
+    .chart-card h3 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      color: #f1f5f9;
+    }
+
+    .canvas-container {
+      position: relative;
+      height: 280px;
+      width: 100%;
+    }
+
+    /* Table Section */
+    .table-section {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(12px);
+      border-radius: 1rem;
+      padding: 1.5rem;
+    }
+
+    .table-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .search-box input {
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid var(--card-border);
+      color: #ffffff;
+      padding: 0.6rem 1rem;
+      border-radius: 0.5rem;
+      font-size: 0.9rem;
+      width: 280px;
+      outline: none;
+    }
+
+    .search-box input:focus {
+      border-color: var(--accent-cyan);
+    }
+
+    .table-wrapper {
+      overflow-x: auto;
+      max-height: 420px;
+      overflow-y: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      text-align: left;
+    }
+
+    th {
+      background: rgba(15, 23, 42, 0.9);
+      color: var(--text-muted);
+      font-weight: 600;
+      padding: 0.75rem 1rem;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    td {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    tr:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .tag-diff {
+      padding: 0.2rem 0.6rem;
+      border-radius: 0.25rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    .tag-FACIL { background: rgba(16, 185, 129, 0.2); color: var(--accent-green); }
+    .tag-MEDIO { background: rgba(245, 158, 11, 0.2); color: var(--accent-amber); }
+    .tag-DIFICIL { background: rgba(236, 72, 153, 0.2); color: var(--accent-pink); }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-title">
+      <h1>Dashboard Diagnóstico de Benchmarking (8 Runs / 1,904 Evaluaciones)</h1>
+      <p>Sistema Inteligente de Inventario por Voz — Colsubsidio & Minka AI</p>
+    </div>
+    <div class="badge-live">
+      <div class="badge-dot"></div>
+      DATOS REALES CONSOLIDADOS
+    </div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-label">Evaluaciones Totales</div>
+      <div class="kpi-value" id="kpi-total">1,904</div>
+      <div class="kpi-subtext">238 audios × 8 corridas paralelas</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Latencia Total Prom.</div>
+      <div class="kpi-value" id="kpi-latency">4.77 s</div>
+      <div class="kpi-subtext">STT (0.4s) + LLM (4.3s) + Stock (0.006s)</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Costo por Audio</div>
+      <div class="kpi-value" id="kpi-cost">$0.0008</div>
+      <div class="kpi-subtext">$1.53 USD acumulado (1,904 notas)</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Precisión de Dígitos</div>
+      <div class="kpi-value" id="kpi-digits">100.0%</div>
+      <div class="kpi-subtext">Captura exacta de cantidades (REQ-BMK-3)</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Consenso IA Dual</div>
+      <div class="kpi-value" id="kpi-consensus">97.8%</div>
+      <div class="kpi-subtext">Acuerdo entre Gemini Flash y Pro</div>
+    </div>
+  </div>
+
+  <!-- Charts Grid -->
+  <div class="charts-grid">
+    <div class="chart-card">
+      <h3>1. Desglose de Latencia Promedio por Paso (ms)</h3>
+      <div class="canvas-container">
+        <canvas id="chartLatencyStep"></canvas>
+      </div>
+    </div>
+    <div class="chart-card">
+      <h3>2. Distribución de Evaluaciones por Complejidad</h3>
+      <div class="canvas-container">
+        <canvas id="chartDifficulty"></canvas>
+      </div>
+    </div>
+    <div class="chart-card">
+      <h3>3. Consistencia y Latencia a través de las 8 Corridas</h3>
+      <div class="canvas-container">
+        <canvas id="chartRuns"></canvas>
+      </div>
+    </div>
+    <div class="chart-card">
+      <h3>4. Estado del Consenso de Modelos de IA (Gemini Dual)</h3>
+      <div class="canvas-container">
+        <canvas id="chartConsensus"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Table Section -->
+  <div class="table-section">
+    <div class="table-header">
+      <h3>🔍 Muestra Detallada de Evaluaciones Paso a Paso</h3>
+      <div class="search-box">
+        <input type="text" id="searchInput" placeholder="Buscar por ID (ej: adriana_1, daniel_70)..." onkeyup="filterTable()">
+      </div>
+    </div>
+    <div class="table-wrapper">
+      <table id="resultsTable">
+        <thead>
+          <tr>
+            <th>Corrida</th>
+            <th>ID Audio</th>
+            <th>Autor</th>
+            <th>Dificultad</th>
+            <th>Latencia STT</th>
+            <th>Texto Transcrito STT</th>
+            <th>Consenso LLM</th>
+            <th>Coincidencia Stock</th>
+            <th>Latencia Total</th>
+            <th>Costo USD</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody">
+          <!-- Populated by JS -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Include data JS -->
+  <script src="dashboard_data.js"></script>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      if (typeof DASHBOARD_DATA === 'undefined') return;
+
+      const s = DASHBOARD_DATA.summary;
+      document.getElementById('kpi-total').innerText = s.total_evaluations.toLocaleString();
+      document.getElementById('kpi-latency').innerText = (s.avg_total_latency_ms / 1000).toFixed(2) + ' s';
+      document.getElementById('kpi-cost').innerText = '$' + s.cost_per_audio_usd.toFixed(4);
+      document.getElementById('kpi-digits').innerText = s.digit_accuracy_pct.toFixed(1) + '%';
+      document.getElementById('kpi-consensus').innerText = s.consensus_pct.toFixed(1) + '%';
+
+      // 1. Chart Latency per Step
+      new Chart(document.getElementById('chartLatencyStep'), {
+        type: 'bar',
+        data: {
+          labels: ['Paso 1: STT (Deepgram)', 'Paso 2: LLM Dual (Gemini)', 'Paso 3: Matcher (SQLite)'],
+          datasets: [{
+            label: 'Latencia Promedio (ms)',
+            data: [s.avg_stt_latency_ms, s.avg_llm_latency_ms, s.avg_matcher_latency_ms],
+            backgroundColor: ['#06b6d4', '#8b5cf6', '#10b981'],
+            borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+            x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
+          }
+        }
+      });
+
+      // 2. Chart Difficulty
+      const diffData = DASHBOARD_DATA.difficulty_breakdown;
+      new Chart(document.getElementById('chartDifficulty'), {
+        type: 'pie',
+        data: {
+          labels: ['FÁCIL (752)', 'MEDIO (800)', 'DIFÍCIL (352)', 'GARBAGE (56)'],
+          datasets: [{
+            data: [diffData.FACIL.count, diffData.MEDIO.count, diffData.DIFICIL.count, diffData.GARBAGE.count],
+            backgroundColor: ['#10b981', '#f59e0b', '#ec4899', '#64748b']
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'bottom', labels: { color: '#f8fafc' } } }
+        }
+      });
+
+      // 3. Chart Runs
+      const runsData = DASHBOARD_DATA.runs_breakdown;
+      new Chart(document.getElementById('chartRuns'), {
+        type: 'line',
+        data: {
+          labels: runsData.map(r => r.run),
+          datasets: [{
+            label: 'Latencia Total Promedio (ms)',
+            data: runsData.map(r => r.avg_total_ms),
+            borderColor: '#38bdf8',
+            backgroundColor: 'rgba(56, 189, 248, 0.1)',
+            fill: true,
+            tension: 0.3
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+            x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
+          }
+        }
+      });
+
+      // 4. Chart Consensus
+      new Chart(document.getElementById('chartConsensus'), {
+        type: 'doughnut',
+        data: {
+          labels: ['EXACT_CONSENSUS (97.8%)', 'PARTIAL_CONSENSUS (2.2%)', 'HIGH_DISCREPANCY (0.0%)'],
+          datasets: [{
+            data: [1862, 42, 0],
+            backgroundColor: ['#10b981', '#f59e0b', '#ef4444']
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'bottom', labels: { color: '#f8fafc' } } }
+        }
+      });
+
+      // Populate Table
+      const tbody = document.getElementById('tableBody');
+      DASHBOARD_DATA.sample_rows.forEach(r => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><strong>Run ${r.numero_corrida || 1}</strong></td>
+          <td><code>${r.composite_id}</code></td>
+          <td>${r.author}</td>
+          <td><span class="tag-diff tag-${r.dificultad}">${r.dificultad}</span></td>
+          <td>${parseFloat(r.paso1_latencia_ms).toFixed(1)} ms</td>
+          <td>${r.paso1_texto_stt || r.paso1_texto_ref}</td>
+          <td><strong>${r.paso2_estado_consenso}</strong></td>
+          <td>${r.paso3_producto_buscado}</td>
+          <td><strong>${parseFloat(r.flujo_latencia_total_ms).toFixed(1)} ms</strong></td>
+          <td>$${parseFloat(r.flujo_costo_total_usd).toFixed(5)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    });
+
+    function filterTable() {
+      const q = document.getElementById('searchInput').value.toLowerCase();
+      const rows = document.querySelectorAll('#tableBody tr');
+      rows.forEach(tr => {
+        const text = tr.innerText.toLowerCase();
+        tr.style.display = text.includes(q) ? '' : 'none';
+      });
+    }
+  </script>
+</body>
+</html>
