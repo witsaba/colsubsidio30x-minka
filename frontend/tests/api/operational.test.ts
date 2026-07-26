@@ -11,6 +11,7 @@ import { UiError } from '../../src/lib/api/types';
 import {
   createRecord,
   deleteRecord,
+  downloadExport,
   fetchAuditorRecords,
   fetchPlans,
   postAuditorAction,
@@ -128,5 +129,76 @@ describe('operational API client', () => {
     await expect(
       postAuditorAction({ auditorId: 'aud-1', recordId: 'rec-1', action: 'approve' }),
     ).rejects.toBeInstanceOf(UiError);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Oracle export download (REQ-OE-2, task 5.10)                               */
+/* -------------------------------------------------------------------------- */
+
+const CSV = 'subinventory,item,count_qty,uom,counter\nSTOCK_X,MP-1,3,und,OP.001\n';
+
+/** `POST /api/export` answers `text/csv`, not JSON — its own transport path. */
+function stubCsvFetch(
+  body: string,
+  status = 200,
+  headers: Record<string, string> = {},
+): Call[] {
+  const calls: Call[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      return new Response(body, {
+        status,
+        headers: { 'content-type': 'text/csv; charset=utf-8', ...headers },
+      });
+    }),
+  );
+  return calls;
+}
+
+describe('downloadExport', () => {
+  it('posts the plan and auditor and returns the CSV with its batch id and filename', async () => {
+    const calls = stubCsvFetch(CSV, 200, {
+      'content-disposition': 'attachment; filename="EXP-plan-1-20260725.csv"',
+      'x-export-batch-id': 'batch-9',
+    });
+
+    const download = await downloadExport({ planId: 'plan-1', auditorId: 'aud-1' });
+
+    expect(download).toEqual({
+      csv: CSV,
+      batchId: 'batch-9',
+      filename: 'EXP-plan-1-20260725.csv',
+    });
+    expect(calls[0]!.url).toBe('/api/export');
+    expect(calls[0]!.init.method).toBe('POST');
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ planId: 'plan-1', auditorId: 'aud-1' });
+  });
+
+  it('falls back to a plan-derived filename when the server names none', async () => {
+    stubCsvFetch(CSV, 200, { 'x-export-batch-id': 'batch-9' });
+
+    const download = await downloadExport({ planId: 'plan-1', auditorId: 'aud-1' });
+
+    expect(download.filename).toBe('export-plan-1.csv');
+    expect(download.batchId).toBe('batch-9');
+  });
+
+  it('rejects with a UiError when the batch could not be persisted — no file', async () => {
+    stubCsvFetch(JSON.stringify({ error: { code: 'vendor_error', message: 'no batch' } }), 500);
+
+    await expect(downloadExport({ planId: 'plan-1', auditorId: 'aud-1' })).rejects.toBeInstanceOf(
+      UiError,
+    );
+  });
+
+  it('rejects an empty body: a CSV with no lines is not a file the auditor may keep', async () => {
+    stubCsvFetch('', 200, { 'x-export-batch-id': 'batch-9' });
+
+    await expect(downloadExport({ planId: 'plan-1', auditorId: 'aud-1' })).rejects.toBeInstanceOf(
+      UiError,
+    );
   });
 });

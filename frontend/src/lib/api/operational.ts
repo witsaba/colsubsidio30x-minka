@@ -11,8 +11,10 @@
  * so component tests never touch the network.
  */
 import { request, MATCH_TIMEOUT_MS } from './client';
+import { UiError } from './types';
 
 const CONSENT_URL = '/api/consent';
+const EXPORT_URL = '/api/export';
 const PLANS_URL = '/api/plans';
 const RECORDS_URL = '/api/records';
 const AUDITOR_RECORDS_URL = '/api/auditor/records';
@@ -148,4 +150,69 @@ export function postAuditorAction(input: AuditorActionInput): Promise<{ id: stri
     jsonInit('POST', input),
     OPERATIONAL_TIMEOUT_MS,
   );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Oracle export (REQ-OE-1/2)                                                 */
+/* -------------------------------------------------------------------------- */
+
+export interface ExportDownload {
+  /** The exact bytes the auditor saves, and the ones `export_lines` holds. */
+  csv: string;
+  /** `export_batches.id` — what makes the saved file reconcilable later. */
+  batchId: string;
+  filename: string;
+}
+
+const FILENAME = /filename="?([^";]+)"?/i;
+
+/**
+ * `POST /api/export` — the only route in this client that does NOT answer JSON,
+ * so it cannot reuse `request<T>`. The error taxonomy is reproduced rather than
+ * approximated: a non-2xx is a `UiError` and produces NO file, which is exactly
+ * what REQ-OE-2 demands (a CSV with no persisted batch behind it is
+ * unreconcilable).
+ */
+export async function downloadExport(input: {
+  planId: string;
+  auditorId: string;
+}): Promise<ExportDownload> {
+  let response: Response;
+  try {
+    response = await fetch(EXPORT_URL, {
+      ...jsonInit('POST', input),
+      signal: AbortSignal.timeout(OPERATIONAL_TIMEOUT_MS),
+    });
+  } catch {
+    throw new UiError('proxy_unreachable');
+  }
+
+  if (!response.ok) throw new UiError('vendor_error');
+
+  const csv = await response.text();
+  // An empty body means the route produced no lines at all. Handing the auditor
+  // a blank file would look like a successful export of nothing.
+  if (csv.trim() === '') throw new UiError('vendor_error');
+
+  const disposition = response.headers.get('content-disposition') ?? '';
+  const named = FILENAME.exec(disposition);
+
+  return {
+    csv,
+    batchId: response.headers.get('x-export-batch-id') ?? '',
+    filename: named?.[1] ?? `export-${input.planId}.csv`,
+  };
+}
+
+/**
+ * Save an export to disk. Isolated from the component so the island's tests
+ * assert WHAT would be saved without a DOM download ever firing.
+ */
+export function saveExportFile(download: ExportDownload): void {
+  const url = URL.createObjectURL(new Blob([download.csv], { type: 'text/csv;charset=utf-8' }));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = download.filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }

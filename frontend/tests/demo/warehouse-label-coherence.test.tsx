@@ -66,7 +66,17 @@ describe('one bodega name across the whole demo', () => {
     const doneLabel = done.container.querySelector('#done-title')?.textContent;
     done.unmount();
 
-    const auditor = render(<AuditorReview clock={() => '9:05 a.m.'} />);
+    // The auditor island no longer imports the seed itself (task 5.6): the
+    // bodega pane is passed in, and the records arrive through the fetch seam.
+    const auditor = render(
+      <AuditorReview
+        planId="plan-demo"
+        auditorId="aud-demo"
+        warehouses={AUDITOR_WAREHOUSES}
+        clock={() => '9:05 a.m.'}
+        loadRecords={async () => AUDITOR_RECORDS}
+      />,
+    );
     const auditorTitle = auditor.container.querySelector('.review__title')?.textContent;
 
     // Non-trivial by construction: the label is a real catalogue label, and an
@@ -78,13 +88,21 @@ describe('one bodega name across the whole demo', () => {
     expect(auditorTitle).toBe(`${LABEL} · revisión`);
   });
 
-  it('opens the auditor on the very bodega the operator counted', () => {
+  it('opens the auditor on the very bodega the operator counted', async () => {
     const selected = AUDITOR_WAREHOUSES.filter((w) => w.selected);
     expect(selected).toHaveLength(1);
     expect(selected[0]?.name).toBe(LABEL);
 
-    render(<AuditorReview clock={() => '9:05 a.m.'} />);
-    const warehouses = screen.getByRole('list', { name: 'Bodegas' });
+    render(
+      <AuditorReview
+        planId="plan-demo"
+        auditorId="aud-demo"
+        warehouses={AUDITOR_WAREHOUSES}
+        clock={() => '9:05 a.m.'}
+        loadRecords={async () => AUDITOR_RECORDS}
+      />,
+    );
+    const warehouses = await screen.findByRole('list', { name: 'Bodegas' });
     const current = within(warehouses).getAllByRole('button', { current: true });
     expect(current).toHaveLength(1);
     expect(current[0]?.textContent).toContain(LABEL);

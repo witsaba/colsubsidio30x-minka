@@ -4,8 +4,8 @@
  * The chips are toggle buttons, so they carry `aria-pressed`; the design has no
  * aria at all and communicates the active chip with colour alone.
  */
-import type { AuditorRecord } from '../../fixtures/auditorSeed';
-import { badgeOf, isOpenAlert } from '../../fixtures/auditorSeed';
+import type { AuditorRecord } from '../../lib/auditor/types';
+import { badgeOf, isOpenAlert } from '../../lib/auditor/types';
 
 export type RecordFilter = 'mirada' | 'todos' | 'verificados';
 

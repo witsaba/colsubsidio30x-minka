@@ -5,9 +5,16 @@
  * are one connected local-state tree, so they live in one island rather than
  * four coordinating ones. `close` and `base` stay static `.astro`.
  *
- * DATA SOURCE: the seeded fixtures. The live operator->auditor handoff is
- * explicitly stretch (S4), so this island holds its own working copy of the
- * records and never fetches.
+ * DATA SOURCE (task 5.5/5.6): live rows from `GET /api/auditor/records`, fetched
+ * on mount through an injected seam and mapped by `lib/auditor/records.ts`. The
+ * eight seed fixtures are no longer imported here; they survive as test data
+ * handed to the same seam.
+ *
+ * WRITES ARE PESSIMISTIC (design D7). An auditor signature is drawn only after
+ * `POST /api/auditor/actions` has returned 2xx, and the export saves a file only
+ * after `POST /api/export` has persisted its batch (REQ-OE-2). Optimism here
+ * would let a signature or a file exist that the database has no record of,
+ * which is precisely what the trace exists to prevent.
  *
  * CORRECTED DESIGN BUG (REQ-AUD-5): the prototype's `blocked` modal is wired
  * backwards — its cancel control is labelled "Exportar de todos modos" but does
@@ -17,17 +24,19 @@
  * "Cancelar" and "Ver los pendientes", and no control anywhere in it mentions
  * exporting.
  */
-import { useMemo, useState } from 'preact/hooks';
+import { useCallback, useEffect, useMemo, useState } from 'preact/hooks';
 
-import type { AuditorRecord, TraceEntry, Warehouse } from '../../fixtures/auditorSeed';
 import {
-  AUDITOR_EYEBROW,
-  AUDITOR_NAME,
-  AUDITOR_RECORDS,
-  AUDITOR_WAREHOUSES,
-  isOpenAlert,
-  openAlertCount,
-} from '../../fixtures/auditorSeed';
+  downloadExport as realDownloadExport,
+  fetchAuditorRecords,
+  postAuditorAction,
+  saveExportFile,
+  type AuditorActionInput,
+  type ExportDownload,
+} from '../../lib/api/operational';
+import { toAuditorRecords } from '../../lib/auditor/records';
+import type { AuditorRecord, TraceEntry, Warehouse } from '../../lib/auditor/types';
+import { isOpenAlert, openAlertCount } from '../../lib/auditor/types';
 import { DetailPane } from './DetailPane';
 import { Modal } from './Modal';
 import type { RecordFilter } from './RecordList';
@@ -37,13 +46,64 @@ import { WarehouseList } from './WarehouseList';
 type ModalKind = 'blocked' | 'export' | 'correct' | 'recount';
 
 export interface AuditorReviewProps {
-  records?: readonly AuditorRecord[];
+  /** The plan under review. Empty means the page was opened without one. */
+  planId?: string;
+  /** Signs every action written to `auditor_actions`. */
+  auditorId?: string;
   warehouses?: readonly Warehouse[];
   /** Gates the export while any alert is open. Default `true`. */
   strictExport?: boolean;
   auditorName?: string;
+  eyebrow?: string;
   /** Injected so trace timestamps are deterministic under test. */
   clock?: () => string;
+  /** Fetch seam, defaulted to the real `GET /api/auditor/records`. */
+  loadRecords?: (
+    planId: string,
+    opts?: { signal?: AbortSignal },
+  ) => Promise<readonly AuditorRecord[]>;
+  /** Write seam (D7), defaulted to the real `POST /api/auditor/actions`. */
+  submitAction?: (input: AuditorActionInput) => Promise<{ id: string; action: string }>;
+  /** Export seam, defaulted to the real `POST /api/export`. */
+  runExport?: (input: { planId: string; auditorId: string }) => Promise<ExportDownload>;
+  /** Save seam, so tests assert WHAT would be saved without touching the DOM. */
+  saveFile?: (download: ExportDownload) => void;
+}
+
+/** The production fetch: one HTTP call plus the pure storage->display mapping. */
+async function defaultLoadRecords(
+  planId: string,
+  opts?: { signal?: AbortSignal },
+): Promise<readonly AuditorRecord[]> {
+  return toAuditorRecords(await fetchAuditorRecords(planId, opts), planId);
+}
+
+type Load =
+  | { kind: 'no-plan' }
+  | { kind: 'loading' }
+  | { kind: 'error' }
+  | { kind: 'ready'; records: readonly AuditorRecord[] };
+
+const LOADING_NOTE = 'Cargando los registros…';
+const LOAD_ERROR_NOTE = 'No pudimos cargar los registros de este plan.';
+const NO_PLAN_NOTE = 'Falta el plan a revisar en la dirección de esta página.';
+const ACTION_ERROR_NOTE = 'No pudimos guardar la acción del auditor. Nada quedó firmado.';
+const EXPORT_ERROR_NOTE = 'No pudimos generar el archivo. No se descargó nada.';
+
+/**
+ * `/auditor` is a prerendered page, so the plan and auditor under review can
+ * only arrive in the URL (`?plan=&auditor=`). Reading them here rather than in
+ * the `.astro` frontmatter is what keeps that page static.
+ */
+function paramFromUrl(key: string): string {
+  if (typeof location === 'undefined') return '';
+  return new URLSearchParams(location.search).get(key) ?? '';
+}
+
+/** es-CO display quantity ("30", "6,5") back into the number the route wants. */
+function parseQuantity(value: string): number | undefined {
+  const parsed = Number(value.replace('−', '-').replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 /** Verbatim modal copy (design contract §3 "Modals"). */
@@ -62,14 +122,21 @@ const defaultClock = (): string =>
   new Date().toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' });
 
 export function AuditorReview({
-  records: seedRecords = AUDITOR_RECORDS,
-  warehouses = AUDITOR_WAREHOUSES,
+  planId = paramFromUrl('plan'),
+  auditorId = paramFromUrl('auditor'),
+  warehouses = [],
   strictExport = true,
-  auditorName = AUDITOR_NAME,
+  auditorName = 'Auditor',
+  eyebrow = '',
   clock = defaultClock,
+  loadRecords = defaultLoadRecords,
+  submitAction = postAuditorAction,
+  runExport = realDownloadExport,
+  saveFile = saveExportFile,
 }: AuditorReviewProps) {
-  const [records, setRecords] = useState<readonly AuditorRecord[]>(seedRecords);
-  const [selectedId, setSelectedId] = useState<string | null>(seedRecords[0]?.id ?? null);
+  const [load, setLoad] = useState<Load>(planId === '' ? { kind: 'no-plan' } : { kind: 'loading' });
+  const [attempt, setAttempt] = useState(0);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [warehouseId, setWarehouseId] = useState<string>(
     warehouses.find((w) => w.selected)?.id ?? warehouses[0]?.id ?? '',
   );
@@ -77,7 +144,39 @@ export function AuditorReview({
   const [modal, setModal] = useState<ModalKind | null>(null);
   const [correction, setCorrection] = useState('');
   const [reason, setReason] = useState('');
+  const [writeError, setWriteError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (planId === '') {
+      setLoad({ kind: 'no-plan' });
+      return;
+    }
+
+    const controller = new AbortController();
+    let live = true;
+
+    setLoad({ kind: 'loading' });
+    loadRecords(planId, { signal: controller.signal })
+      .then((fetched) => {
+        if (!live) return;
+        setLoad({ kind: 'ready', records: fetched });
+        setSelectedId(fetched[0]?.id ?? null);
+      })
+      .catch(() => {
+        // An empty list would claim the plan has nothing counted, which is a
+        // different fact from "we could not ask". Never conflate the two.
+        if (live) setLoad({ kind: 'error' });
+      });
+
+    return () => {
+      live = false;
+      controller.abort();
+    };
+  }, [loadRecords, planId, attempt]);
+
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
+
+  const records = load.kind === 'ready' ? load.records : [];
   const openAlerts = openAlertCount(records);
   const closedCount = warehouses.filter((w) => w.state === 'cerrada').length;
   const selected = records.find((record) => record.id === selectedId) ?? null;
@@ -88,12 +187,28 @@ export function AuditorReview({
     return records;
   }, [records, filter]);
 
-  /** Every auditor action appends one signed line — RF-32, REQ-AUD-4. */
-  const sign = (
+  /**
+   * Every auditor action writes one `auditor_actions` row and only THEN appends
+   * its signed line (RF-32, REQ-AUD-4, design D7). The local state is touched
+   * inside the `then`: if the write is refused, nothing on screen ever claimed
+   * it happened.
+   */
+  const sign = async (
     action: string,
+    input: Omit<AuditorActionInput, 'auditorId' | 'recordId'>,
     options: { verify?: boolean; quantity?: string; reason?: string } = {},
   ) => {
     if (selected === null) return;
+    const recordId = selected.id;
+
+    setWriteError(null);
+    try {
+      await submitAction({ auditorId, recordId, ...input });
+    } catch {
+      setWriteError(ACTION_ERROR_NOTE);
+      return;
+    }
+
     const entry: TraceEntry = {
       user: auditorName,
       time: clock(),
@@ -101,21 +216,26 @@ export function AuditorReview({
       ...(options.reason !== undefined && options.reason !== '' ? { reason: options.reason } : {}),
     };
 
-    setRecords((current) =>
-      current.map((record) =>
-        record.id === selected.id
-          ? {
-              ...record,
-              verified: options.verify === true ? true : record.verified,
-              counted:
-                options.quantity === undefined
-                  ? record.counted
-                  : { ...record.counted, quantity: options.quantity },
-              // Newest first: the auditor reads the latest decision, not the log.
-              trace: [entry, ...record.trace],
-            }
-          : record,
-      ),
+    setLoad((current) =>
+      current.kind === 'ready'
+        ? {
+            kind: 'ready',
+            records: current.records.map((record) =>
+              record.id === recordId
+                ? {
+                    ...record,
+                    verified: options.verify === true ? true : record.verified,
+                    counted:
+                      options.quantity === undefined
+                        ? record.counted
+                        : { ...record.counted, quantity: options.quantity },
+                    // Newest first: the auditor reads the latest decision.
+                    trace: [entry, ...record.trace],
+                  }
+                : record,
+            ),
+          }
+        : current,
     );
   };
 
@@ -131,13 +251,26 @@ export function AuditorReview({
     setModal(strictExport && openAlerts > 0 ? 'blocked' : 'export');
   };
 
+  /** REQ-OE-2: the modal closes and a file is saved only after the batch exists. */
+  const onGenerate = async () => {
+    setWriteError(null);
+    try {
+      const download = await runExport({ planId, auditorId });
+      saveFile(download);
+    } catch {
+      setWriteError(EXPORT_ERROR_NOTE);
+      return;
+    }
+    closeModal();
+  };
+
   const headerTitle = `${warehouses.find((w) => w.id === warehouseId)?.name ?? ''} · revisión`;
 
   return (
     <div class="review">
       <header class="review__head">
         <div>
-          <p class="review__eyebrow">{AUDITOR_EYEBROW}</p>
+          <p class="review__eyebrow">{eyebrow}</p>
           <h1 class="review__title">{headerTitle}</h1>
         </div>
 
@@ -169,6 +302,34 @@ export function AuditorReview({
         </div>
       </header>
 
+      {load.kind === 'loading' ? (
+        <p class="review__loading" role="status">
+          {LOADING_NOTE}
+        </p>
+      ) : null}
+
+      {load.kind === 'error' ? (
+        <div class="review__error" role="alert">
+          <p>{LOAD_ERROR_NOTE}</p>
+          <button type="button" class="btn btn--secondary" onClick={retry}>
+            Reintentar
+          </button>
+        </div>
+      ) : null}
+
+      {load.kind === 'no-plan' ? (
+        <p class="review__error" role="alert">
+          {NO_PLAN_NOTE}
+        </p>
+      ) : null}
+
+      {writeError === null ? null : (
+        <p class="review__error" role="alert">
+          {writeError}
+        </p>
+      )}
+
+      {load.kind !== 'ready' ? null : (
       <div class="review__panes">
         <aside class="review__bodegas" aria-label="Bodegas">
           <WarehouseList
@@ -193,7 +354,9 @@ export function AuditorReview({
         <aside class="review__detalle" aria-label="Registro seleccionado">
           <DetailPane
             record={selected}
-            onApprove={() => sign('Aprobó el registro', { verify: true })}
+            onApprove={() => {
+              void sign('Aprobó el registro', { action: 'approve' }, { verify: true });
+            }}
             onCorrect={() => {
               setCorrection(selected?.counted.quantity ?? '');
               setModal('correct');
@@ -202,6 +365,7 @@ export function AuditorReview({
           />
         </aside>
       </div>
+      )}
 
       {modal === 'blocked' ? (
         <Modal
@@ -228,7 +392,9 @@ export function AuditorReview({
           cancelLabel="Cancelar"
           confirmLabel="Generar y descargar"
           onCancel={closeModal}
-          onConfirm={closeModal}
+          onConfirm={() => {
+            void onGenerate();
+          }}
         />
       ) : null}
 
@@ -242,7 +408,17 @@ export function AuditorReview({
           confirmLabel="Guardar corrección"
           onCancel={closeModal}
           onConfirm={() => {
-            sign('Corrigió la cantidad', { quantity: correction, reason });
+            void sign(
+              'Corrigió la cantidad',
+              {
+                action: 'correct',
+                ...(parseQuantity(correction) === undefined
+                  ? {}
+                  : { newQuantity: parseQuantity(correction) }),
+                ...(reason === '' ? {} : { note: reason }),
+              },
+              { quantity: correction, reason },
+            );
             closeModal();
           }}
         >
@@ -280,7 +456,11 @@ export function AuditorReview({
           onConfirm={() => {
             // Deliberately does NOT verify: asking for a recount leaves the
             // alert open, because nothing has been decided yet.
-            sign('Pidió reconteo', { reason });
+            void sign(
+              'Pidió reconteo',
+              { action: 'request_recount', ...(reason === '' ? {} : { note: reason }) },
+              { reason },
+            );
             closeModal();
           }}
         >

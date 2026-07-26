@@ -32,61 +32,29 @@ import { DEMO_CATALOGUE_ID, labelFor } from '../lib/catalogues';
  */
 export const REVIEWED_WAREHOUSE_NAME = labelFor(DEMO_CATALOGUE_ID);
 
-/** The three alert rules the design fires, from the operator anomaly engine. */
-export type AlertKind = 'unidad' | 'cantidad' | 'negativo';
+/**
+ * The display types and their pure derivations now live in
+ * `src/lib/auditor/types.ts` (task 5.6): the dashboard reads LIVE records, so
+ * the shape is no longer a property of this fixture. They are re-exported here
+ * so the seed and its test keep one import, and so `cierre.astro` / `base.astro`
+ * are unaffected.
+ */
+export type {
+  AlertKind,
+  AuditorAlert,
+  AuditorRecord,
+  Badge,
+  BadgeKind,
+  Diff,
+  Measure,
+  Tone,
+  TraceEntry,
+  Warehouse,
+  WarehouseState,
+} from '../lib/auditor/types';
+export { badgeOf, diffOf, isOpenAlert, openAlertCount, SYSTEM_UNKNOWN } from '../lib/auditor/types';
 
-/** Every badge the record list can show (REQ-AUD-3). */
-export type BadgeKind = AlertKind | 'verificado' | 'manual' | 'sin-novedad';
-
-/** Semantic tone; the component maps it to the token ramp, never to a hex. */
-export type Tone = 'warn' | 'info' | 'neutral' | 'ok';
-
-export interface AuditorAlert {
-  kind: AlertKind;
-  title: string;
-  detail: string;
-}
-
-/** A quantity as shown: a pre-formatted es-CO number plus its display unit. */
-export interface Measure {
-  quantity: string;
-  unit: string;
-}
-
-/** One signed line of the RF-32 trace. Seeded empty; actions append. */
-export interface TraceEntry {
-  /** Auditor who acted — "firmada con usuario". */
-  user: string;
-  /** Wall-clock time of the action — "y hora". */
-  time: string;
-  /** What was done, in the auditor's own vocabulary. */
-  action: string;
-  /** "y motivo" — optional because approving needs no justification. */
-  reason?: string;
-}
-
-export interface AuditorRecord {
-  id: string;
-  /** What the operator counted (RF-18 blind counting binds the OPERATOR only). */
-  counted: Measure;
-  /** Theoretical stock. The AUDITOR may see this; `/conteo` never may (C6). */
-  system: Measure;
-  articulo: string;
-  sku: string;
-  operator: string;
-  time: string;
-  /** Open alert, or `null` for a clean record. */
-  alert: AuditorAlert | null;
-  /** True when the article was resolved through the manual-search sheet (S7). */
-  manualSearch: boolean;
-  /** Flipped by "Aprobar registro"; also what closes an open alert. */
-  verified: boolean;
-  /** RF-32 detail rows. */
-  plan: string;
-  dictated: string;
-  consensus: string;
-  trace: readonly TraceEntry[];
-}
+import type { AuditorRecord, Tone, Warehouse } from '../lib/auditor/types';
 
 const PLAN = `${REVIEWED_WAREHOUSE_NAME} · 31 jul`;
 /** Mocked, never computed: module 2 (3-model consensus) does not exist (C4). */
@@ -238,89 +206,6 @@ export const AUDITOR_RECORDS: readonly AuditorRecord[] = [
     trace: [],
   },
 ] as const;
-
-/** A record still needs the auditor's eyes while its alert is unresolved. */
-export function isOpenAlert(record: AuditorRecord): boolean {
-  return record.alert !== null && !record.verified;
-}
-
-/** Drives the header pill "{n} alertas abiertas" and the export gate. */
-export function openAlertCount(records: readonly AuditorRecord[]): number {
-  return records.filter(isOpenAlert).length;
-}
-
-export interface Badge {
-  kind: BadgeKind;
-  label: string;
-  tone: Tone;
-}
-
-const BADGES: Readonly<Record<BadgeKind, Badge>> = {
-  unidad: { kind: 'unidad', label: 'Unidad', tone: 'warn' },
-  cantidad: { kind: 'cantidad', label: 'Cantidad atípica', tone: 'warn' },
-  negativo: { kind: 'negativo', label: 'Saldo negativo', tone: 'warn' },
-  verificado: { kind: 'verificado', label: 'Verificado', tone: 'info' },
-  manual: { kind: 'manual', label: 'Búsqueda manual', tone: 'neutral' },
-  'sin-novedad': { kind: 'sin-novedad', label: 'Sin novedad', tone: 'neutral' },
-};
-
-/**
- * The single badge a record shows (REQ-AUD-3).
- *
- * Precedence — "Verificado" wins over everything, because an approved record is
- * settled regardless of why it was flagged; then the open alert; then the
- * provenance note; then the quiet default.
- */
-export function badgeOf(record: AuditorRecord): Badge {
-  if (record.verified) return BADGES.verificado;
-  if (record.alert !== null) return BADGES[record.alert.kind];
-  if (record.manualSearch) return BADGES.manual;
-  return BADGES['sin-novedad'];
-}
-
-export interface Diff {
-  label: string;
-  tone: Tone;
-}
-
-/** Parse an es-CO display quantity ("6,5", "−2") back into a number. */
-function parseEsNumber(value: string): number {
-  return Number(value.replace('−', '-').replace(',', '.'));
-}
-
-/**
- * The detail pane's diff line (REQ-AUD-2).
- *
- * A unit mismatch is reported BEFORE a numeric one: when the units disagree the
- * two numbers are not comparable at all, so "Diferencia" would be a false
- * precision.
- */
-export function diffOf(record: AuditorRecord): Diff {
-  if (record.counted.unit !== record.system.unit) {
-    return { label: 'Unidad distinta', tone: 'warn' };
-  }
-  if (parseEsNumber(record.counted.quantity) !== parseEsNumber(record.system.quantity)) {
-    return { label: 'Diferencia', tone: 'warn' };
-  }
-  return { label: 'Sin diferencia', tone: 'ok' };
-}
-
-/* ------------------------------------------------------------- warehouses */
-
-export type WarehouseState = 'cerrada' | 'en-curso' | 'programada';
-
-export interface Warehouse {
-  id: string;
-  name: string;
-  percentage: number;
-  counted: number;
-  total: number;
-  state: WarehouseState;
-  /** Verbatim second line: state plus operator, or the scheduled hour. */
-  stateLabel: string;
-  /** The bodega the review view opens on. */
-  selected: boolean;
-}
 
 export const AUDITOR_WAREHOUSES: readonly Warehouse[] = [
   { id: 'w-almacen', name: 'Almacén General', percentage: 100, counted: 412, total: 412, state: 'cerrada', stateLabel: 'Cerrada · Jorge M.', selected: false },
