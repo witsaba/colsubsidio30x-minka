@@ -7,6 +7,9 @@
 !.env.example
 !*.env.example
 
+# Local test database dump / workspace (operator-only scratch).
+BD_Pruebas/
+
 # Python
 __pycache__/
 *.py[cod]
