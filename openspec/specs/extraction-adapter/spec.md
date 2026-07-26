@@ -8,12 +8,18 @@ The seam where the non-existent Module 2 (extraction/ITN/consensus) will plug in
 
 ### Requirement: REQ-EXT-1 — Adapter interface
 
-The capability MUST expose `extract(transcript: string): ExtractedItem[]` where `ExtractedItem = { quantity: number, unit: string | null, spokenName: string }`. `spokenName`/`unit` map directly onto the matcher's `MatchRequest.spoken_name`/`unit`. (RF-14, RF-17; mocks RF-23/RF-24)
+The capability MUST expose `extract(rawTranscript: string): Promise<ExtractedItem[]>` where `ExtractedItem = { quantity: number, unit: string | null, spokenName: string }`. Callers MUST await the promise before building the matcher request. `spokenName`/`unit` map directly onto the matcher's `MatchRequest.spoken_name`/`unit`. (RF-14, RF-17)
+(Previously: synchronous `extract(transcript: string): ExtractedItem[]`)
 
 #### Scenario: Shape of an extracted item
 
-- WHEN `extract('cinco tablas para picar blancas')` is called
-- THEN it returns an array whose items each have numeric `quantity`, `unit` of type string-or-null, and non-empty `spokenName`
+- WHEN `await extract('cinco tablas para picar blancas')` resolves
+- THEN it yields an array whose items each have numeric `quantity`, `unit` of type string-or-null, and non-empty `spokenName`
+
+#### Scenario: Result is a promise
+
+- WHEN `extract` is called with any transcript
+- THEN the return value is a Promise resolving to the item array
 
 ### Requirement: REQ-EXT-2 — Spanish ITN, 90 vs 900
 
@@ -38,27 +44,37 @@ One utterance containing conjunctions/commas MUST split into N independent items
 - WHEN `extract('tres kilos de lechuga batavia, doce botellas de aceite vegetal y dos cajas de tomate chonto')` is called
 - THEN it returns exactly 3 items with quantities `[3, 12, 2]` AND spoken names covering lechuga batavia, aceite vegetal, and tomate chonto respectively
 
-### Requirement: REQ-EXT-4 — Unit vocabulary bound to the matcher
+### Requirement: REQ-EXT-4 — Unit vocabulary bound to the extraction result
 
-Emitted `unit` values MUST be drawn from spoken words the matcher already resolves (`services/matcher/src/matcher/units.py` `UNIT_SYNONYMS`: litro(s)/lt/lts/l, kilo(s)/kilogramo(s)/kg/kgs, unidad(es)/und/un, paquete(s), sobre(s), caja(s), porcion(es), racion(es)). Words outside that vocabulary (e.g. `gramos`, `botellas`) MAY pass through as spoken — the matcher treats unresolved units as `None`, never an error — but the adapter MUST NOT invent new unit words of its own.
+Emitted `unit` values MUST originate from the extraction result — the adapter MUST only emit units the extraction returned (spoken words for the mock; consensus `unidad` values for the HTTP adapter), resolved through the emission vocabulary anchored on the matcher's `UNIT_SYNONYMS`. Words outside that vocabulary MAY pass through as spoken — the matcher treats unresolved units as `None`, never an error — but the adapter MUST NOT invent a unit the extraction did not return.
+(Previously: "never invent a unit word of its own" over verbatim spoken passthrough; the LLM now canonicalizes `producto`/`unidad` — accepted behavior change vs verbatim passthrough)
 
 #### Scenario: Resolvable unit passes through
 
-- WHEN `extract('dos cajas de tomate chonto')` is called
+- GIVEN the mock adapter
+- WHEN `await extract('dos cajas de tomate chonto')` resolves
 - THEN the item's `unit === 'cajas'`, a word present in `UNIT_SYNONYMS`
 
 #### Scenario: Utterance without a unit
 
-- WHEN `extract('cinco tablas para picar blancas')` is called
+- GIVEN the mock adapter
+- WHEN `await extract('cinco tablas para picar blancas')` resolves
 - THEN the item's `unit === null` AND `quantity === 5`
 
-### Requirement: REQ-EXT-5 — Deterministic mock behind a swap point
+### Requirement: REQ-EXT-5 — Real adapter default, deterministic mock behind the swap point
 
-The shipped implementation is a MOCK: deterministic (same transcript → same output, no randomness, no network) and keyword-tolerant for the 4 demo scripts. The flow MUST depend only on the `extract` interface, injected at ONE swap point (the module that wires extraction into the count flow), so a real Module 2 replaces the mock without touching callers.
+The production default MUST be the real HTTP adapter. The deterministic mock (same transcript → same output, no randomness, no network) MUST remain injectable at the ONE existing swap point as the explicit test double and runtime fallback. The flow MUST depend only on the `extract` interface.
+(Previously: the mock WAS the shipped implementation; the swap point awaited a future Module 2)
 
-#### Scenario: Determinism
+#### Scenario: Production default is the HTTP adapter
 
-- WHEN `extract` is called twice with the same transcript
+- GIVEN no adapter is explicitly injected
+- WHEN the count flow wires extraction
+- THEN the HTTP adapter is used
+
+#### Scenario: Determinism of the mock
+
+- WHEN the mock's `extract` is awaited twice with the same transcript
 - THEN both results are deeply equal
 
 #### Scenario: Swappability
@@ -66,3 +82,41 @@ The shipped implementation is a MOCK: deterministic (same transcript → same ou
 - GIVEN a stub adapter substituted at the swap point
 - WHEN the count flow processes a transcript
 - THEN the stub's output reaches the matcher request unchanged AND no code path references the mock directly
+
+### Requirement: REQ-EXT-6 — HTTP adapter response mapping
+
+The HTTP adapter MUST POST `{ transcription: rawTranscript }` to `/api/extract` and map each `validated_inventory` item as: `producto` → `spokenName`, `unidad` (enum `KILOGRAMO|UNIDAD|PORCION|LITRO`, lowercased then resolved through the emission vocabulary) → `unit`, `cantidad` → `quantity`. Items with non-positive or NaN `cantidad`, or empty/blank `producto`, MUST be dropped — never guessed or repaired. `consensus_status` and `confidence_score` MAY be ignored for the MVP; only `validated_inventory` is consumed.
+
+#### Scenario: Successful mapping
+
+- GIVEN `/api/extract` responds 200 with `validated_inventory: [{producto: "Lechuga Batavia", unidad: "KILOGRAMO", cantidad: 3}]`
+- WHEN `await extract(...)` resolves
+- THEN it yields exactly `[{quantity: 3, unit: 'kilogramo', spokenName: 'Lechuga Batavia'}]`
+
+#### Scenario: Invalid items are dropped
+
+- GIVEN a response mixing valid items with items having `cantidad` of `0`, `-1`, or `NaN`, or blank `producto`
+- WHEN the adapter maps the response
+- THEN only the valid items are returned AND no dropped item is repaired or guessed
+
+#### Scenario: Empty inventory is not a failure
+
+- GIVEN a successful consensus response with empty `validated_inventory`
+- WHEN `await extract(...)` resolves
+- THEN it yields `[]` AND the flow follows the normal `nothing_extracted` path, NOT the fallback
+
+### Requirement: REQ-EXT-7 — Fallback-on-error to the mock
+
+Any transport failure, timeout, non-2xx status, or unparsable body from the extract call MUST make the adapter fall back to the deterministic mock for that utterance. The failure MUST NOT surface an error to the operator and MUST NOT render a degraded-mode indicator (recorded orchestrator decision).
+
+#### Scenario: Timeout falls back
+
+- GIVEN the extract call exceeds its timeout
+- WHEN the utterance is processed
+- THEN the mock's output for that transcript is used AND the utterance completes normally
+
+#### Scenario: Upstream 5xx falls back silently
+
+- GIVEN `/api/extract` responds 502
+- WHEN the utterance is processed
+- THEN the mock's output is used AND no error state or visual indicator reaches the operator
