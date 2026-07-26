@@ -30,11 +30,51 @@ from .compose_text import (
 
 #: Ports already taken. A new service colliding with one of these would make
 #: `docker compose up` fail at bind time, long after review.
-RESERVED_PORTS = {"8001": "stt", "8002": "matcher"}
+RESERVED_PORTS = {
+    "8001": "stt",
+    "8002": "matcher",
+    "8003": "product_identification",
+    # Not the next sequential port on purpose: 4321 is Astro's own default and
+    # is already written into frontend/README.md, the frontend's tests and the
+    # manual verification steps. Renumbering it would silently break all three.
+    "4321": "frontend",
+}
+
+#: Every service the root file is expected to define. Spelled out rather than
+#: read back from the file, so *forgetting* to add one here is what fails.
+#: `redis` publishes no port, so it is absent from EXPECTED_PORTS above; it is
+#: still a service the file must define.
+EXPECTED_SERVICES = {
+    "stt",
+    "matcher",
+    "product_identification",
+    "frontend",
+    "redis",
+}
 
 #: A value that looks like a real credential rather than a placeholder: a long
 #: unbroken run of key-ish characters.
 CREDENTIAL_SHAPED = re.compile(r"[A-Za-z0-9_\-]{24,}")
+
+#: `image: name:tag`. The tag is mandatory and `latest` is not a tag: an
+#: unpinned upstream image makes the same commit deploy different bytes.
+PINNED_IMAGE = re.compile(r"^\s+image:\s+(\S+):(?!latest\s*$)([\w.\-]+)\s*$", re.MULTILINE)
+
+
+def is_image_pinned_infrastructure(block: str) -> bool:
+    """Backing services we run rather than build (Redis, and whatever follows).
+
+    The per-service checklist of REQ-UCD-9 was written for the HTTP services
+    this repository *builds*: an explicit build context, and a probe against its
+    own `GET /health`. A pinned upstream image satisfies the same two intents by
+    other means — reproducible bytes come from the tag instead of the context,
+    and liveness comes from the image's own CLI instead of an HTTP endpoint it
+    does not serve. The exemption is deliberately narrow: it applies only when
+    the service declares no `build:` at all and pins an explicit, non-`latest`
+    tag, so it can never be used to smuggle an unpinned or half-built service
+    past the checklist.
+    """
+    return "build:" not in block and bool(PINNED_IMAGE.search(block))
 
 
 def tracked_files() -> list[str]:
@@ -82,7 +122,7 @@ class TestSoleSurface:
         assert leftovers == [], leftovers
 
     def test_the_root_file_defines_every_service(self, compose: str) -> None:
-        assert set(service_blocks(compose)) == {"stt", "matcher"}
+        assert set(service_blocks(compose)) == EXPECTED_SERVICES
 
     def test_the_project_name_is_pinned(self, compose: str) -> None:
         """Otherwise Compose names the project after the directory, and the
@@ -91,6 +131,18 @@ class TestSoleSurface:
         assert re.search(r"^name:\s+\S+", compose, re.MULTILINE)
 
     def test_operator_docs_never_point_at_a_service_local_compose(self) -> None:
+        """The guard is about INSTRUCTIONS, so it reads line by line.
+
+        A line may name `-f services/...` in order to forbid it, or to specify
+        the very substring search this test performs — `openspec/specs/
+        unified-compose-deployment/spec.md` does both, and a whole-file
+        substring check cannot tell a prohibition from a recommendation. The
+        alternative, excluding that file, would retire the guard over exactly
+        the document that defines the rule.
+        """
+        # A line that forbids the pattern, or that specifies searching for it,
+        # is not telling an operator to run it.
+        prohibitions = ("SHALL NOT", "substring")
         offenders = []
         for path in tracked_files():
             if not path.endswith((".md", ".yaml", ".yml")):
@@ -98,8 +150,11 @@ class TestSoleSurface:
             if path.startswith("openspec/changes/"):
                 continue  # historical SDD records, not operator instructions
             text = (REPO_ROOT / path).read_text(encoding="utf-8")
-            if "-f services/" in text or "cd services/stt && docker compose" in text:
-                offenders.append(path)
+            for line in text.splitlines():
+                if any(phrase in line for phrase in prohibitions):
+                    continue
+                if "-f services/" in line or "cd services/stt && docker compose" in line:
+                    offenders.append(f"{path}: {line.strip()}")
         assert offenders == [], offenders
 
 
@@ -110,6 +165,8 @@ class TestPerServiceContract:
         self, compose: str
     ) -> None:
         for name, block in service_blocks(compose).items():
+            if is_image_pinned_infrastructure(block):
+                continue  # reproducible by tag rather than by context
             assert "build:" in block, f"{name} has no build stanza"
             assert re.search(r"^\s+context:\s+\S+", block, re.MULTILINE), name
             assert re.search(r"^\s+dockerfile:\s+\S+", block, re.MULTILINE), name
@@ -119,10 +176,41 @@ class TestPerServiceContract:
     ) -> None:
         for name, block in service_blocks(compose).items():
             assert "healthcheck:" in block, f"{name} has no healthcheck"
+            if is_image_pinned_infrastructure(block):
+                continue  # probed through its own CLI, see the redis test below
             published = host_ports(block)
             assert published, f"{name} publishes no host port"
             probe = re.search(r"http://localhost:(\d+)/health", block)
             assert probe, f"{name} does not probe /health"
+
+    def test_the_exempt_infrastructure_is_pinned_and_probed_by_its_cli(
+        self, compose: str
+    ) -> None:
+        """The exemption is not a hole: whatever takes it still has to prove
+        reproducible bytes and a real liveness probe, just by other means."""
+        exempt = {
+            name: block
+            for name, block in service_blocks(compose).items()
+            if is_image_pinned_infrastructure(block)
+        }
+        assert set(exempt) == {"redis"}, sorted(exempt)
+        redis = exempt["redis"]
+        assert "image: redis:7.4-alpine" in redis
+        assert '"redis-cli", "ping"' in redis
+
+    def test_the_redis_cache_publishes_no_host_port(self, compose: str) -> None:
+        """Nothing outside the Compose network has business reaching the
+        snapshot cache; `docker compose exec redis redis-cli` is the debug
+        path. It also keeps 6379 free on a host already running one."""
+        assert host_ports(service_blocks(compose)["redis"]) == []
+
+    def test_the_redis_cache_persists_nothing(self, compose: str) -> None:
+        """A pure cache: a cold start rebuilds the snapshot from Supabase, so
+        an on-disk copy would only add a stale-data failure mode."""
+        redis = service_blocks(compose)["redis"]
+        assert '"--save", ""' in redis
+        assert '"--appendonly", "no"' in redis
+        assert "volumes:" not in redis
 
     def test_every_service_grants_its_healthcheck_a_start_period(
         self, compose: str
@@ -146,10 +234,44 @@ class TestPerServiceContract:
                     f"host port {port} is reserved for {reserved}, claimed by {name}"
                 )
 
-    def test_the_catalogue_is_mounted_read_only(self, compose: str) -> None:
+    def test_the_matcher_declares_no_catalogue_mount(self, compose: str) -> None:
+        """REQ-CSS-1 / REQ-UCD-3. The catalogue now comes from Supabase over
+        the network, so a host bind mount is not merely unused: leaving it
+        would keep a stale SQLite file on the deployment contract and let an
+        operator believe the matcher still reads it."""
         matcher = service_blocks(compose)["matcher"]
-        assert "./data:/data:ro" in matcher
-        assert "CATALOGUE_DB:" in matcher
+        assert "./data:/data" not in matcher
+        assert "volumes:" not in matcher
+        assert "CATALOGUE_DB" not in compose
+
+    def test_the_matcher_receives_the_supabase_and_redis_variables(
+        self, compose: str
+    ) -> None:
+        """REQ-UCD-3 / REQ-UCD-12. The catalogue is unreachable without these
+        four, so a rename or a dropped line is a boot failure, not a default.
+        The container variable stays SUPABASE_KEY (the matcher reads it), but
+        its value comes from the host's SUPABASE_SECRET_KEY: the catalogue is
+        only readable with the secret key, and a publishable key in a
+        same-named host variable produced a 401 crash loop."""
+        matcher = service_blocks(compose)["matcher"]
+        assert "SUPABASE_URL: ${SUPABASE_URL:-}" in matcher
+        assert "SUPABASE_KEY: ${SUPABASE_SECRET_KEY:-}" in matcher
+        assert "REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}" in matcher
+        assert (
+            "CATALOGUE_CACHE_TTL_SECONDS: ${CATALOGUE_CACHE_TTL_SECONDS:-10800}"
+            in matcher
+        )
+
+    def test_the_matcher_reaches_redis_by_its_service_name(
+        self, compose: str
+    ) -> None:
+        """`localhost` is the right default for a developer running the app on
+        their own machine, and the wrong one inside a container, where Redis is
+        a sibling on the Compose network. The two defaults differ on purpose."""
+        matcher = service_blocks(compose)["matcher"]
+        assignment = re.search(r"^\s+REDIS_URL:\s*(.+)$", matcher, re.MULTILINE)
+        assert assignment, "the matcher declares no REDIS_URL"
+        assert assignment.group(1).strip() == "${REDIS_URL:-redis://redis:6379/0}"
 
     def test_the_matcher_builds_from_the_repository_root(
         self, compose: str
@@ -162,6 +284,47 @@ class TestPerServiceContract:
         stt = service_blocks(compose)["stt"]
         assert re.search(r"^\s+context:\s+\./services/stt\s*$", stt, re.MULTILINE)
 
+    def test_the_frontend_builds_from_its_own_directory(self, compose: str) -> None:
+        frontend = service_blocks(compose)["frontend"]
+        assert re.search(r"^\s+context:\s+\./frontend\s*$", frontend, re.MULTILINE)
+
+    def test_the_frontend_reaches_the_services_by_their_compose_names(
+        self, compose: str
+    ) -> None:
+        """frontend/.env.example points at `localhost` because it documents
+        `npm run dev` on the host. Inside Compose `localhost` is the frontend's
+        own container, so the upstream bases must be the service names on the
+        default project network — a container-internal fact, fixed here rather
+        than asked of the operator (the CATALOGUE_DB precedent)."""
+        frontend = service_blocks(compose)["frontend"]
+        assert "STT_BASE_URL: http://stt:8001" in frontend
+        assert "MATCHER_BASE_URL: http://matcher:8002" in frontend
+        assert (
+            "EXTRACTOR_BASE_URL: http://product_identification:8003" in frontend
+        )
+
+    def test_the_frontend_requires_the_supabase_secret_from_the_host(
+        self, compose: str
+    ) -> None:
+        """REQ-SDA-1. The operational routes cannot answer without these two,
+        so they are `:?`-required rather than defaulted. The key variable is
+        SUPABASE_SECRET_KEY — the new Supabase API-key scheme's name — and the
+        retired SUPABASE_SERVICE_ROLE_KEY must not linger as a second name for
+        the same credential."""
+        frontend = service_blocks(compose)["frontend"]
+        assert "SUPABASE_URL: ${SUPABASE_URL:?set SUPABASE_URL in .env}" in frontend
+        assert (
+            "SUPABASE_SECRET_KEY: "
+            "${SUPABASE_SECRET_KEY:?set SUPABASE_SECRET_KEY in .env}" in frontend
+        )
+        assert "SUPABASE_SERVICE_ROLE_KEY" not in compose
+
+    def test_the_frontend_binds_every_interface(self, compose: str) -> None:
+        """The Node adapter defaults to 127.0.0.1, which no published port can
+        reach from outside the container."""
+        frontend = service_blocks(compose)["frontend"]
+        assert "HOST: 0.0.0.0" in frontend
+
 
 class TestNoCrossServiceOrdering:
     """REQ-UCD-4: services start, stop and fail independently."""
@@ -171,6 +334,17 @@ class TestNoCrossServiceOrdering:
             assert "depends_on" not in block, (
                 f"{name} declares depends_on; services must be independent"
             )
+
+    def test_redis_is_coupled_to_nothing(self, compose: str) -> None:
+        """REQ-UCD-12. Redis is a *soft* cache dependency of the matcher: the
+        matcher boots without it through Supabase and keeps serving if it dies,
+        so the independence promise survives. A `depends_on` here would trade
+        that for a start-order guarantee nothing actually needs."""
+        blocks = service_blocks(compose)
+        assert "redis" in blocks
+        assert "depends_on" not in blocks["redis"]
+        for name, block in blocks.items():
+            assert not re.search(r"depends_on[\s\S]*redis", block), name
 
     def test_no_custom_network_couples_the_services(self, compose: str) -> None:
         assert not re.search(r"^networks:", compose, re.MULTILINE)

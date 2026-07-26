@@ -2,26 +2,42 @@ schema: spec-driven
 
 context: |
   Project: colsubsidio30x-minka
-  State: Active. Data pipeline (xlsx -> SQLite) plus two backend services built
-  from decided spikes (spikes/01..06): Module 1 STT (:8001) and Module 3
-  product matching (:8002). No shared process, datastore, or deploy unit.
-  Tech stack: Python 3.11+ managed by uv. Root uv workspace hosts the data
-    build plus `services/matcher` (workspace member); `services/stt` is a
-    standalone uv project with its own pyproject.toml and uv.lock.
-    FastAPI + uvicorn for HTTP surfaces, pydantic-settings for configuration.
-    Matcher: rapidfuzz scoring primitives, stdlib sqlite3 (read-only) catalogue.
-    STT: httpx only (no vendor SDKs) against Deepgram/Groq REST APIs.
-    pandas/openpyxl for the spreadsheet build step.
-  Architecture: `scripts/` builds `data/bodegas-y-stock.sqlite`;
-    `services/matcher` is an installable package (`src/matcher/`) served as
-    `matcher.main:app` on port 8002; `services/stt` serves port 8001. Both are
+  State: Active. Three backend services built from decided spikes (spikes/01..06):
+  Module 1 STT (:8001), Module 2 product identification / voice inventory
+  extraction (:8003), Module 3 product matching (:8002). No shared process or
+  deploy unit. The matcher reads its catalogue from Supabase/Postgres over
+  PostgREST and caches a versioned snapshot in Redis (soft dependency, no
+  depends_on); the xlsx -> SQLite pipeline still exists but is no longer read at
+  runtime by any service. No frontend exists here; it lives only on the separate
+  unmerged feat/voice-counter-frontend branch.
+  Tech stack: Python (>=3.11 root/matcher/stt, >=3.10 product_identification)
+    managed by uv. Root uv workspace hosts the data build plus `services/matcher`
+    and `services/product_identification` (workspace members); `services/stt` is
+    a standalone uv project with its own pyproject.toml and uv.lock.
+    FastAPI + uvicorn for HTTP surfaces, pydantic-settings for matcher/STT config.
+    Matcher: rapidfuzz scoring primitives; catalogue read from Supabase over
+    PostgREST with httpx (no SDK), snapshot-cached in redis-py, fakeredis in tests.
+    STT: httpx only (no vendor SDKs) against Deepgram/ElevenLabs/Groq REST APIs.
+    Product identification: google-genai dual-model consensus (Gemini via Vertex
+    AI) over voice transcripts. pandas/openpyxl for the spreadsheet build step.
+  Architecture: `services/matcher` is an installable package (`src/matcher/`)
+    served as `matcher.main:app` on port 8002, loading its catalogue through a
+    CatalogueSource port (Supabase) and a SnapshotCache port (Redis);
+    `services/product_identification` serves
+    port 8003 (`server.py`); `services/stt` serves port 8001. `scripts/` still
+    builds `data/bodegas-y-stock.sqlite` as an offline artefact. All three are
     deployed from the single root `docker-compose.yml` with a single root
     `.env` (template `.env.example`, filled in by `scripts/setup-env.sh`);
     `docs/deployment.md` carries the checklist for adding a service.
   Testing: pytest. Root `uv run pytest` collects `services/matcher/tests`
     (unit, api via FastAPI TestClient, eval accuracy gate) and
-    `tests/deployment` (daemon-free Compose contracts). The STT suite runs
-    separately: `cd services/stt && uv run pytest` (pytest-asyncio + respx).
+    `tests/deployment` (daemon-free Compose contracts) — 528 tests collected as
+    of the redis-catalogue-cache change. No test requires network access:
+    Supabase is driven through httpx.MockTransport and Redis through fakeredis. The STT suite runs separately: `cd services/stt && uv run pytest`
+    (pytest-asyncio + respx). product_identification has no pytest suite: its
+    `tests/product_identification/` scripts run standalone (`uv run python
+    tests/product_identification/test_*.py`) against a live server + GCP creds.
+    No linter, type checker, or formatter config exists anywhere in the repo.
   Style: src layout, `from __future__ import annotations`, type hints on public
     functions, frozen dataclasses for value objects, pure functions kept free of I/O;
     generated technical artifacts use English; product scope is es-CO.

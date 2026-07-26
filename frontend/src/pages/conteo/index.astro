@@ -1,0 +1,23 @@
+---
+/**
+ * `/conteo` — the operator counting route (T20, design §5, D2, D3).
+ *
+ * The page itself is STATIC: it is prerendered and ships no page-level JS. All
+ * interactivity belongs to one island, `CountSession`, mounted `client:load`
+ * because the operator's first gesture (the consent CTA that triggers
+ * `getUserMedia`) must work on the very first tap — a `client:visible` island
+ * would gamble the demo on hydration timing.
+ *
+ * `/` already answers with a 302 here (T15), so this route closes that loop and
+ * is the product's real front door.
+ */
+import OperatorLayout from '../../layouts/OperatorLayout.astro';
+import CountSession from '../../components/operator/CountSession';
+import '../../styles/operator.css';
+
+export const prerender = true;
+---
+
+<OperatorLayout title="Conteo por voz · Colsubsidio">
+  <CountSession client:load />
+</OperatorLayout>

@@ -6,17 +6,30 @@ construction time (startup) rather than silently falling back to the default.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 from pydantic import ValidationError
 
 from matcher.config import Settings
 
+SUPABASE_URL = "https://project.supabase.co"
+SUPABASE_KEY = "test-key"
+
 
 def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Drop every matcher variable, then supply only the two required ones.
+
+    `SUPABASE_URL`/`SUPABASE_KEY` have no default by design (D6): a missing
+    credential is a permanent misconfiguration, so every other test has to
+    provide them explicitly to isolate the knob it is actually asserting.
+    """
     for name in (
         "CATALOGUE_DB",
+        "SUPABASE_URL",
+        "SUPABASE_KEY",
+        "SUPABASE_TIMEOUT_SECONDS",
+        "REDIS_URL",
+        "CATALOGUE_CACHE_TTL_SECONDS",
+        "CATALOGUE_REFRESH_LOCK_TTL_SECONDS",
         "MATCH_ACCEPT_SCORE",
         "MATCH_AMBIGUITY_MARGIN",
         "MATCH_TSR_MARGIN",
@@ -26,6 +39,8 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "STARTUP_RETRY_DELAY_SECONDS",
     ):
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("SUPABASE_URL", SUPABASE_URL)
+    monkeypatch.setenv("SUPABASE_KEY", SUPABASE_KEY)
 
 
 class TestDefaults:
@@ -58,9 +73,43 @@ class TestDefaults:
         _clear_env(monkeypatch)
         assert Settings().match_unit_rerank is True
 
-    def test_catalogue_db_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_the_supabase_and_redis_settings_carry_their_documented_defaults(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         _clear_env(monkeypatch)
-        assert Settings().catalogue_db == Path("data/bodegas-y-stock.sqlite")
+        settings = Settings()
+
+        assert settings.redis_url == "redis://localhost:6379/0"
+        assert settings.supabase_timeout_seconds == 10.0
+        assert settings.catalogue_cache_ttl_seconds == 10800
+        assert settings.catalogue_refresh_lock_ttl_seconds == 60
+
+    def test_catalogue_db_no_longer_exists(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """REQ-CSS-1: the SQLite catalogue is gone, not merely unused."""
+        _clear_env(monkeypatch)
+        settings = Settings()
+
+        assert not hasattr(settings, "catalogue_db")
+        assert "catalogue_db" not in Settings.model_fields
+
+    def test_a_trailing_slash_on_the_supabase_url_is_normalized_away(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Every request path is joined onto this value; a stray slash would
+        produce `//rest/v1/...`, which PostgREST does not route."""
+        _clear_env(monkeypatch)
+        monkeypatch.setenv("SUPABASE_URL", "https://project.supabase.co/")
+
+        assert Settings().supabase_url == "https://project.supabase.co"
+
+    def test_a_url_without_a_trailing_slash_is_left_alone(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clear_env(monkeypatch)
+
+        assert Settings().supabase_url == SUPABASE_URL
 
     def test_startup_retries_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _clear_env(monkeypatch)
@@ -72,11 +121,16 @@ class TestDefaults:
         _clear_env(monkeypatch)
         assert Settings().startup_retry_delay_seconds == 2.0
 
-    def test_exactly_five_match_knobs_two_startup_knobs_and_catalogue_db(
+    def test_exactly_the_supabase_redis_match_and_startup_knobs(
         self,
     ) -> None:
         assert set(Settings.model_fields) == {
-            "catalogue_db",
+            "supabase_url",
+            "supabase_key",
+            "supabase_timeout_seconds",
+            "redis_url",
+            "catalogue_cache_ttl_seconds",
+            "catalogue_refresh_lock_ttl_seconds",
             "match_accept_score",
             "match_ambiguity_margin",
             "match_tsr_margin",
@@ -120,10 +174,20 @@ class TestEnvOverride:
         monkeypatch.setenv("STARTUP_RETRY_DELAY_SECONDS", "0.5")
         assert Settings().startup_retry_delay_seconds == 0.5
 
-    def test_catalogue_db_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_redis_url_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _clear_env(monkeypatch)
-        monkeypatch.setenv("CATALOGUE_DB", "/data/bodegas-y-stock.sqlite")
-        assert Settings().catalogue_db == Path("/data/bodegas-y-stock.sqlite")
+        monkeypatch.setenv("REDIS_URL", "redis://redis:6379/0")
+        assert Settings().redis_url == "redis://redis:6379/0"
+
+    def test_cache_ttl_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _clear_env(monkeypatch)
+        monkeypatch.setenv("CATALOGUE_CACHE_TTL_SECONDS", "600")
+        assert Settings().catalogue_cache_ttl_seconds == 600
+
+    def test_supabase_timeout_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _clear_env(monkeypatch)
+        monkeypatch.setenv("SUPABASE_TIMEOUT_SECONDS", "2.5")
+        assert Settings().supabase_timeout_seconds == 2.5
 
     def test_env_names_are_case_insensitive(
         self, monkeypatch: pytest.MonkeyPatch
@@ -141,6 +205,81 @@ class TestEnvOverride:
 
 
 class TestInvalidValuesFailFast:
+    def test_a_missing_supabase_url_is_a_validation_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """REQ-API-4: a missing credential is permanent and never retried."""
+        _clear_env(monkeypatch)
+        monkeypatch.delenv("SUPABASE_URL", raising=False)
+
+        with pytest.raises(ValidationError):
+            Settings()
+
+    def test_a_missing_supabase_key_is_a_validation_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clear_env(monkeypatch)
+        monkeypatch.delenv("SUPABASE_KEY", raising=False)
+
+        with pytest.raises(ValidationError):
+            Settings()
+
+    def test_a_blank_supabase_url_is_rejected(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Compose interpolates `${SUPABASE_URL:-}`, so blank is the shape an
+        unset variable actually arrives in."""
+        _clear_env(monkeypatch)
+        monkeypatch.setenv("SUPABASE_URL", "")
+
+        with pytest.raises(ValidationError):
+            Settings()
+
+    def test_a_blank_supabase_key_is_rejected(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clear_env(monkeypatch)
+        monkeypatch.setenv("SUPABASE_KEY", "   ")
+
+        with pytest.raises(ValidationError):
+            Settings()
+
+    def test_a_ttl_below_sixty_seconds_is_rejected(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A tiny TTL turns the cache into a per-minute Supabase hammer."""
+        _clear_env(monkeypatch)
+        monkeypatch.setenv("CATALOGUE_CACHE_TTL_SECONDS", "59")
+
+        with pytest.raises(ValidationError):
+            Settings()
+
+    def test_a_sixty_second_ttl_is_allowed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clear_env(monkeypatch)
+        monkeypatch.setenv("CATALOGUE_CACHE_TTL_SECONDS", "60")
+
+        assert Settings().catalogue_cache_ttl_seconds == 60
+
+    def test_a_zero_supabase_timeout_is_rejected(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clear_env(monkeypatch)
+        monkeypatch.setenv("SUPABASE_TIMEOUT_SECONDS", "0")
+
+        with pytest.raises(ValidationError):
+            Settings()
+
+    def test_a_zero_refresh_lock_ttl_is_rejected(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clear_env(monkeypatch)
+        monkeypatch.setenv("CATALOGUE_REFRESH_LOCK_TTL_SECONDS", "0")
+
+        with pytest.raises(ValidationError):
+            Settings()
+
     def test_non_numeric_accept_score_raises(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

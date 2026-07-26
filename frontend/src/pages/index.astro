@@ -1,0 +1,12 @@
+---
+/**
+ * Root route (T15). The operator counting screen is the product's front door,
+ * so `/` is a redirect and never renders UI of its own.
+ *
+ * `prerender = false` because a 302 has to be issued by the server adapter;
+ * every actual UI page opts back into static output (design D2).
+ */
+export const prerender = false;
+
+return Astro.redirect('/conteo', 302);
+---

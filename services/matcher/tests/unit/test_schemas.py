@@ -66,9 +66,10 @@ class TestCatalogueIdLength:
             MatchRequest(spoken_name="achiote", catalogue_id="c" * 101)
 
     def test_every_real_catalogue_id_fits_the_limit(self) -> None:
-        from matcher.catalogue import STOCK_TABLES
+        """`catalogue_id` is a `warehouses.code` now, and codes are short."""
+        from conftest import FIXTURE_WAREHOUSES
 
-        assert all(len(table) <= MAX_CATALOGUE_ID for table in STOCK_TABLES)
+        assert all(len(code) <= MAX_CATALOGUE_ID for code in FIXTURE_WAREHOUSES)
 
 
 class TestUnitLength:

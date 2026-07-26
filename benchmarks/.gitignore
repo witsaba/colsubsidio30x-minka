@@ -3,6 +3,9 @@ corpus/audios/
 corpus/consolidated_dataset.csv
 results.json
 *.sqlite
+benchmark_matrices/
+matrix.csv
+summary.txt
 
 # Python and uv build artefacts
 __pycache__/

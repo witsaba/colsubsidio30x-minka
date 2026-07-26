@@ -77,13 +77,23 @@ services:
       dockerfile: services/matcher/Dockerfile
     ports:
       - "8002:8002"
-    volumes:
-      # The catalogue is read-only, always.
-      - ./data:/data:ro
     environment:
-      # Container-internal path, fixed by the mount above rather than by the
-      # operator.
-      CATALOGUE_DB: /data/bodegas-y-stock.sqlite
+      # PostgREST base URL of the Supabase project holding the catalogue. No
+      # default can be correct, and a blank one aborts boot rather than failing
+      # later as an unroutable request.
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      # The secret key (service-role equivalent in the new Supabase API-key
+      # scheme). Full database access, so it ships blank and is never written
+      # into a committed file; see .env.example and docs/deployment.md for why
+      # a least-privilege key is not available.
+      SUPABASE_KEY: ${SUPABASE_SECRET_KEY:-}
+      # The sibling cache on the Compose network. Deliberately not the
+      # `redis://localhost:6379/0` that Settings defaults to: that default is
+      # for running the app directly on a developer machine.
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      # How long a cached catalogue snapshot stays fresh, and the base of the
+      # jittered background refresh period. 3 hours.
+      CATALOGUE_CACHE_TTL_SECONDS: ${CATALOGUE_CACHE_TTL_SECONDS:-10800}
       MATCH_ACCEPT_SCORE: ${MATCH_ACCEPT_SCORE:-0.50}
       MATCH_AMBIGUITY_MARGIN: ${MATCH_AMBIGUITY_MARGIN:-0.08}
       MATCH_TSR_MARGIN: ${MATCH_TSR_MARGIN:-0.08}
@@ -97,8 +107,8 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
-      # Loading the catalogue (plus any startup retry) takes time; probes
-      # during that window are not failures.
+      # Reading the catalogue from Supabase (plus any startup retry) takes
+      # time; probes during that window are not failures.
       start_period: 10s
     restart: unless-stopped
 
@@ -121,6 +131,81 @@ services:
     healthcheck:
       test: ["CMD", "python", "-c",
              "import urllib.request;urllib.request.urlopen('http://localhost:8003/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  # Snapshot cache for the matcher's catalogue. A pure cache and a *soft*
+  # dependency: the matcher boots without it by reading Supabase directly, and
+  # keeps serving from its in-process index if Redis dies later. That is why
+  # nothing orders itself against it in either direction, and the independence
+  # promise at the top of this file still holds.
+  redis:
+    # Pinned, never `latest`: an upstream retag would otherwise change what
+    # this commit deploys.
+    image: redis:7.4-alpine
+    # No persistence. A cold start rebuilds the snapshot from Supabase, so an
+    # on-disk copy would only add a stale-data failure mode.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    # No ports: reachable on the Compose network only. Debug it with
+    # `docker compose exec redis redis-cli`.
+    healthcheck:
+      # It serves no HTTP, so its own CLI is the liveness probe.
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+  # The operator and auditor UI. An npm project with its own lockfile, so it
+  # builds from its own directory rather than the repository root.
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      # Astro's own default, and the port frontend/README.md, the frontend's
+      # tests and the manual verification steps already name. Kept rather than
+      # renumbered to 8004 for the sake of sitting next to the services.
+      - "4321:4321"
+    environment:
+      # Container-internal addresses, fixed by the default network rather than
+      # by the operator. The documented defaults in `src/pages/api/_upstream.ts`
+      # point at localhost because they cover `npm run dev` on the host; in here
+      # localhost is this container, and the upstreams answer to their Compose
+      # service names.
+      #
+      # Knowing an address is not waiting for it: no start-up ordering is
+      # declared for any of them (REQ-UCD-4). A missing upstream surfaces as a
+      # 502 from the route that needed it — and extraction degrades further
+      # still, to the offline mock, so the count survives a dead extractor.
+      STT_BASE_URL: http://stt:8001
+      MATCHER_BASE_URL: http://matcher:8002
+      EXTRACTOR_BASE_URL: http://product_identification:8003
+      # Server-only Supabase credentials for the operational routes
+      # (consent, plans, count records, auditor actions, Oracle export).
+      # NOT `PUBLIC_`-prefixed on purpose: Astro inlines every PUBLIC_ variable
+      # into the browser bundle, and this is the secret (service-role
+      # equivalent) key.
+      #
+      # MERGE NOTE: the parallel `redis-catalogue-cache` change may introduce
+      # its own Supabase variables for the matcher. These two names are the
+      # canonical ones — reconcile at merge time rather than letting two
+      # semantically identical names diverge.
+      SUPABASE_URL: ${SUPABASE_URL:?set SUPABASE_URL in .env}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:?set SUPABASE_SECRET_KEY in .env}
+      # The Node adapter binds 127.0.0.1 unless told otherwise, which no
+      # published port can reach.
+      HOST: 0.0.0.0
+      PORT: "4321"
+    healthcheck:
+      # Node, not python: this image carries no interpreter but its own. Same
+      # contract as the services above — a plain GET on /health.
+      test: ["CMD", "node", "-e",
+             "require('http').get('http://localhost:4321/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 10s
       timeout: 3s
       retries: 3

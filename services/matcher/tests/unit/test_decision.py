@@ -13,6 +13,7 @@ import pytest
 
 from matcher.config import Settings
 from matcher.decision import Candidate, Decision, decide
+from matcher.units import resolve_unit
 
 
 @dataclass(frozen=True)
@@ -38,15 +39,15 @@ def settings(**overrides: object) -> Settings:
 
 # Two rows whose token sets differ sharply -> uncrowded token_set_ratio field.
 UNCROWDED = [
-    (FakeRow("ACHIOTE MOLIDO", "Kilogram", "7003"), 0.87),
-    (FakeRow("ARROZ BLANCO", "Kilogram", "7004"), 0.66),
+    (FakeRow("ACHIOTE MOLIDO", "KG", "7003"), 0.87),
+    (FakeRow("ARROZ BLANCO", "KG", "7004"), 0.66),
 ]
 UNCROWDED_QUERY = "achiote molido"
 
 # Two rows that both contain the full query token set -> tsr_1 == tsr_2 == 1.0.
 CROWDED = [
-    (FakeRow("ACEITE DE OLIVA 500", "Liter", "8001"), 0.90),
-    (FakeRow("ACEITE DE OLIVA 1000", "Liter", "8002"), 0.70),
+    (FakeRow("ACEITE DE OLIVA 500", "LT", "8001"), 0.90),
+    (FakeRow("ACEITE DE OLIVA 1000", "LT", "8002"), 0.70),
 ]
 CROWDED_QUERY = "aceite de oliva"
 
@@ -62,12 +63,12 @@ class TestStatusTruthTable:
         assert result.margin == pytest.approx(0.21)
 
     def test_low_top_score_is_no_match(self) -> None:
-        ranked = [(FakeRow("ARROZ BLANCO", "Kilogram", "7004"), 0.31)]
+        ranked = [(FakeRow("ARROZ BLANCO", "KG", "7004"), 0.31)]
         result = decide(ranked, "tabla de picar", None, settings())
         assert result.status == "no_match"
 
     def test_no_match_asserts_no_sku(self) -> None:
-        ranked = [(FakeRow("ARROZ BLANCO", "Kilogram", "7004"), 0.31)]
+        ranked = [(FakeRow("ARROZ BLANCO", "KG", "7004"), 0.31)]
         result = decide(ranked, "tabla de picar", None, settings())
         # Candidates are still returned for review, but the status asserts nothing.
         assert result.status == "no_match"
@@ -75,30 +76,30 @@ class TestStatusTruthTable:
 
     def test_score_exactly_at_accept_is_not_no_match(self) -> None:
         ranked = [
-            (FakeRow("ACHIOTE MOLIDO", "Kilogram", "7003"), 0.50),
-            (FakeRow("ARROZ BLANCO", "Kilogram", "7004"), 0.10),
+            (FakeRow("ACHIOTE MOLIDO", "KG", "7003"), 0.50),
+            (FakeRow("ARROZ BLANCO", "KG", "7004"), 0.10),
         ]
         result = decide(ranked, UNCROWDED_QUERY, None, settings())
         assert result.status == "matched"
 
     def test_narrow_trigram_margin_is_ambiguous(self) -> None:
         ranked = [
-            (FakeRow("ACHIOTE MOLIDO", "Kilogram", "7003"), 0.80),
-            (FakeRow("ARROZ BLANCO", "Kilogram", "7004"), 0.75),
+            (FakeRow("ACHIOTE MOLIDO", "KG", "7003"), 0.80),
+            (FakeRow("ARROZ BLANCO", "KG", "7004"), 0.75),
         ]
         result = decide(ranked, UNCROWDED_QUERY, None, settings())
         assert result.status == "ambiguous"
 
     def test_margin_exactly_at_threshold_is_not_ambiguous(self) -> None:
         ranked = [
-            (FakeRow("ACHIOTE MOLIDO", "Kilogram", "7003"), 0.80),
-            (FakeRow("ARROZ BLANCO", "Kilogram", "7004"), 0.72),
+            (FakeRow("ACHIOTE MOLIDO", "KG", "7003"), 0.80),
+            (FakeRow("ARROZ BLANCO", "KG", "7004"), 0.72),
         ]
         result = decide(ranked, UNCROWDED_QUERY, None, settings())
         assert result.status == "matched"
 
     def test_single_candidate_has_full_margin(self) -> None:
-        ranked = [(FakeRow("ACHIOTE MOLIDO", "Kilogram", "7003"), 0.87)]
+        ranked = [(FakeRow("ACHIOTE MOLIDO", "KG", "7003"), 0.87)]
         result = decide(ranked, UNCROWDED_QUERY, None, settings())
         assert result.margin == pytest.approx(0.87)
         assert result.status == "matched"
@@ -150,27 +151,27 @@ class TestCrowdingCheck:
     def test_crowding_considers_at_most_max_candidates(self) -> None:
         # The crowding twin sits at position 6 and must be ignored at top-5.
         ranked = [
-            (FakeRow("ACEITE DE OLIVA 500", "Liter", "8001"), 0.90),
-            (FakeRow("ARROZ BLANCO", "Kilogram", "1"), 0.40),
-            (FakeRow("AZUCAR MORENA", "Kilogram", "2"), 0.30),
-            (FakeRow("SAL MARINA", "Kilogram", "3"), 0.20),
-            (FakeRow("PANELA", "Kilogram", "4"), 0.10),
-            (FakeRow("ACEITE DE OLIVA 1000", "Liter", "8002"), 0.05),
+            (FakeRow("ACEITE DE OLIVA 500", "LT", "8001"), 0.90),
+            (FakeRow("ARROZ BLANCO", "KG", "1"), 0.40),
+            (FakeRow("AZUCAR MORENA", "KG", "2"), 0.30),
+            (FakeRow("SAL MARINA", "KG", "3"), 0.20),
+            (FakeRow("PANELA", "KG", "4"), 0.10),
+            (FakeRow("ACEITE DE OLIVA 1000", "LT", "8002"), 0.05),
         ]
         result = decide(ranked, CROWDED_QUERY, None, settings())
         assert result.status == "matched"
         assert len(result.candidates) == 5
 
     def test_single_candidate_is_never_crowded(self) -> None:
-        ranked = [(FakeRow("ACEITE DE OLIVA 500", "Liter", "8001"), 0.90)]
+        ranked = [(FakeRow("ACEITE DE OLIVA 500", "LT", "8001"), 0.90)]
         assert decide(ranked, CROWDED_QUERY, None, settings()).status == "matched"
 
 
 class TestThresholdsAreConfigurable:
     def test_raising_accept_score_flips_matched_to_no_match(self) -> None:
         ranked = [
-            (FakeRow("ACHIOTE MOLIDO", "Kilogram", "7003"), 0.55),
-            (FakeRow("ARROZ BLANCO", "Kilogram", "7004"), 0.20),
+            (FakeRow("ACHIOTE MOLIDO", "KG", "7003"), 0.55),
+            (FakeRow("ARROZ BLANCO", "KG", "7004"), 0.20),
         ]
         assert decide(ranked, UNCROWDED_QUERY, None, settings()).status == "matched"
         assert (
@@ -189,7 +190,7 @@ class TestThresholdsAreConfigurable:
         )
 
     def test_max_candidates_truncates_the_response(self) -> None:
-        ranked = [(FakeRow(f"ITEM {i}", "Unidad", str(i)), 0.9 - i / 100) for i in range(9)]
+        ranked = [(FakeRow(f"ITEM {i}", "UND", str(i)), 0.9 - i / 100) for i in range(9)]
         result = decide(ranked, "item 0", None, settings(match_max_candidates=3))
         assert len(result.candidates) == 3
 
@@ -201,7 +202,7 @@ class TestCandidateShape:
         assert isinstance(top, Candidate)
         assert top.nr_articulo == "7003"
         assert top.articulo == "ACHIOTE MOLIDO"
-        assert top.unidad == "Kilogram"
+        assert top.unidad == "KG"
         assert top.score == pytest.approx(0.87)
 
     def test_unidad_display_is_the_spanish_copy(self) -> None:
@@ -230,9 +231,9 @@ class TestCandidateShape:
 class TestUnitRerank:
     def _band_case(self) -> list[tuple[FakeRow, float]]:
         return [
-            (FakeRow("ACEITE VEGETAL", "Kilogram", "1"), 0.90),
-            (FakeRow("ACEITE DE OLIVA", "Liter", "2"), 0.86),
-            (FakeRow("ACEITE DE PALMA", "Liter", "3"), 0.50),
+            (FakeRow("ACEITE VEGETAL", "KG", "1"), 0.90),
+            (FakeRow("ACEITE DE OLIVA", "LT", "2"), 0.86),
+            (FakeRow("ACEITE DE PALMA", "LT", "3"), 0.50),
         ]
 
     def test_unit_equal_candidate_moves_up_inside_the_band(self) -> None:
@@ -280,7 +281,7 @@ class TestUnitRerank:
     def test_null_unidad_never_counts_as_unit_equal(self) -> None:
         ranked = [
             (FakeRow("ACEITE VEGETAL", None, "1"), 0.90),
-            (FakeRow("ACEITE DE OLIVA", "Liter", "2"), 0.86),
+            (FakeRow("ACEITE DE OLIVA", "LT", "2"), 0.86),
         ]
         result = decide(ranked, "aceite", "litros", settings())
         assert [c.nr_articulo for c in result.candidates] == ["2", "1"]
@@ -288,7 +289,7 @@ class TestUnitRerank:
     def test_null_unidad_is_not_penalized_beyond_stable_order(self) -> None:
         ranked = [
             (FakeRow("ACEITE VEGETAL", None, "1"), 0.90),
-            (FakeRow("ACEITE DE PALMA", "Kilogram", "2"), 0.88),
+            (FakeRow("ACEITE DE PALMA", "KG", "2"), 0.88),
         ]
         # No unit-equal candidate at all -> order is untouched.
         result = decide(ranked, "aceite", "litros", settings())
@@ -296,17 +297,17 @@ class TestUnitRerank:
 
     def test_rerank_is_stable_among_unit_equal_candidates(self) -> None:
         ranked = [
-            (FakeRow("ACEITE VEGETAL", "Kilogram", "1"), 0.90),
-            (FakeRow("ACEITE DE OLIVA", "Liter", "2"), 0.88),
-            (FakeRow("ACEITE DE PALMA", "Liter", "3"), 0.86),
+            (FakeRow("ACEITE VEGETAL", "KG", "1"), 0.90),
+            (FakeRow("ACEITE DE OLIVA", "LT", "2"), 0.88),
+            (FakeRow("ACEITE DE PALMA", "LT", "3"), 0.86),
         ]
         result = decide(ranked, "aceite", "litros", settings())
         assert [c.nr_articulo for c in result.candidates] == ["2", "3", "1"]
 
     def test_rerank_band_width_follows_the_ambiguity_margin(self) -> None:
         ranked = [
-            (FakeRow("ACEITE VEGETAL", "Kilogram", "1"), 0.90),
-            (FakeRow("ACEITE DE OLIVA", "Liter", "2"), 0.70),
+            (FakeRow("ACEITE VEGETAL", "KG", "1"), 0.90),
+            (FakeRow("ACEITE DE OLIVA", "LT", "2"), 0.70),
         ]
         # 0.70 is outside the default 0.08 band, but inside a 0.30 band.
         narrow = decide(ranked, "aceite", "litros", settings())
@@ -319,3 +320,44 @@ class TestUnitRerank:
         with_rerank = decide(ranked, "aceite", "litros", settings())
         without = decide(ranked, "aceite", "litros", settings(match_unit_rerank=False))
         assert with_rerank.status == without.status
+
+
+class TestUnitRerankSpeaksTheCatalogueVocabulary:
+    """The re-rank only fires if `resolve_unit` speaks the catalogue's own
+    `unidad` vocabulary. Since the Supabase cutover that vocabulary is
+    `warehouse_products.unit_code` (`KG`/`LT`/`UND`/`POR`/`CAJA`), not the
+    workbook labels the retired SQLite catalogue carried. A map keyed on the
+    wrong vocabulary makes `_unit_rerank` silently inert while
+    `MATCH_UNIT_RERANK` still reads `true`.
+    """
+
+    def _band_case(self) -> list[tuple[FakeRow, float]]:
+        return [
+            (FakeRow("ACEITE VEGETAL", "KG", "1"), 0.90),
+            (FakeRow("ACEITE DE OLIVA", "LT", "2"), 0.86),
+            (FakeRow("ACEITE DE PALMA", "LT", "3"), 0.50),
+        ]
+
+    def test_a_spoken_unit_promotes_the_code_vocabulary_candidate(self) -> None:
+        result = decide(self._band_case(), "aceite", "litros", settings())
+        assert [c.nr_articulo for c in result.candidates][:2] == ["2", "1"]
+
+    def test_resolve_unit_returns_a_value_the_catalogue_can_equal(self) -> None:
+        catalogue_vocabulary = {"KG", "LT", "UND", "POR", "CAJA"}
+        resolved = {
+            resolve_unit(spoken)
+            for spoken in ("kilos", "litros", "unidades", "porciones")
+        }
+        assert resolved <= catalogue_vocabulary
+        assert resolved == {"KG", "LT", "UND", "POR"}
+
+    def test_the_rerank_is_inert_for_a_retired_label_vocabulary_row(self) -> None:
+        """The workbook labels now live in `units.source_label` and never in
+        `unidad`; a row still carrying one must not be treated as unit-equal."""
+        ranked = [
+            (FakeRow("ACEITE VEGETAL", "KG", "1"), 0.90),
+            # A retired workbook label, deliberately not a unit code.
+            (FakeRow("ACEITE DE OLIVA", "Liter", "2"), 0.86),
+        ]
+        result = decide(ranked, "aceite", "litros", settings())
+        assert [c.nr_articulo for c in result.candidates] == ["1", "2"]

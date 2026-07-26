@@ -138,9 +138,41 @@ class TestCompose:
     def test_publishes_port_8002(self, compose: str) -> None:
         assert '"8002:8002"' in compose
 
-    def test_mounts_the_catalogue_read_only(self, compose: str) -> None:
-        assert "./data:/data:ro" in compose
-        assert "CATALOGUE_DB: /data/bodegas-y-stock.sqlite" in compose
+    def test_declares_no_catalogue_mount(self, compose: str) -> None:
+        """The catalogue is read from Supabase and cached in Redis; there is no
+        longer a database file to mount, and `Settings` no longer has a field
+        that could point at one."""
+        assert "./data:/data" not in compose
+        assert "volumes:" not in compose
+        assert "CATALOGUE_DB" not in compose
+
+    def test_receives_the_supabase_and_redis_variables(self, compose: str) -> None:
+        # The container variable stays SUPABASE_KEY (the matcher's Settings
+        # field is unchanged); the host-side source is the canonical
+        # SUPABASE_SECRET_KEY of the new Supabase API-key scheme.
+        assert "SUPABASE_URL: ${SUPABASE_URL:-}" in compose
+        assert "SUPABASE_KEY: ${SUPABASE_SECRET_KEY:-}" in compose
+        assert "REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}" in compose
+        assert (
+            "CATALOGUE_CACHE_TTL_SECONDS: ${CATALOGUE_CACHE_TTL_SECONDS:-10800}"
+            in compose
+        )
+
+    def test_the_cache_ttl_default_matches_the_settings_default(
+        self, compose: str
+    ) -> None:
+        """A drifting compose default would silently change how long a stale
+        snapshot is served in production."""
+        from matcher.config import Settings
+
+        defaults = Settings(
+            supabase_url="http://supabase.invalid", supabase_key="test"
+        )
+        assert (
+            "CATALOGUE_CACHE_TTL_SECONDS: "
+            f"${{CATALOGUE_CACHE_TTL_SECONDS:-{defaults.catalogue_cache_ttl_seconds}}}"
+            in compose
+        )
 
     @pytest.mark.parametrize(
         "key, value",
@@ -165,7 +197,7 @@ class TestCompose:
         """A drifting compose default would silently change production."""
         from matcher.config import Settings
 
-        defaults = Settings(catalogue_db=Path("/data/bodegas-y-stock.sqlite"))
+        defaults = Settings(supabase_url="http://supabase.invalid", supabase_key="test")
         assert (
             "MATCH_ACCEPT_SCORE: "
             f"${{MATCH_ACCEPT_SCORE:-{defaults.match_accept_score:.2f}}}"
@@ -207,7 +239,7 @@ class TestCompose:
         # Read the code defaults, not whatever the harness exported.
         monkeypatch.delenv("STARTUP_RETRIES", raising=False)
         monkeypatch.delenv("STARTUP_RETRY_DELAY_SECONDS", raising=False)
-        defaults = Settings(catalogue_db=Path("/data/bodegas-y-stock.sqlite"))
+        defaults = Settings(supabase_url="http://supabase.invalid", supabase_key="test")
         assert (
             f"STARTUP_RETRIES: ${{STARTUP_RETRIES:-{defaults.startup_retries}}}"
             in compose

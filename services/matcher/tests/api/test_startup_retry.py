@@ -1,7 +1,8 @@
 """Bounded startup retry and fail-fast fallback (JD-U).
 
-A cold start can race the thing it depends on: the catalogue volume may not be
-mounted yet, or the file may be mid-copy. Retrying a bounded number of times
+A cold start can race the things it depends on: Supabase or Redis may not be
+reachable yet, or PostgREST may still be warming up. Retrying a bounded number
+of times
 inside the process turns that race into a slower start instead of a crash,
 while an actually broken deployment still aborts -- the process exits non-zero
 (uvicorn exit code 3) and Docker's `restart: unless-stopped` becomes the outer,
@@ -20,8 +21,19 @@ import time
 from pathlib import Path
 
 import pytest
+from conftest import FakeCatalogueSource, make_cache, make_rows
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
+
+SENTINEL_SUPABASE_KEY = "sb-secret-DO-NOT-LEAK-8f3a1c7e94b2"
+"""A deliberately unmistakable stand-in for the live secret key
+(service-role equivalent in the new Supabase API-key scheme).
+
+REQ-API-8 is only testable with a value that cannot appear in output by
+coincidence. A placeholder like `unused` is a substring of ordinary English and
+would make the absence assertion below prove nothing; this one appears in the
+process output if and only if the credential itself escaped.
+"""
 
 
 @pytest.fixture
@@ -43,23 +55,33 @@ def attempts(monkeypatch: pytest.MonkeyPatch) -> list[int]:
 
 
 def _install_service_factory(monkeypatch: pytest.MonkeyPatch, factory) -> None:
+    """Patch the service factory, and the adapters it would otherwise dial.
+
+    The retry loop under test builds the adapters once and then constructs the
+    service per attempt; the fake pair keeps the attempt that finally succeeds
+    offline, so this suite exercises the loop and nothing else.
+    """
     from matcher import main as main_module
 
+    monkeypatch.setattr(
+        main_module,
+        "_build_adapters",
+        lambda _settings: (FakeCatalogueSource(make_rows()), make_cache()),
+    )
     monkeypatch.setattr(main_module, "MatcherService", factory)
 
 
-def _flaky_factory(attempts: list[int], failures: int, catalogue_db_path: Path):
+def _flaky_factory(attempts: list[int], failures: int):
     from matcher.catalogue import CatalogueUnavailableError
     from matcher.service import MatcherService
 
-    def factory(settings):
+    def factory(settings, source, cache):
         attempts.append(1)
         if len(attempts) <= failures:
             raise CatalogueUnavailableError(
-                f"cannot open catalogue database '{catalogue_db_path}': "
-                "unable to open database file"
+                "the Supabase catalogue is unavailable: connection refused"
             )
-        return MatcherService(settings)
+        return MatcherService(settings, source, cache)
 
     return factory
 
@@ -67,7 +89,6 @@ def _flaky_factory(attempts: list[int], failures: int, catalogue_db_path: Path):
 class TestRetryRecoversFromATransientFailure:
     def test_startup_succeeds_after_two_failed_attempts(
         self,
-        catalogue_db_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         sleeps: list[float],
         attempts: list[int],
@@ -76,12 +97,9 @@ class TestRetryRecoversFromATransientFailure:
 
         from matcher.main import app
 
-        monkeypatch.setenv("CATALOGUE_DB", str(catalogue_db_path))
         monkeypatch.setenv("STARTUP_RETRIES", "3")
         monkeypatch.setenv("STARTUP_RETRY_DELAY_SECONDS", "2")
-        _install_service_factory(
-            monkeypatch, _flaky_factory(attempts, 2, catalogue_db_path)
-        )
+        _install_service_factory(monkeypatch, _flaky_factory(attempts, 2))
 
         with TestClient(app) as client:
             assert client.get("/health").json()["status"] == "ok"
@@ -90,7 +108,6 @@ class TestRetryRecoversFromATransientFailure:
 
     def test_it_waits_between_attempts(
         self,
-        catalogue_db_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         sleeps: list[float],
         attempts: list[int],
@@ -99,12 +116,9 @@ class TestRetryRecoversFromATransientFailure:
 
         from matcher.main import app
 
-        monkeypatch.setenv("CATALOGUE_DB", str(catalogue_db_path))
         monkeypatch.setenv("STARTUP_RETRIES", "3")
         monkeypatch.setenv("STARTUP_RETRY_DELAY_SECONDS", "2")
-        _install_service_factory(
-            monkeypatch, _flaky_factory(attempts, 2, catalogue_db_path)
-        )
+        _install_service_factory(monkeypatch, _flaky_factory(attempts, 2))
 
         with TestClient(app):
             pass
@@ -113,7 +127,6 @@ class TestRetryRecoversFromATransientFailure:
 
     def test_each_retry_is_logged_as_a_warning(
         self,
-        catalogue_db_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         sleeps: list[float],
         attempts: list[int],
@@ -123,11 +136,8 @@ class TestRetryRecoversFromATransientFailure:
 
         from matcher.main import app
 
-        monkeypatch.setenv("CATALOGUE_DB", str(catalogue_db_path))
         monkeypatch.setenv("STARTUP_RETRIES", "3")
-        _install_service_factory(
-            monkeypatch, _flaky_factory(attempts, 2, catalogue_db_path)
-        )
+        _install_service_factory(monkeypatch, _flaky_factory(attempts, 2))
 
         with caplog.at_level(logging.INFO, logger="matcher"):
             with TestClient(app):
@@ -141,11 +151,10 @@ class TestRetryRecoversFromATransientFailure:
         assert len(warnings) == 2
         assert "1/4" in warnings[0]
         assert "2/4" in warnings[1]
-        assert "unable to open database file" in warnings[0]
+        assert "connection refused" in warnings[0]
 
     def test_a_recovered_startup_still_logs_the_catalogue_summary(
         self,
-        catalogue_db_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         sleeps: list[float],
         attempts: list[int],
@@ -155,10 +164,7 @@ class TestRetryRecoversFromATransientFailure:
 
         from matcher.main import app
 
-        monkeypatch.setenv("CATALOGUE_DB", str(catalogue_db_path))
-        _install_service_factory(
-            monkeypatch, _flaky_factory(attempts, 2, catalogue_db_path)
-        )
+        _install_service_factory(monkeypatch, _flaky_factory(attempts, 2))
 
         with caplog.at_level(logging.INFO, logger="matcher"):
             with TestClient(app):
@@ -174,7 +180,6 @@ class TestRetryRecoversFromATransientFailure:
 class TestExhaustedRetriesFailFast:
     def test_it_aborts_after_one_attempt_plus_the_configured_retries(
         self,
-        catalogue_db_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         sleeps: list[float],
         attempts: list[int],
@@ -184,11 +189,8 @@ class TestExhaustedRetriesFailFast:
         from matcher.catalogue import CatalogueUnavailableError
         from matcher.main import app
 
-        monkeypatch.setenv("CATALOGUE_DB", str(catalogue_db_path))
         monkeypatch.setenv("STARTUP_RETRIES", "3")
-        _install_service_factory(
-            monkeypatch, _flaky_factory(attempts, 99, catalogue_db_path)
-        )
+        _install_service_factory(monkeypatch, _flaky_factory(attempts, 99))
 
         with pytest.raises(CatalogueUnavailableError):
             with TestClient(app):
@@ -199,7 +201,6 @@ class TestExhaustedRetriesFailFast:
 
     def test_zero_retries_means_a_single_attempt(
         self,
-        catalogue_db_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         sleeps: list[float],
         attempts: list[int],
@@ -209,11 +210,8 @@ class TestExhaustedRetriesFailFast:
         from matcher.catalogue import CatalogueUnavailableError
         from matcher.main import app
 
-        monkeypatch.setenv("CATALOGUE_DB", str(catalogue_db_path))
         monkeypatch.setenv("STARTUP_RETRIES", "0")
-        _install_service_factory(
-            monkeypatch, _flaky_factory(attempts, 99, catalogue_db_path)
-        )
+        _install_service_factory(monkeypatch, _flaky_factory(attempts, 99))
 
         with pytest.raises(CatalogueUnavailableError):
             with TestClient(app):
@@ -224,7 +222,6 @@ class TestExhaustedRetriesFailFast:
 
     def test_exhaustion_logs_an_error_naming_the_attempt_count(
         self,
-        catalogue_db_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         sleeps: list[float],
         attempts: list[int],
@@ -235,11 +232,8 @@ class TestExhaustedRetriesFailFast:
         from matcher.catalogue import CatalogueUnavailableError
         from matcher.main import app
 
-        monkeypatch.setenv("CATALOGUE_DB", str(catalogue_db_path))
         monkeypatch.setenv("STARTUP_RETRIES", "2")
-        _install_service_factory(
-            monkeypatch, _flaky_factory(attempts, 99, catalogue_db_path)
-        )
+        _install_service_factory(monkeypatch, _flaky_factory(attempts, 99))
 
         with caplog.at_level(logging.INFO, logger="matcher"):
             with pytest.raises(CatalogueUnavailableError):
@@ -256,7 +250,6 @@ class TestExhaustedRetriesFailFast:
 
     def test_no_service_is_left_behind(
         self,
-        catalogue_db_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         sleeps: list[float],
         attempts: list[int],
@@ -266,11 +259,8 @@ class TestExhaustedRetriesFailFast:
         from matcher.catalogue import CatalogueUnavailableError
         from matcher.main import app
 
-        monkeypatch.setenv("CATALOGUE_DB", str(catalogue_db_path))
         monkeypatch.setenv("STARTUP_RETRIES", "1")
-        _install_service_factory(
-            monkeypatch, _flaky_factory(attempts, 99, catalogue_db_path)
-        )
+        _install_service_factory(monkeypatch, _flaky_factory(attempts, 99))
 
         with pytest.raises(CatalogueUnavailableError):
             with TestClient(app):
@@ -280,7 +270,6 @@ class TestExhaustedRetriesFailFast:
 
     def test_a_misconfigured_setting_is_never_retried(
         self,
-        catalogue_db_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         sleeps: list[float],
     ) -> None:
@@ -290,7 +279,6 @@ class TestExhaustedRetriesFailFast:
 
         from matcher.main import app
 
-        monkeypatch.setenv("CATALOGUE_DB", str(catalogue_db_path))
         monkeypatch.setenv("MATCH_ACCEPT_SCORE", "not-a-number")
 
         with pytest.raises(ValidationError):
@@ -304,13 +292,18 @@ class TestTheProcessActuallyExitsThree:
     """The outer layer only works if the process really dies non-zero."""
 
     def test_uvicorn_exits_with_code_three_when_the_catalogue_is_missing(
-        self, tmp_path: Path
+        self,
     ) -> None:
+        """Both dependencies point at closed *localhost* ports: connection
+        refused arrives locally and instantly, so this test needs no network.
+        """
         import os
 
         env = dict(
             os.environ,
-            CATALOGUE_DB=str(tmp_path / "absent.sqlite"),
+            SUPABASE_URL="http://127.0.0.1:9/",
+            SUPABASE_KEY=SENTINEL_SUPABASE_KEY,
+            REDIS_URL="redis://127.0.0.1:9/0",
             STARTUP_RETRIES="1",
             STARTUP_RETRY_DELAY_SECONDS="0",
         )
@@ -332,3 +325,18 @@ class TestTheProcessActuallyExitsThree:
 
         assert completed.returncode == 3, completed.stderr
         assert "startup aborted after 2 attempts" in completed.stderr
+
+        # REQ-API-8, verified where it actually matters. This is the only test
+        # that runs the real, unmocked failure path in a real process, so it is
+        # the only place Python renders the full chained traceback -- every
+        # `raise ... from exc` frame, every adapter repr, every argument the
+        # exception carried. If the credential can escape at all, it escapes
+        # here. A hit means an operator's logs, a crash reporter, or a support
+        # paste now carries the live secret key.
+        for stream, contents in (("stderr", completed.stderr), ("stdout", completed.stdout)):
+            assert SENTINEL_SUPABASE_KEY not in contents, (
+                f"SUPABASE_KEY leaked into {stream} of a crashing matcher: the "
+                f"secret (service-role equivalent) credential bypasses RLS, so "
+                f"anything that reads this process's output now has full "
+                f"database access"
+            )
