@@ -3,6 +3,9 @@ corpus/*
 !corpus/labels.csv
 !corpus/README.md
 results.json
+benchmark_matrices/
+matrix.csv
+summary.txt
 
 # Python and uv build artefacts
 __pycache__/
