@@ -1,9 +1,11 @@
 /**
- * T10 — Astro proxy endpoints (REQ-PRX-1..5, RNF-04).
+ * T10 — Astro proxy endpoints (REQ-PRX-1..6, RNF-04).
  *
- * The two Python services have no CORS and no auth, so the browser can never
- * call `:8001` / `:8002` directly. These same-origin server endpoints are the
- * whole solution. The contract under test is deliberately narrow: forward
+ * STT and the matcher have no CORS and no auth, so the browser can never call
+ * `:8001` / `:8002` directly; the extractor (`:8003`) ships CORS `*` but stays
+ * behind the same-origin proxy anyway for symmetry and the server-side timeout
+ * budget (REQ-PRX-6). These same-origin server endpoints are the whole
+ * solution. The contract under test is deliberately narrow: forward
  * faithfully, decide nothing.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
