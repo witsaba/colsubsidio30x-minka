@@ -38,8 +38,8 @@ Phases 1 → 4 are strictly ordered by dependency.
 
 ## Phase 2: Proxy route (REQ-PRX-1, REQ-PRX-5, REQ-PRX-6)
 
-- [ ] 2.1 RED — extend `frontend/tests/api-routes/proxy.test.ts`: add `EXTRACTOR_BASE_URL` to `ENV_KEYS`; assert body forwarded verbatim to `${base}/api/v1/extract`, `AbortSignal.timeout(60_000)`, upstream 500 `{detail}` passes through unchanged, thrown `fetch` → 502 `error.code === 'proxy_unreachable'`, default `http://localhost:8003` + env override, `prerender === false`. Fails: cannot resolve `../../src/pages/api/extract`.
-- [ ] 2.2 GREEN — `frontend/src/pages/api/_upstream.ts`: `EXTRACTOR_BASE_DEFAULT`, `extractorBase()` (env-only, SSRF guard), `EXTRACT_TIMEOUT_MS = 60_000`. Create `frontend/src/pages/api/extract.ts` mirroring `match.ts` (`forward`, `contentTypeOf`, `streamBody`, `prerender = false`).
+- [x] 2.1 RED — extend `frontend/tests/api-routes/proxy.test.ts`: add `EXTRACTOR_BASE_URL` to `ENV_KEYS`; assert body forwarded verbatim to `${base}/api/v1/extract`, `AbortSignal.timeout(60_000)`, upstream 500 `{detail}` passes through unchanged, thrown `fetch` → 502 `error.code === 'proxy_unreachable'`, default `http://localhost:8003` + env override, `prerender === false`. Fails: cannot resolve `../../src/pages/api/extract`.
+- [x] 2.2 GREEN — `frontend/src/pages/api/_upstream.ts`: `EXTRACTOR_BASE_DEFAULT`, `extractorBase()` (env-only, SSRF guard), `EXTRACT_TIMEOUT_MS = 60_000`. Create `frontend/src/pages/api/extract.ts` mirroring `match.ts` (`forward`, `contentTypeOf`, `streamBody`, `prerender = false`).
 
 ## Phase 3: HTTP adapter (REQ-EXT-6)
 

@@ -41,6 +41,7 @@ import {
 } from '../../src/pages/api/transcribe';
 import { POST as matchPost, prerender as matchPrerender } from '../../src/pages/api/match';
 import { GET as cataloguesGet, prerender as cataloguesPrerender } from '../../src/pages/api/catalogues';
+import { POST as extractPost, prerender as extractPrerender } from '../../src/pages/api/extract';
 
 type FetchCall = [input: string, init: RequestInit];
 
@@ -73,7 +74,20 @@ function multipartRequest(url = 'http://localhost:4321/api/transcribe', extra?: 
   return new Request(url, { method: 'POST', body: form });
 }
 
-const ENV_KEYS = ['STT_BASE_URL', 'MATCHER_BASE_URL'] as const;
+/** Build a `POST /api/extract` request carrying the extractor's wire body. */
+function extractRequest(
+  url = 'http://localhost:4321/api/extract',
+  body: unknown = { transcription: 'tres kilos de lechuga batavia' },
+  headers: Record<string, string> = {},
+) {
+  return new Request(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+  });
+}
+
+const ENV_KEYS = ['STT_BASE_URL', 'MATCHER_BASE_URL', 'EXTRACTOR_BASE_URL'] as const;
 let savedEnv: Record<string, string | undefined>;
 
 beforeEach(() => {
@@ -91,10 +105,11 @@ afterEach(() => {
 });
 
 describe('REQ-PRX-1 — same-origin endpoints, server-rendered', () => {
-  it('all three endpoints opt out of prerendering', () => {
+  it('all four endpoints opt out of prerendering', () => {
     expect(transcribePrerender).toBe(false);
     expect(matchPrerender).toBe(false);
     expect(cataloguesPrerender).toBe(false);
+    expect(extractPrerender).toBe(false);
   });
 
   it('POST /api/transcribe forwards to STT /transcribe', async () => {
@@ -150,6 +165,37 @@ describe('REQ-PRX-1 — same-origin endpoints, server-rendered', () => {
     expect((await res.json()).request_id).toBe('m1');
   });
 
+  it('POST /api/extract forwards the JSON body verbatim to the extractor /api/v1/extract', async () => {
+    const spy = stubFetch(() =>
+      jsonResponse(
+        {
+          validated_inventory: [{ producto: 'Lechuga Batavia', unidad: 'KILOGRAMO', cantidad: 3 }],
+          consensus_status: 'FULL_CONSENSUS',
+          confidence_score: 0.97,
+        },
+        200,
+      ),
+    );
+
+    const payload = { transcription: 'tres kilos de lechuga batavia' };
+    const res = await extractPost(ctx(extractRequest(undefined, payload)));
+
+    const [url, init] = callsOf(spy)[0];
+    expect(url).toBe('http://localhost:8003/api/v1/extract');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(await new Response(init.body as BodyInit).text())).toEqual(payload);
+    expect(res.status).toBe(200);
+
+    // The consensus metadata belongs to the extractor; the proxy carries it
+    // through untouched rather than projecting the fields the UI happens to use.
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.validated_inventory).toEqual([
+      { producto: 'Lechuga Batavia', unidad: 'KILOGRAMO', cantidad: 3 },
+    ]);
+    expect(body.consensus_status).toBe('FULL_CONSENSUS');
+    expect(body.confidence_score).toBe(0.97);
+  });
+
   it('GET /api/catalogues forwards to matcher /catalogues', async () => {
     const spy = stubFetch(() => jsonResponse([{ catalogue_id: 'a', rows: 10 }], 200));
 
@@ -166,6 +212,38 @@ describe('REQ-PRX-5 — upstream bases from env, never from the request (SSRF gu
     const spy = stubFetch(() => jsonResponse([], 200));
     await cataloguesGet(ctx(new Request('http://localhost:4321/api/catalogues')));
     expect(callsOf(spy)[0][0]).toBe('http://localhost:8002/catalogues');
+  });
+
+  it('uses the documented localhost:8003 default for the extractor', async () => {
+    const spy = stubFetch(() => jsonResponse({ validated_inventory: [] }, 200));
+    await extractPost(ctx(extractRequest()));
+    expect(callsOf(spy)[0][0]).toBe('http://localhost:8003/api/v1/extract');
+  });
+
+  it('honours an EXTRACTOR_BASE_URL override, trailing slash included', async () => {
+    process.env.EXTRACTOR_BASE_URL = 'http://product_identification:8003/';
+    const spy = stubFetch(() => jsonResponse({ validated_inventory: [] }, 200));
+
+    await extractPost(ctx(extractRequest()));
+
+    expect(callsOf(spy)[0][0]).toBe('http://product_identification:8003/api/v1/extract');
+  });
+
+  it('ignores an extractor base smuggled into the extract query string, headers or body', async () => {
+    const spy = stubFetch(() => jsonResponse({ validated_inventory: [] }, 200));
+
+    await extractPost(
+      ctx(
+        extractRequest(
+          'http://localhost:4321/api/extract?base=http://evil.example',
+          { transcription: 'x', base_url: 'http://evil.example' },
+          { 'x-upstream': 'http://evil.example' },
+        ),
+      ),
+    );
+
+    expect(String(callsOf(spy)[0][0])).not.toContain('evil.example');
+    expect(callsOf(spy)[0][0]).toBe('http://localhost:8003/api/v1/extract');
   });
 
   it('honours MATCHER_BASE_URL and STT_BASE_URL overrides', async () => {
@@ -304,6 +382,29 @@ describe('REQ-PRX-2 — faithful status and body pass-through with request_id', 
     expect(await res.json()).toEqual(detail);
   });
 
+  it('an extractor 500 keeps its own {detail} body and status', async () => {
+    const detail = { detail: 'Vertex AI credentials are not configured' };
+    stubFetch(() => jsonResponse(detail, 500));
+
+    const res = await extractPost(ctx(extractRequest()));
+
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual(detail);
+  });
+
+  it('a thrown fetch on /api/extract becomes 502 proxy_unreachable', async () => {
+    stubFetch(() => {
+      throw new TypeError('fetch failed');
+    });
+
+    const res = await extractPost(ctx(extractRequest()));
+
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.error.code).toBe('proxy_unreachable');
+    expect(typeof body.error.message).toBe('string');
+  });
+
   it('preserves the upstream x-request-id response header when present', async () => {
     stubFetch(() => jsonResponse({ ok: true }, 200, { 'x-request-id': 'hdr-1' }));
     const res = await cataloguesGet(ctx(new Request('http://localhost:4321/api/catalogues')));
@@ -358,6 +459,35 @@ describe('REQ-PRX-3 — abort budget outlasts the 45 s STT deadline', () => {
     expect(transcribeMs).toBe(50_000);
     expect(matchMs).toBe(10_000);
     expect(cataloguesMs).toBe(10_000);
+  });
+
+  it('extract gets its own 60 s budget: the extractor has NO server-side deadline', async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+    stubFetch(() => jsonResponse({ validated_inventory: [] }, 200));
+
+    await extractPost(ctx(extractRequest()));
+
+    const [extractMs] = timeoutSpy.mock.calls.map(([ms]) => ms as number);
+    // Not the matcher's 10 s: that budget is tuned for a sqlite lookup, while a
+    // dual-Gemini consensus routinely runs tens of seconds.
+    expect(extractMs).not.toBe(10_000);
+    expect(extractMs).toBe(60_000);
+  });
+
+  it('an extractor answering at 59 s is inside the budget, so its 200 wins', async () => {
+    stubFetch(async (_input, init) => {
+      const signal = (init as RequestInit).signal as AbortSignal;
+      expect(signal.aborted).toBe(false);
+      return jsonResponse(
+        { validated_inventory: [{ producto: 'Arroz', unidad: 'KILOGRAMO', cantidad: 2 }] },
+        200,
+      );
+    });
+
+    const res = await extractPost(ctx(extractRequest()));
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).validated_inventory).toHaveLength(1);
   });
 
   it('an upstream that answers at 44 s still returns its 200, not a proxy timeout', async () => {
