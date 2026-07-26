@@ -7,9 +7,10 @@
 [![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com/)
 [![Astro](https://img.shields.io/badge/Frontend-Astro%20%2B%20Preact-BC52EE?style=for-the-badge&logo=astro)](https://astro.build/)
 [![Google Vertex AI](https://img.shields.io/badge/AI Engine-Gemini%202.5%20Flash%20%2B%20Pro-4285F4?style=for-the-badge&logo=googlecloud)](https://cloud.google.com/vertex-ai)
+[![Supabase](https://img.shields.io/badge/Cloud%20DB-Supabase%20PostgreSQL-3ECF8E?style=for-the-badge&logo=supabase)](https://supabase.com/)
+[![SQLite](https://img.shields.io/badge/Local%20Cache-SQLite%20In--Memory-003B57?style=for-the-badge&logo=sqlite)](https://www.sqlite.org/)
 [![Deepgram](https://img.shields.io/badge/STT-Deepgram%20API-13EF95?style=for-the-badge)](https://deepgram.com/)
 [![Docker](https://img.shields.io/badge/Deployment-Docker%20Compose-2496ED?style=for-the-badge&logo=docker)](https://www.docker.com/)
-[![License](https://img.shields.io/badge/License-Proprietary-red?style=for-the-badge)](LICENSE)
 
 ---
 
@@ -17,12 +18,14 @@
 
 - [💡 Visión General y Propósito del Proyecto](#-visión-general-y-propósito-del-proyecto)
 - [👥 Equipo de Desarrollo](#-equipo-de-desarrollo)
+- [🎭 Roles de la Operación y Flujo de Trabajo](#-roles-de-la-operación-y-flujo-de-trabajo)
 - [🔄 El Flujo Operativo End-to-End](#-el-flujo-operativo-end-to-end)
-- [📱 Flujos de Pantallas y Experiencia de Usuario (UI/UX)](#-flujos-de-pantallas-y-experiencia-de-usuario-uiux)
-  - [1. App del Operador (`/conteo`) — Captura por Voz en Tablet/Móvil](#1-app-del-operador-conteo--captura-por-voz-en-tabletmóvil)
-  - [2. Plataforma del Auditor (`/auditor`) — Control y Cierre ERP](#2-plataforma-del-auditor-auditor--control-y-cierre-erp)
-- [🏗️ Arquitectura del Sistema y Componentes](#️-arquitectura-del-sistema-y-componentes)
-- [🛠️ Tecnologías y Herramientas Utilizadas](#️-tecnologías-y-herramientas-utilizadas)
+- [📱 Flujos de Pantallas e Interacción de Usuarios (UI/UX)](#-flujos-de-pantallas-e-interacción-de-usuarios-uiux)
+  - [1. Plataforma del Auditor / Supervisor (`/auditor`) — Apertura, Monitoreo y Cierre](#1-plataforma-del-auditor--supervisor-auditor--apertura-monitoreo-y-cierre)
+  - [2. App del Operador (`/conteo`) — Captura por Voz en Bodega](#2-app-del-operador-conteo--captura-por-voz-en-bodega)
+- [🗄️ Arquitectura Híbrida de Base de Datos: SQLite + Supabase PostgreSQL](#️-arquitectura-híbrida-de-base-de-datos-sqlite--supabase-postgresql)
+- [🏗️ Arquitectura de Microservicios Backend](#️-arquitectura-de-microservicios-backend)
+- [🛠️ Tecnologías y Herramientas Utilizadas](#-tecnologías-y-herramientas-utilizadas)
 - [📁 Estructura Completa del Repositorio](#-estructura-completa-del-repositorio)
 - [📊 Suite Diagnóstica y Resultados del Benchmark ($N=1,904$)](#-suite-diagnóstica-y-resultados-del-benchmark-n1904)
 - [⚡ Guía de Instalación y Despliegue Paso a Paso](#-guía-de-instalación-y-despliegue-paso-a-paso)
@@ -46,7 +49,7 @@ En la operación de hoteles, restaurantes y centros de convenciones de Colsubsid
 
 ```
 ✅ FLUJO MINKA (Ultra-rápido y validado):
-[Dictado por Voz en Tablet] ➔ [Transcripción STT + Normalización] ➔ [Consenso Dual IA Gemini] ➔ [Búsqueda Difusa en Catálogo] ➔ [Exportación Oracle My Inventory]
+[Auditor abre Plan de Auditoría] ➔ [Operador dicta por voz en Tablet] ➔ [Consenso Dual IA Gemini + Matcher] ➔ [Supervisión & Cierre Auditor] ➔ [Exportación Oracle]
 ```
 
 > **📌 Principio Clave:** Minka **NO reemplaza el ERP Oracle My Inventory**, sino que le suministra datos limpios, validados y auditables a la primera (*Right First Time*), reduciendo el tiempo de toma de inventario en más de un 70%.
@@ -57,7 +60,7 @@ En la operación de hoteles, restaurantes y centros de convenciones de Colsubsid
 
 | Rol | Integrantes | Enfoque Principal |
 |---|---|---|
-| **Implementación Técnica y Arquitectura** | **Braejan David Arias Heregua**<br>**Daniel Rosas** | Microservicios FastAPI, motores de IA Vertex/Gemini, STT Deepgram, matcher vectorial SQLite, frontend Astro/Preact y suite de benchmarks. |
+| **Implementación Técnica y Arquitectura** | **Braejan David Arias Heregua**<br>**Daniel Rosas** | Microservicios FastAPI, motores de IA Vertex/Gemini, STT Deepgram, matcher vectorial SQLite, persistencia Supabase, frontend Astro/Preact y suite de benchmarks. |
 | **Documentación, Casos de Uso y QA** | **Adriana Durand** *(Invitado)*<br>**Edith Lavado** | Definición del PRD, diseño de casos de uso de negocio, dataset de pruebas de voz real y aseguramiento de calidad. |
 | **Sponsor / Host del Desafío** | **30X · Colsubsidio** | Definición del reto de hospitalidad y validación de reglas de negocio. |
 
@@ -65,60 +68,134 @@ En la operación de hoteles, restaurantes y centros de convenciones de Colsubsid
 
 ---
 
-## 🔄 El Flujo Operativo End-to-End
+## 🎭 Roles de la Operación y Flujo de Trabajo
 
-El sistema opera bajo un flujo de 8 pasos continuos y trazables:
+El sistema contempla **dos roles claramente diferenciados** que garantizan el control operativo, la segregación de funciones y la auditoría a ciegas (*blind counting*):
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Auditor as 👨‍💼 Auditor / Supervisor
+    participant System as ⚙️ Sistema Minka
+    actor Operator as 📱 Operador de Bodega
+
+    Auditor->>System: 1. Carga catálogo y abre Plan de Auditoría (Bodega + Operador asignado)
+    System-->>Operator: 2. Plan activado en la App del Operador
+    Operator->>System: 3. Selecciona Plan, presiona Push-to-Talk y dicta inventario por voz
+    System->>System: 4. Procesamiento STT + Consenso Dual Gemini + Matcher de Catálogo
+    System-->>Operator: 5. Muestra tarjetas visuales de confirmación en tiempo real
+    System-->>Auditor: 6. Refleja avance en Dashboard en vivo y dispara alertas de anomalías
+    Auditor->>System: 7. Revisa banderas, valida discrepancias y cierra el Plan
+    System->>Auditor: 8. Genera archivo de importación compatible con Oracle My Inventory
+```
+
+### 👨‍💼 Rol 1: Auditor / Supervisor (Plataforma Web `/auditor`)
+Es la autoridad responsable de la gobernanza del inventario y la interacción con el ERP Oracle:
+- **Paso A: Apertura del Plan**: Crea el **Plan de Auditoría** asignando la bodega específica a auditar (ej. *Bodega de Cocina Principal*), definiendo el período y autorizando explícitamente a los operadores responsables.
+- **Paso B: Monitoreo en Tiempo Real**: Visualiza el tablero de control (*Dashboard*) conforme los operadores avanzan dictando en las bodegas.
+- **Paso C: Gestión de Anomalías**: Recibe alertas preventivas automáticas (ej: cantidades atípicas frente al histórico, unidades no homologadas o stock que generaría saldos negativos).
+- **Paso D: Cierre y Exportación ERP**: Aprueba la reconciliación final y exporta el archivo plano con el formato exacto requerido por **Oracle My Inventory** (*Import Count Sequences*).
+
+### 📱 Rol 2: Operador / Auxiliar de Bodega (App Móvil/Tablet `/conteo`)
+Es la persona encargada del conteo físico directo en el punto de almacenamiento:
+- **Paso 1: Selección de Plan**: Al ingresar a su tablet o smartphone, visualiza **únicamente los Planes de Auditoría activos que le han sido asignados** por el Auditor.
+- **Paso 2: Dictado por Voz (*Push-to-Talk*)**: Presiona el botón del micrófono y dicta naturalmente los productos y cantidades.
+- **Paso 3: Validación Visual a Ciegas (*Blind Counting*)**: El operador ve el resultado extraído por la IA (*"Arroz Blanco - 150 Kg"*), pero **por regla de negocio nunca ve el stock teórico del ERP** para evitar sesgos o manipulación de datos.
+- **Paso 4: Corrección Inmediata**: Si se equivoca o el sistema detecta una discrepancia de dictado, elimina la tarjeta visual localmente y vuelve a dictar (la voz por seguridad RNF-04 **nunca** modifica ni borra registros cerrados en la base maestra).
+
+---
+
+## 🔄 El Flujo Operativo End-to-End
 
 ```mermaid
 flowchart TD
-    A[1. Carga de Catálogo Excel] -->|Parsing pandas/openpyxl| B(2. Base SQLite Bodegas y Stock)
-    B --> C[3. Creación de Plan de Auditoría]
-    C --> D[4. Dictado por Voz en Tablet Push-to-Talk]
-    D --> E[5. Transcripción STT Deepgram]
+    A[1. Carga de Catálogo Máster en Supabase] -->|Parsing pandas/openpyxl| B(2. Construcción de Caché In-Memory SQLite)
+    B --> C[3. Auditor crea Plan de Auditoría y asigna Operador]
+    C --> D[4. Operador selecciona Plan y dicta por voz en Tablet]
+    D --> E[5. Transcripción STT Deepgram + Normalización ITN]
     E --> F[6. Consenso Dual IA Gemini 2.5 Flash / Pro]
-    F --> G[7. Matcher de Catálogo y Detección de Anomalías]
-    G --> H[8. Cierre de Auditoría y Exportación a Oracle]
+    F --> G[7. Búsqueda Difusa en Caché Matcher SQLite]
+    G --> H[8. Ingesta Transaccional en Supabase PostgreSQL]
+    H --> I[9. Supervisión Auditor, Cierre y Exportación Oracle]
 ```
 
-1. **Configuración del Catálogo (Auditor, Web)**: Ingesta del archivo maestro `BODEGAS Y STOCK.xlsx`. El sistema procesa los 1,405 SKUs y 8 catálogos, calculando parámetros estadísticos por producto.
-2. **Creación del Plan de Auditoría (Auditor, Web)**: Selección de bodega destino, rango de fechas y asignación de operadores autorizados.
-3. **Toma de Conteo por Voz (Operador, Tablet)**: El operador presiona el botón *Push-to-Talk* y dicta de forma espontánea: *"150 kilos de arroz blanco y 20 litros de aceite de girasol"*.
-4. **Extracción Estructurada por IA (Motor de IA)**:
-   - **STT**: Transcripción de audio a texto y Normalización Inversa de Texto (ITN, ej: *"novecientos"* $\rightarrow$ `900`).
-   - **Extractor Dual LLM**: Tres modelos en paralelo procesan el texto y generan un esquema JSON `{producto, cantidad, unidad, bodega}`.
-5. **Validación de Consenso**: Dos modelos (Gemini 2.5 Flash y Gemini Pro en Google Vertex AI) evalúan la extracción. Si coinciden (`EXACT_CONSENSUS`), el registro se convalida automáticamente.
-6. **Validación de Reglas de Negocio y Detección de Anomalías**: Verificación automática contra la base SQLite: ¿Existe el producto en esa bodega? ¿La unidad corresponde? ¿La cantidad es atípica frente al histórico? Ante divergencias, se emite una alerta preventiva.
-7. **Revisión y Corrección en Sitio (Operador y Auditor)**: Si hay un error, el operador elimina el registro y vuelve a dictar (por seguridad RNF-04, la voz **nunca** edita ni borra registros existentes directamente).
-8. **Cierre y Exportación ERP**: Generación de archivo en formato **Oracle My Inventory** (estilo *Import Count Sequences*), junto con reporte de conciliación y log de auditoría ISO 27001.
+1. **Configuración del Catálogo**: Ingesta del archivo maestro `BODEGAS Y STOCK.xlsx` en Supabase PostgreSQL y sincronización de la caché in-memory SQLite (`bodegas-y-stock.sqlite`).
+2. **Creación del Plan de Auditoría (Auditor, Web `/auditor`)**: Selección de la bodega a auditar, rango de fechas y asignación de operadores autorizados.
+3. **Toma de Conteo por Voz (Operador, Tablet `/conteo`)**: El operador selecciona su plan asignado, presiona *Push-to-Talk* y dicta de forma espontánea: *"150 kilos de arroz blanco y 20 litros de aceite de girasol"*.
+4. **Extracción Estructurada por IA**:
+   - **STT**: Transcripción de audio a texto y Normalización Inversa de Texto (ITN).
+   - **Consenso Dual LLM**: Dos modelos en paralelo (Gemini 2.5 Flash y Gemini Pro en Google Vertex AI) evalúan el dictado y generan la estructura JSON `{producto, cantidad, unidad, bodega}`.
+5. **Matching de Catálogo ultrarrápido**: Consulta sobre la caché SQLite in-memory (latencia < 6 ms) para asociar el término hablado con el SKU exacto de la bodega.
+6. **Validación de Reglas de Negocio y Persistencia en Supabase**: Registro en las tablas transaccionales de Supabase. Si hay anomalías (cantidades fuera de rango histórico), se dispara una bandera de alerta.
+7. **Revisión y Cierre (Auditor, Web `/auditor`)**: El auditor revisa las discrepancias notificadas en su tablero y aprueba el cierre del plan.
+8. **Exportación ERP**: Generación de archivo plano en formato **Oracle My Inventory** (*Import Count Sequences*), acompañado de un log de auditoría trazable ISO 27001.
 
 ---
 
-## 📱 Flujos de Pantallas y Experiencia de Usuario (UI/UX)
+## 📱 Flujos de Pantallas e Interacción de Usuarios (UI/UX)
 
 La aplicación fue desarrollada en **Astro + Preact + TypeScript** con un diseño moderno, responsivo y adaptado a las condiciones de trabajo en bodegas y cocinas.
 
-### 1. App del Operador (`/conteo`) — Captura por Voz en Tablet/Móvil
-- **Objetivo**: Diseñada prioritariamente para pantallas táctiles de móviles/tablets (resolución objetivo 390×844).
-- **Flujo de Pantallas**:
-  1. **Selección de Plan / Catálogo**: El operador elige la bodega a auditar (ej. *Cocina Principal*, *Bar*, *Bodega Secos*).
-  2. **Interfaz Push-to-Talk (Mic Dock)**: Un botón flotante central de gran tamaño para presionar mientras se habla.
-     - **Límite de Seguridad**: Auto-stop configurado a los 20 segundos o máximo 1 MB por clip de audio.
-     - **Formato Nativo**: Captura directa Opus (`audio/ogg` en Firefox, `audio/webm` en Chrome).
-  3. **Tarjeta de Confirmación Visual en Tiempo Real**:
-     - Visualización inmediata de la transcripción.
-     - Separación automática de ítems dictados en tarjetas independientes (ej. Tarjeta 1: *Arroz 150 Kg*, Tarjeta 2: *Aceite 20 L*).
-     - Banderas de color: 🟢 Validado con éxito | 🟠 Alerta de anomalía (requiere revisión).
+### 1. Plataforma del Auditor / Supervisor (`/auditor`) — Apertura, Monitoreo y Cierre
+- **Diseñada para**: Tablets en orientación horizontal (1194×834) y computadores de escritorio.
+- **Vistas y Módulos**:
+  1. **Gestor de Planes de Auditoría**: Formulario interactivo para seleccionar la bodega objetivo, definir fechas y asignar operarios autorizados.
+  2. **Dashboard de Supervisión en Vivo**: Muestra el avance del conteo en tiempo real por bodega, porcentaje de SKUs cubiertos y métricas de discrepancias.
+  3. **Módulo de Detección de Anomalías**: Panel de control donde el auditor puede auditar registros marcados con bandera naranja, revisar divergencias y conciliar el stock.
+  4. **Generador de Exportación Oracle**: Generación en 1-clic del archivo final listo para carga masiva en el ERP de Colsubsidio.
 
-### 2. Plataforma del Auditor (`/auditor`) — Control y Cierre ERP
-- **Objetivo**: Diseñada para tablets en modo horizontal (1194×834) y computadores de escritorio.
-- **Flujo de Pantallas**:
-  1. **Dashboard de Supervisión en Vivo**: Muestra el avance del conteo por bodega, total de SKUs registrados y porcentaje de discrepancias.
-  2. **Módulo de Resolución de Anomalías**: Permite al auditor revisar ítems marcados con bandera naranja, escuchar el dictado si aplica o conciliar diferencias de inventario.
-  3. **Generador de Exportación Oracle**: Botón de un solo clic que compila el conteo cerrado en la estructura exacta de importación de secuencias de conteo de Oracle My Inventory.
+### 2. App del Operador (`/conteo`) — Captura por Voz en Bodega
+- **Diseñada para**: Dispositivos móviles y tablets en formato vertical (resolución objetivo 390×844).
+- **Vistas y Módulos**:
+  1. **Selector de Planes Asignados**: El operador visualiza únicamente los planes activos creados previamente por su auditor.
+  2. **Mic Dock (Push-to-Talk)**: Botón táctil gigante que se mantiene presionado mientras se dicta el inventario.
+     - **Seguridad**: Auto-stop a los 20 segundos o máximo 1 MB por clip de audio.
+     - **Formato Nativo**: Captura directa Opus (`audio/ogg` en Firefox, `audio/webm` en Chrome).
+  3. **Tarjetas de Confirmación Visual**: Muestra el desglose de productos identificados por la IA en tiempo real. Permite al operador descartar e ingresar un nuevo dictado si existió una imprecisión.
 
 ---
 
-## 🏗️ Arquitectura del Sistema y Componentes
+## 🗄️ Arquitectura Híbrida de Base de Datos: SQLite + Supabase PostgreSQL
+
+Para resolver el desafío técnico de **rendimiento en tiempo real (< 5 ms)** sin sacrificar **gobernanza de datos persistente, seguridad RLS y trazabilidad de auditoría**, Minka implementa una **arquitectura híbrida de base de datos en dos capas**:
+
+```
++---------------------------------------------------------------------------------------------------+
+|                                CAPA PERSISTENTE (SUPABASE POSTGRESQL)                              |
+| - Persistencia Nube de Usuarios y Roles (`profiles`)                                              |
+| - Gestión de Planes de Auditoría (`audit_plans`) y Asignación de Operadores (`audit_plan_operators`)|
+| - Ingesta Transaccional de Conteo (`count_sessions` e `inventory_records`)                         |
+| - Motor de Anomalías, Reconciliaciones Aprobadas (`audit_reconciliations`) e Histórico Oracle     |
+| - Seguridad de Acceso con Row Level Security (RLS) para Conteo a Ciegas                            |
++---------------------------------------------------------------------------------------------------+
+                                                 |
+                                 Sincronización de Catálogo Máster
+                                                 v
++---------------------------------------------------------------------------------------------------+
+|                                   CAPA CACHÉ LOCAL (SQLITE IN-MEMORY)                             |
+| - Residencia local in-memory en el Microservicio `matcher` (`data/bodegas-y-stock.sqlite`)         |
+| - Indexación Vectorial Trigram + RapidFuzz para Matching de SKUs a partir de la voz               |
+| - Latencia ultrarrápida de búsqueda: 2 ms - 6 ms                                                 |
+| - Montada como volumen de solo lectura (`mode=ro`)                                                |
++---------------------------------------------------------------------------------------------------+
+```
+
+### Esquema de Persistencia Principal en Supabase (11 Tablas Relacionales)
+1. `profiles`: Usuarios y roles del sistema (`auditor`, `operator`, `supervisor`).
+2. `warehouses`: Catálogo maestro de bodegas y puntos de venta.
+3. `products`: Catálogo global de 1,405 SKUs (maneja adecuadamente el ~18% de ítems sin código SKU original mediante identificadores unívocos UUID).
+4. `warehouse_stock`: Relación N:M de stock teórico por bodega (oculto al operador).
+5. `audit_plans`: Ordenes de conteo creadas por los auditores.
+6. `audit_plan_operators`: Asignación exclusiva de operadores autorizados a cada plan.
+7. `count_sessions`: Registro transaccional de dictados por voz (transcripción + JSON de consenso IA).
+8. `inventory_records`: Ítems individuales contados físicamente.
+9. `anomalies`: Alertas disparadas por reglas de negocio o desvíos atípicos.
+10. `audit_reconciliations`: Consolidado final aprobado al cerrar la auditoría.
+11. `oracle_exports`: Logs de generación de archivos de carga ERP.
+
+---
+
+## 🏗️ Arquitectura de Microservicios Backend
 
 El sistema se compone de **4 microservicios independientes** desacoplados, desplegados mediante un único archivo `docker-compose.yml`:
 
@@ -140,29 +217,28 @@ El sistema se compone de **4 microservicios independientes** desacoplados, despl
 +-------+-------+                  +-------+-------+                  +-------+-------+
         |                                  |                                  |
         v                                  v                                  v
-  Deepgram API                     Vertex AI / Gemini                   SQLite Database
- (Audio a Texto)                 (Consenso Dual LLM)               (1,405 SKUs / Read-Only)
+  Deepgram API                     Vertex AI / Gemini                   Caché SQLite /
+ (Audio a Texto)                 (Consenso Dual LLM)                 Supabase PostgreSQL
 ```
 
 ### Descripción de los Microservicios
 
 1. **Frontend Proxy (`frontend`) — Puerto 4321**:
-   - Desarrollado en Astro con SSR (Server-Side Rendering) en Node.js.
-   - Actúa como proxy seguro de las peticiones a los microservicios backend para evitar CORS y proteger los endpoints internos.
+   - Desarrollado en Astro con SSR en Node.js.
+   - Proxy de peticiones a los microservicios backend para evitar problemas de CORS y aislar las APIs internas.
 
 2. **Servicio Speech-to-Text (`services/stt`) — Puerto 8001**:
-   - API en FastAPI encargada de transformar la voz del operador en texto.
-   - **Jerarquía de Resiliencia Multi-Proveedor**: Deepgram Nova-2 (Principal) $\rightarrow$ ElevenLabs (Reserva) $\rightarrow$ Groq Whisper (Fallback).
-   - **RNF-04**: El audio jamás se guarda en disco; se procesa en memoria volátil en streaming.
+   - API en FastAPI encargada de transformar la voz en texto.
+   - **Jerarquía Multi-Proveedor**: Deepgram Nova-2 (Principal) $\rightarrow$ ElevenLabs (Reserva) $\rightarrow$ Groq Whisper (Fallback).
+   - **RNF-04**: El audio jamás se almacena en disco.
 
 3. **Servicio de Extracción por IA (`services/product_identification`) — Puerto 8003**:
    - API en FastAPI con integración a Google Vertex AI.
-   - Ejecuta un consenso dual entre **Gemini 2.5 Flash** (rápido y eficiente) y **Gemini Pro** (razonamiento complejo) para estructurar el texto dictado en un objeto JSON estandarizado.
+   - Consenso dual entre **Gemini 2.5 Flash** y **Gemini Pro** para estructurar el texto dictado en esquemas JSON estandarizados.
 
 4. **Servicio Matcher de Catálogo (`services/matcher`) — Puerto 8002**:
-   - Engine de búsqueda difusa y matemática sobre la base SQLite (`bodegas-y-stock.sqlite`).
-   - Utiliza combinación de algoritmos **RapidFuzz** + **Scoring por Trigramas** para vincular el término hablado con la descripción exacta del SKU en Oracle.
-   - Latencia promedio de consulta: **6.38 ms**.
+   - Engine de búsqueda difusa sobre la caché SQLite (`bodegas-y-stock.sqlite`).
+   - Algoritmo **RapidFuzz** + **Scoring por Trigramas** con latencia promedio de **6.38 ms**.
 
 ---
 
@@ -170,14 +246,15 @@ El sistema se compone de **4 microservicios independientes** desacoplados, despl
 
 | Capa | Tecnología / Herramienta | Razón de Elección |
 |---|---|---|
-| **Lenguaje Backend** | Python 3.11+ (gestionado con `uv`) | Rapidez de ejecución, ecosistema de IA y manejo de entornos virtuales ultrarrápidos. |
-| **Framework APIs** | FastAPI + Uvicorn | Alto rendimiento asíncrono y especificación OpenAPI automática. |
-| **Frontend UI** | Astro 4 + Preact + TypeScript | Carga ultrarrápida, arquitectura de islas interactivas y tipado estricto. |
-| **Base de Datos** | SQLite 3 (`pandas` + `openpyxl`) | Ligera, portable y montada en modo solo lectura (`mode=ro`) para prevenir corrupción. |
-| **Motor de STT** | Deepgram API (Nova-2) | La menor latencia del mercado (<500 ms) y alta precisión en vocabulario en español. |
-| **Modelos de IA** | Google Vertex AI (Gemini 2.5 Flash / Pro) | Consenso estocástico dual para cero alucinaciones de inventario. |
-| **Matching Algorítmico** | RapidFuzz + Trigram Scoring | Coincidencia de cadenas de alta velocidad tolerante a errores ortográficos del STT. |
-| **Contenedores** | Docker & Docker Compose | Despliegue reproducible de la arquitectura completa en cualquier entorno. |
+| **Lenguaje Backend** | Python 3.11+ (gestionado con `uv`) | Rendimiento asíncrono y gestión eficiente de dependencias. |
+| **Framework APIs** | FastAPI + Uvicorn | Alta velocidad y documentación interactiva OpenAPI automática. |
+| **Frontend UI** | Astro 4 + Preact + TypeScript | Carga ultrarrápida, arquitectura de islas e interfaz responsiva. |
+| **Base de Datos Persistente** | Supabase (PostgreSQL Cloud) | Gobernanza relacional, gestión de usuarios/roles y seguridad RLS. |
+| **Base de Datos Caché** | SQLite 3 (`pandas` + `openpyxl`) | Caché in-memory ultrarrápida (latencia < 6ms) montada en modo solo lectura (`mode=ro`). |
+| **Motor STT** | Deepgram API (Nova-2) | Latencia sub-segundo (<500 ms) y alta precisión en español. |
+| **Modelos de IA** | Google Vertex AI (Gemini 2.5 Flash / Pro) | Consenso estocástico dual para evitar alucinaciones de inventario. |
+| **Matching Algorítmico** | RapidFuzz + Trigram Scoring | Búsqueda difusa tolerante a errores ortográficos de transcripción. |
+| **Contenedores** | Docker & Docker Compose | Despliegue estandarizado de la arquitectura completa. |
 
 ---
 
@@ -185,7 +262,7 @@ El sistema se compone de **4 microservicios independientes** desacoplados, despl
 
 ```
 colsubsidio30x-minka/
-├── .env.example               # Plantilla unificada de variables de entorno
+├── .env.example               # Plantilla unificada de variables de entorno (Supabase, Vertex AI, STT)
 ├── docker-compose.yml         # Superficie única de despliegue Docker
 ├── Makefile                   # Accesos directos de automatización (build, test, run)
 ├── pyproject.toml             # Configuración del workspace global uv / Python
@@ -198,13 +275,13 @@ colsubsidio30x-minka/
 │   ├── docs/                  # Documentación metodológica detallada
 │   └── reports/               # CSV consolidado para análisis en Excel
 │
-├── data/                      # 🗄️ Catálogo SQLite (generado a partir de Excel)
-│   └── bodegas-y-stock.sqlite # Base de datos de 1,405 SKUs (gitignored)
+├── data/                      # 🗄️ Caché de catálogo SQLite (generado a partir de Excel)
+│   └── bodegas-y-stock.sqlite # Base de datos local de 1,405 SKUs (gitignored)
 │
 ├── docs/                      # 📚 Documentación técnica y de diseño
 │   ├── prd.md                 # Documento de Requerimientos de Producto (PRD v1.0)
 │   ├── deployment.md          # Guía de despliegue y variables de entorno
-│   ├── database/              # Arquitectura de datos y tablas
+│   ├── database/              # Arquitectura de datos (Supabase + SQLite ERD)
 │   └── diagrams/              # Diagramas Mermaid y flujos de arquitectura
 │
 ├── frontend/                  # 📱 App Web Operador y Auditor (Astro + Preact)
@@ -231,7 +308,7 @@ colsubsidio30x-minka/
 
 ## 📊 Suite Diagnóstica y Resultados del Benchmark ($N=1,904$)
 
-Para demostrar la validez de Minka ante los jueces de la hackathon con **rigor científico y datos reales**, se construyó una suite de pruebas diagnósticas con audios grabados en campo por el equipo (*Adriana* y *Daniel*).
+Para demostrar la validez de Minka ante los jueces con **rigor científico y datos reales**, se construyó una suite de pruebas diagnósticas con audios grabados en campo por el equipo (*Adriana* y *Daniel*).
 
 ### 1. El Corpus de Pruebas Real en Google Drive
 - **238 notas de voz reales** (133 clips de Adriana en `.mp4` + 105 clips de Daniel en `.ogg`).
@@ -276,11 +353,11 @@ El repositorio incluye un tablero estático HTML interactivo para inspeccionar l
 git clone https://github.com/tu-usuario/colsubsidio30x-minka.git
 cd colsubsidio30x-minka
 
-# Configurar el archivo .env interactivo (valida credenciales de Deepgram y GCP Vertex AI)
+# Configurar el archivo .env interactivo (valida credenciales de Deepgram, Supabase y GCP Vertex AI)
 ./scripts/setup-env.sh
 ```
 
-### Paso 2: Construir la Base de Datos del Catálogo
+### Paso 2: Construir la Caché Local del Catálogo
 Genera la base SQLite compilada a partir del catálogo maestro Excel:
 ```bash
 make build-sqlite
@@ -307,8 +384,8 @@ curl http://localhost:4321/health   # 📱 Frontend Application
 ```
 
 ### URLs de Acceso en el Navegador
-- 📱 **App del Operador**: `http://localhost:4321/conteo`
-- 💻 **Plataforma del Auditor**: `http://localhost:4321/auditor`
+- 💻 **Plataforma del Auditor / Supervisor** (Apertura de Plan & Cierre ERP): `http://localhost:4321/auditor`
+- 📱 **App del Operador** (Conteo por Voz en Bodega): `http://localhost:4321/conteo`
 
 > ⚠️ **Nota de Seguridad del Navegador:** El uso del micrófono (`getUserMedia`) exige un entorno seguro (**HTTPS** o **`localhost`**). Para pruebas de demostración, abre el navegador directamente en el equipo donde se ejecutan los servicios.
 
@@ -342,10 +419,10 @@ cd frontend && npx astro check
    - Para mitigar riesgos de suplantación de voz y cumplir con estándares de ciberseguridad, los clips de audio **nunca se almacenan en disco**. Se procesan en streaming en la memoria RAM y se descartan inmediatamente tras obtener la transcripción.
 2. **Protección de Datos Personales (Ley 1581 de Colombia)**:
    - Los registros de log (*telemetría*) excluyen cualquier texto transcrito o nombre de producto que pudiera contener información sensible en nivel `INFO`.
-3. **Inmutabilidad del Catálogo**:
+3. **Inmutabilidad de la Caché**:
    - La base de datos `bodegas-y-stock.sqlite` se monta en volumen de Docker como solo lectura (`:ro`) y se abre con la bandera `mode=ro` en SQLite.
-4. **Marco de Seguridad ISO 27001**:
-   - Trazabilidad completa de operaciones en los reportes de auditoría con fecha, hora, usuario asignado y huella de modificación.
+4. **Marco de Seguridad ISO 27001 y RLS**:
+   - Trazabilidad completa de operaciones con Row Level Security (RLS) en Supabase para garantizar que cada operador solo acceda a los planes asignados a su cuenta.
 
 ---
 
@@ -356,7 +433,7 @@ Para profundizar en los detalles arquitectónicos y decisiones de diseño del pr
 - 📄 [Documento de Requerimientos de Producto (PRD v1.0)](file:///c:/Users/drosa/Documents/Workspace/2026_07_25_repo_oficial/colsubsidio30x-minka/docs/prd.md)
 - 📝 [Extracción Trazable de la Sesión de Descubrimiento](file:///c:/Users/drosa/Documents/Workspace/2026_07_25_repo_oficial/colsubsidio30x-minka/docs/prd-seed.md)
 - 📊 [Metodología de Benchmarking y Dataset Tecnológico](file:///c:/Users/drosa/Documents/Workspace/2026_07_25_repo_oficial/colsubsidio30x-minka/benchmarks/docs/metodologia_y_dataset.md)
-- 🗄️ [Arquitectura de Base de Datos y Comparativa Supabase](file:///c:/Users/drosa/Documents/Workspace/2026_07_25_repo_oficial/colsubsidio30x-minka/docs/database/DATABASE_ARCHITECTURE.md)
+- 🗄️ [Arquitectura de Base de Datos (Supabase + SQLite)](file:///c:/Users/drosa/Documents/Workspace/2026_07_25_repo_oficial/colsubsidio30x-minka/docs/database/DATABASE_ARCHITECTURE.md)
 - 🚀 [Checklist de Despliegue de Entorno Único](file:///c:/Users/drosa/Documents/Workspace/2026_07_25_repo_oficial/colsubsidio30x-minka/docs/deployment.md)
 
 ---
