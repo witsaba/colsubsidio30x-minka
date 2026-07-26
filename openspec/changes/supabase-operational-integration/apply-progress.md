@@ -357,3 +357,69 @@ Modified: `frontend/package.json` + lockfile (`@supabase/supabase-js` 2.110.8),
 ### Update 2026-07-25, orchestrator — `COUNT_STATUS` enum risk CLOSED
 
 The remaining named debt this batch called out — "no stub can prove the live `status` check constraint accepts `'confirmed'`/`'flagged'`" — is resolved, not deferred. The orchestrator already had the real `record_status` enum from a direct `list_tables(verbose)` query against `blvdxsoaopcvtzawvgbt` earlier in this session: `pending_sync | recorded | flagged | verified | discarded`. **`'confirmed'` was never a valid member** — every successful (non-anomaly) count write would have hit the check constraint and 500'd in production, the exact failure this task's own comment warned about. Fixed directly: `COUNT_STATUS.ok` changed from `'confirmed'` to `'recorded'` (the column's own default, matching RF-20's "voice inserts only" success state); the three hardcoded `'confirmed'` fixture literals in `records-read.test.ts`/`auditor-records.test.ts` updated to match. Re-ran all three gates after the fix: `npm test` → 906/906, `npm run check` → 0 errors, both unchanged from the pre-fix state (the tests were consistent among themselves, just consistently wrong against the live enum — exactly why this needed a human/orchestrator with real schema access, not another stub-level test). `flagged` (the anomaly branch) was already correct.
+
+---
+
+## Batch "live-schema fixes 6.13 / 6.14 / 6.15" — 2026-07-25 (Strict TDD)
+
+Three tasks, one file (`frontend/src/pages/api/auditor/actions.ts`) plus the
+matching read path. All three are the same bug class as 6.12: the stub suite was
+internally consistent and consistently wrong against the live schema.
+
+### Completed tasks
+
+- [x] 6.13 `auditor_actions` insert used `auditor_id`/`note`; live columns are
+  `actor_id`/`reason`. Renamed at the insert call site only — the route's own
+  request-body names (`auditorId`, `note`) are the client contract and are
+  unchanged. **Extra finding, fixed in the same pass**: the READ path had the
+  identical mismatch (`src/pages/api/auditor/records.ts` selected
+  `record_id, auditor_id, action, note, created_at` from `auditor_actions` and
+  keyed the auditor-name map on `row.auditor_id`). That select would have
+  errored against the live table, so the persisted trail added by 6.7 could
+  never have loaded. Now `actor_id`/`reason`; the DTO's wire field stays `note`.
+- [x] 6.14 Auditor approval now has a writer. New `settleRecord(db, recordId,
+  auditorId, note)` helper + `SETTLING_ACTIONS = {approve, correct}`: it updates
+  every `record_anomalies` row for the record still at `status='open'` to
+  `resolved` / `resolved_by` / `resolved_at` / `resolution_note`, then sets
+  `count_records.status = 'verified'`. `reject` and `request_recount` are
+  deliberately excluded — leaving the anomaly open is what keeps an
+  unreconciled figure out of the Oracle export.
+- [x] 6.15 `recount_requests` insert fixed three ways: `status: 'open'` →
+  `'requested'` (live `recount_status` is `requested|in_progress|done|
+  cancelled`), `reason:` → `note:` (the OPPOSITE of the `auditor_actions`
+  rename — genuinely different columns, checked per table), and the NOT NULL
+  `plan_id`/`product_id` are now supplied from the `count_records` row the
+  handler already fetches (its select grew those two columns; no second query).
+
+### TDD Cycle Evidence
+
+| Task | Test File | Layer | Safety Net | RED | GREEN | TRIANGULATE | REFACTOR |
+|------|-----------|-------|------------|-----|-------|-------------|----------|
+| 6.13 | `tests/server/auditor-actions.test.ts` | Unit (route + stub Db) | 36/36 (actions + records + export) | Existing `auditor_id`/`note` assertions rewritten to `actor_id`/`reason` → 2 failing | 2 passing | `approve` (null reason) + `correct` (populated reason) | Extracted `note` to a local, used by all three inserts |
+| 6.13b (read path) | `tests/server/auditor-records.test.ts` | Integration (2 routes) | 9/9 | Fixture rows renamed to `actor_id`/`reason` → trail assertion failed | 9/9 passing | Ordered pair, one null and one populated reason | None needed |
+| 6.14 | `tests/server/auditor-actions.test.ts` | Unit + Integration | 36/36 | 4 failing (anomaly resolved, record verified, correction settles, export end-to-end) | 6 passing | 6 cases: approve, correct, reject (must NOT settle), request_recount (must NOT settle), plus the export before/after | Logic extracted to the pure-ish `settleRecord` seam |
+| 6.15 | `tests/server/auditor-actions.test.ts` | Unit | 36/36 | 1 failing (status/note/plan_id/product_id) | passing | Covered alongside the "no recount for an approval" negative case | None needed |
+
+The export test is the one that proves the actual reported bug is dead: it calls
+`handleExport` on a record with an open anomaly (0 CSV data rows), runs
+`handleAuditorAction` with `approve` on the SAME stub, calls `handleExport`
+again, and asserts the line `BOD-01,SKU-1,90,KG,CNT-01` is now present. Before
+6.14 that record was dropped from every export, permanently and silently.
+
+### Work Unit Evidence
+
+| Evidence | Value |
+|---|---|
+| Focused test command and result | `npx vitest run tests/server/auditor-actions.test.ts` → 15 passed (was 8 before the batch) |
+| Full suite | `cd frontend && npm test` → 50 files, **914 passed**, 0 failed, exit 0 (908 → 914, +6 net new tests) |
+| Type gate | `cd frontend && npm run check` → **0 errors, 0 warnings**, 2 hints, exit 0 |
+| Runtime harness | `cd frontend && npm run build` → exit 0, build complete. A live HTTP round-trip against `blvdxsoaopcvtzawvgbt` is still task 6.4 and still credential-blocked, so these column names remain orchestrator-verified-by-`list_tables`, not executor-verified-by-write. |
+| Rollback boundary | `frontend/src/pages/api/auditor/actions.ts`, `frontend/src/pages/api/auditor/records.ts` and their two test files. Reverting them restores the previous (live-broken) behaviour without touching any other route. |
+
+### Residual risk
+
+`record_anomalies.resolution_note` / `resolved_by` / `resolved_at` and the
+`'resolved'` status value come from the orchestrator's `list_tables(verbose)`
+dump, not from an executor-side query (no Supabase MCP access in this context)
+and not from a live write. They are the same evidence class as the 6.13/6.15
+column names, which is the best available until 6.4 unblocks.

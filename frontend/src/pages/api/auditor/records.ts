@@ -137,12 +137,12 @@ export async function handleAuditorRecords(db: Db, request: Request): Promise<Re
   const { data: actionRows } = ids.length
     ? await db
         .from('auditor_actions')
-        .select('record_id, auditor_id, action, note, created_at')
+        .select('record_id, actor_id, action, reason, created_at')
         .in('record_id', ids)
         .order('created_at', { ascending: true })
     : { data: [] };
 
-  const auditorIds = [...new Set((actionRows ?? []).map((row) => String(row.auditor_id)))];
+  const auditorIds = [...new Set((actionRows ?? []).map((row) => String(row.actor_id)))];
   const { data: auditorRows } = auditorIds.length
     ? await db.from('profiles').select('id, full_name').in('id', auditorIds)
     : { data: [] };
@@ -155,8 +155,8 @@ export async function handleAuditorRecords(db: Db, request: Request): Promise<Re
     const list = actionsByRecord.get(String(row.record_id)) ?? [];
     list.push({
       action: String(row.action),
-      note: row.note ?? null,
-      auditor: auditorNames.get(String(row.auditor_id)) ?? null,
+      note: row.reason ?? null,
+      auditor: auditorNames.get(String(row.actor_id)) ?? null,
       createdAt: String(row.created_at),
     });
     actionsByRecord.set(String(row.record_id), list);

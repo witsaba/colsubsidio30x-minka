@@ -1,222 +1,402 @@
 ```yaml
 schema: gentle-ai.verify-result/v1
-evidence_revision: sha256:193b48fef902e0ec244852ae33ee6aac71d2eb74d733bdc81657e91ebb5b9fc3
+evidence_revision: sha256:06d1faad303e3389296ee513a773b886ba73f991f2cfb1a3f796d62504e06d8b
 verdict: fail
 blockers: 1
-critical_findings: 2
+critical_findings: 1
 requirements: 16/17
 scenarios: 25/26
 test_command: cd frontend && npm test
 test_exit_code: 0
-test_output_hash: sha256:1a2d79636cf1540cecc010eec731d56ce8b400e8ad965c4b32e021a9293bc8cd
+test_output_hash: sha256:b474310c3d84a1952bd34bc54ba82b3d8ce604bf447625a73459cc8dc3852730
 build_command: cd frontend && npm run build
 build_exit_code: 0
-build_output_hash: sha256:cabfead85bbea1ecdb84aad7d0aa658c448d17fa457dfa2cc51c38b0a293aabf
+build_output_hash: sha256:705ff1d9060712a82a6b70c4da6ddf0d687be4a1e477f9ef5004797ccddc98bd
+typecheck_command: cd frontend && npm run check
+typecheck_exit_code: 0
+typecheck_output_hash: sha256:042cd8fba1ef8fda93aa4d9626a5bb565d1eb0fdbe0eab43a45cf7d2dbbb39e1
 ```
 
-## Verification Report
+## Verification Report (RE-VERIFICATION — supersedes obs #180)
 
 **Change**: supabase-operational-integration
-**Branch/HEAD**: `feat/supabase-operational-integration` @ `091f65d` (15 commits ahead of `main` @ `932ba2c`)
+**Branch**: `feat/supabase-operational-integration` @ `7112221`, 23 commits ahead of merge-base `932ba2c`
+**Worktree**: `colsubsidio30x-minka-worktrees/supabase-operational-integration`
 **Mode**: Strict TDD
-**Verified independently** — every command below was re-executed by the verifier, not taken from the apply report.
+**Scope of this pass**: independent re-execution of all three gates + verification of the five
+remediation claims (6.8–6.12) + a fresh sweep for live-schema-dependent defects.
+
+---
 
 ### Completeness
 
 | Metric | Value |
 |--------|-------|
-| Tasks total | 52 |
-| Tasks complete `[x]` | 51 |
-| Tasks descoped `[~]` | 1 (6.4 — manual live E2E) |
-| Tasks silently incomplete | 0 |
+| Task lines | 57 |
+| Complete `[x]` | 56 |
+| Partial `[~]` | 1 (6.4 — live E2E, credential-blocked, formally descoped) |
+| Unstarted `[ ]` | 0 |
 
-Task count reconciles exactly with `tasks.md` (8+10+9+7+11+7). No checkbox was found marked complete against absent code.
+`apply-progress.md` header still reads "55 of 56"; tasks.md now carries 57 lines after 6.12. Cosmetic drift only.
 
-### Build & Tests Execution
+---
 
-**Tests**: PASS — 46 files, 847 passed, 0 failed, exit `0`
+### Build & Tests Execution — all three re-run by this verifier, nothing inherited
 
-```text
-cd frontend && npm test
- Test Files  46 passed (46)
-      Tests  847 passed (847)
-```
-
-Independently confirms the apply report's 847 figure. (Console noise from `ECONNREFUSED :3000` is an intentional network-failure-path test, not a failure.)
-
-**Build**: PASS — exit `0`, 4 static routes prerendered (`/auditor`, `/auditor/base`, `/auditor/cierre`, `/conteo`)
-
-```text
-cd frontend && npm run build → Server built in 7.49s, Complete!
-```
-
-**Type check**: FAIL — `cd frontend && npm run check` exits **1** with **11 errors**
-(`check_output_hash: sha256:eddd8df4ab850753635150f9d47316fd64aa3f245d866c82c0615bb496fc6dc1`)
-All 11 are **introduced by this change** — see WARNING-1. This contradicts the apply report.
-
-**Coverage**: not available — no coverage tool configured. Skipped cleanly, not a failure.
-
-### Spec Compliance Matrix
-
-| Requirement | Scenario | Test evidence | Result |
+| Gate | Command | Exit | Result |
 |---|---|---|---|
-| REQ-SDA-1 | Key never reaches the client | `tests/server/supabase-client.test.ts` (5) + **build-artifact scan**: `dist/client/` contains zero occurrences of `supabase` | COMPLIANT |
-| REQ-SDA-2 | Consent survives reload | `tests/api-routes/consent.test.ts` — inserts granted row, returns persisted id | COMPLIANT |
-| REQ-SDA-2 | Write failure blocks advance | `consent-screen.test.tsx` — "does NOT advance while the write is still in flight", "shows a retryable error and stays on S1", "«Reintentar» … advances once it succeeds" | COMPLIANT |
-| REQ-SDA-3 | Only assigned plans listed | `tests/api-routes/plans.test.ts` — "a different operator … never the union", "empty list, not a raw plan listing" | COMPLIANT |
-| REQ-SDA-4 | Redo is soft-delete plus insert | `records-delete.test.ts` — "marks the row deleted", "never issues a hard delete (RF-21)", "preserves the original quantity" | COMPLIANT |
-| REQ-SDA-5 | Unassigned plan write rejected, no DB touch | `records-write.test.ts` — "403 and writes nothing", "refuses before reading count_records at all", "authorizes first … before any lookup"; `authz.test.ts` (7) | COMPLIANT |
-| REQ-AV-1 | Out-of-range count flags | `validation.test.ts` | COMPLIANT |
-| REQ-AV-1 | In-range count passes | `validation.test.ts` | COMPLIANT |
-| REQ-AV-2 | Anomaly survives reload | `records-write.test.ts` — "writes record_anomalies from its OWN verdict, ignoring the client claim"; read back by `auditor-records.test.ts` | COMPLIANT |
-| REQ-AV-3 | Response payload is blind | `validation.test.ts` RF-18 block (3) + `anomaly-check.test.ts` route-level + `records-write.test.ts` route-level | COMPLIANT |
-| REQ-OE-1 | Batch and lines created | `export.test.ts` — exclusion of soft-deleted and open-anomaly records, contiguous renumbering | COMPLIANT |
-| REQ-OE-2 | File content equals persisted lines | `export.test.ts` — "emits a body matching the persisted lines 1:1" | COMPLIANT |
-| REQ-OE-2 | Failure is honest | `export.test.ts` — "error and NO csv body when the line insert fails" / "…when the batch insert fails" | COMPLIANT |
-| **REQ-OCF-13** | **Records survive reload** | **none — no `GET /api/records`, no restore-on-mount, no test** | **UNTESTED** |
-| REQ-OCF-4 | No voice mutation path | `reducer.test.ts`, `count-session.test.tsx` | COMPLIANT |
-| REQ-OCF-4 | Redo persists as soft-delete plus new row | `count-session.test.tsx` + `records-delete.test.ts` | COMPLIANT |
-| REQ-OCF-8 | Selected plan carries a real catalogue_id | `plans-screen.test.tsx` — "dispatches PLAN_STARTED with the plan, operator, warehouse and catalogue", "refuses to start a plan with no catalogue bound to it" | COMPLIANT |
-| REQ-OCF-8 | Only assigned plans are offered | `plans-screen.test.tsx` + `plans.test.ts` | COMPLIANT |
-| REQ-OCF-10 | No retention claim survives | `consent-screen.test.tsx` | COMPLIANT |
-| REQ-OCF-10 | Acceptance writes consent | `consent-screen.test.tsx` — "writes the consent … and only then dispatches MIC_GRANTED" | COMPLIANT |
-| REQ-AUD-3 | Requieren mirada shows only open alerts | `auditor-review.test.tsx` | COMPLIANT |
-| REQ-AUD-3 | Operator write appears to auditor | `auditor-review.test.tsx` — "renders the records the loader returned, never a built-in fixture set" | COMPLIANT |
-| REQ-AUD-4 | Approve decrements the alert pill | `auditor-review.test.tsx` | COMPLIANT |
-| REQ-AUD-4 | Trace survives reload | `auditor-records.test.ts` — "reads back the persisted auditor_actions, oldest first, with the signing name" | COMPLIANT |
-| REQ-AUD-5 | Blocked modal buttons act as labelled | `auditor-review.test.tsx` | COMPLIANT |
-| REQ-AUD-5 | Gate lifts and export is real | `auditor-review.test.tsx` — "posts the export and hands the returned file to the saver" | COMPLIANT |
+| Tests | `cd frontend && npm test` | **0** | **50 files, 906 passed, 0 failed** |
+| Types | `cd frontend && npm run check` | **0** | **0 errors, 0 warnings**, 2 hints (`toThrowError` deprecation) |
+| Build | `cd frontend && npm run build` | **0** | 4 static routes prerendered, server built |
 
-**Compliance summary**: **25/26 scenarios compliant**, 1 UNTESTED. **16/17 requirements** satisfied.
+All three are genuinely clean. The prior pass's 11 type errors are gone (verified by
+execution, not by report). One piece of stderr noise in the test log: several
+`ECONNREFUSED ::1:3000` aggregate errors. These are component tests exercising a real
+relative `fetch` under jsdom's default origin; the connection refusal IS the failure path
+under test, so they do not fail the suite — but the suite would behave differently if a dev
+server were listening on port 3000. Noted, not blocking.
 
-### The two non-negotiables — verified directly in source
+---
 
-**REQ-SDA-5 / RF-07 — plan-scope check before any DB write: CONFIRMED.**
-`frontend/src/pages/api/records/index.ts` calls `assertPlanAssignment` at line 115, immediately after body decode and before every operational read or write. `resolveProductId` is deliberately placed *after* the guard with an explicit comment, so a refused caller cannot even probe which article codes exist. `frontend/src/lib/server/authz.ts` resolves the assignment before touching operational data. Enforced on both `POST /api/records` and `DELETE /api/records/[id]`, and asserted three ways: "writes nothing", "refuses before reading count_records at all", "never touches count_records while deciding".
+### Remediation verification — the five claims from obs #180
 
-**REQ-AV-3 / RF-18 — operator payload blindness: CONFIRMED.**
-`frontend/src/lib/server/validation.ts::toOperatorVerdict` is an **explicit allowlist construction** (`type`, `severity`, `title` only), not a `delete` or spread-minus — a new sensitive field must be opted *in*. `detail`, `expectedMin`, `expectedMax`, `theoreticalQty` never cross. Titles are static constants with no interpolation, and `negative_balance` deliberately reuses the neutral `'Cantidad fuera de lo habitual'` string so the title itself cannot bound the system stock. Both operator routes (`/api/anomaly-check` line 78, `/api/records` lines 139 and 177) serialize exclusively through it. The test is genuinely strong: it first asserts the stub really supplied `expectedMax === 30` (so a pass cannot come from the value being absent), then asserts neither the forbidden **keys** nor the forbidden **values** (`'30'`, `'500'`) appear in `JSON.stringify`, plus "carries no numbers in the operator-facing title".
+| # | Claim | Verdict | Evidence |
+|---|---|---|---|
+| 6.8 | NUL byte removed from `auditor/records.ts` | **CONFIRMED** | `git show HEAD:...auditor/records.ts \| file -` → `JavaScript source, Unicode text, UTF-8 text`. `git diff --stat` vs merge-base shows **191 text insertions**, not `Bin`. Zero binary files in the whole branch diff (`git diff --numstat` has no `-  -` rows). |
+| 6.9 | 11 type errors fixed at the design level (D4) | **CONFIRMED** | `npm run check` exit 0. `AnomalyEngine.check` is uniformly `Promise<Anomaly \| null>`; the union is gone. |
+| 6.10 | `resolveProductId` name fallback, wired end to end | **CONFIRMED — not dead code** | See "Product resolution" below. |
+| 6.11 | REQ-OCF-13 session resume | **CONFIRMED — real, tested, RF-18-clean** | See "REQ-OCF-13" below. |
+| 6.12 | `COUNT_STATUS.ok = 'recorded'` | **CONFIRMED — and independently corroborated in-repo** | See "COUNT_STATUS" below. |
 
-### Service-role key containment — CONFIRMED (stronger than required)
+#### REQ-OCF-13 — session resume is real
 
-- `_supabase.ts` is imported by exactly 8 files, **all under `frontend/src/pages/api/`** (`consent`, `plans`, `export`, `anomaly-check`, `records/index`, `records/[id]`, `auditor/records`, `auditor/actions`), plus one test. **Zero `.tsx` components.**
-- `SUPABASE_SERVICE_ROLE_KEY` appears only in `_supabase.ts`, its test, `docker-compose.yml`, and `.env.example`.
-- No `PUBLIC_`-prefixed Supabase secret exists.
-- **Built-artifact proof**: `grep -rli "supabase" frontend/dist/client/` returns **nothing** — the client bundle has no Supabase reference at all.
-- `lib/identity.ts` does use `PUBLIC_`-prefixed vars, but only for `profiles.id` row identifiers, never credentials — correct and documented.
+Three pieces, all present and exercised:
 
-### `services/` untouched — CONFIRMED
+- `GET /api/records` (`handleListRecords`, `src/pages/api/records/index.ts:225`). `assertPlanAssignment`
+  runs FIRST (line 234), before any `count_records` access — a read is authorised exactly like a write.
+  Soft-deleted rows excluded (`.eq('is_deleted', false)`, RF-21). Returns `client_record_id` as `id`
+  plus the server uuid as `serverId`, which is the whole point: a resumed session reuses the
+  idempotency key instead of minting a new one.
+- **RF-18 boundary CONFIRMED by projection**: line 257 selects `record_id, type, severity, title`
+  from `record_anomalies` — `detail` and `expected_unit_code` are never named, so there is no field
+  to forget to strip. `tests/server/records-read.test.ts:229-261` is a no-false-pass test: it seeds
+  `expected_min: 20 / expected_max: 40 / theoretical_qty: 500`, first asserts the stub really holds
+  `detail === 'expected 20-40, got 7'`, then asserts the serialised response contains none of
+  `expected_min`, `expectedMin`, `expected_max`, `theoretical`, `systemQty`, `detail`, `'500'`, `'40'`.
+- **`sessionStorage` carries exactly four ids, and nothing else.** `src/lib/session/resume.ts:100-108`
+  writes an explicit projection (not a spread) of `catalogueId`, `planId`, `operatorId`, `warehouseId`.
+  `tests/session/resume.test.ts:98` asserts the stored key set by **exact equality** against those four
+  names — no quantity, no theoretical figure, no count can reach storage. Every storage failure mode
+  (absent / corrupt / partial / blocked) collapses to `null`.
+- `CountSession.tsx:161-195` mount effect: one attempt per mount (`resumeAttempted` ref), re-acquires
+  the mic BEFORE resuming, and returns without dispatching on ANY failure — staying on consent rather
+  than resuming an empty list, which would recreate the double-write. `SESSION_RESUMED`
+  (`reducer.ts:219`) is accepted only from `screen === 'permiso'` and advances `recordSeq` past the
+  restored ids. Added to the `no-soft-lock.test.ts` event alphabet (line 111).
 
-`git diff --stat main..HEAD -- services/` is empty. The change is confined to `frontend/` plus `openspec/` and `docker-compose.yml`.
+Coverage: 14 route tests + 12 pure resume tests + 11 component tests + 6 reducer cases.
 
-### The two orchestrator-driven corrections — both real, not superficial
+#### Product resolution — the fallback is reachable, not just present
 
-**5.11 export item/counter COALESCE fallback: REAL.**
-`itemOf`/`counterOf` in `frontend/src/pages/api/export.ts` (lines 55-68) mirror the live view's `COALESCE(sku, name_normalized)` and `COALESCE(counter_code, upper(replace(full_name,' ','.')))`. Four triangulated tests with *distinct* expected values (`SKU-1`, `ACEITE DE OLIVA 500ML`, `PABLO.RUIZ.GOMEZ`, empty/null), and each asserts against the **persisted `export_lines` row**, not the formatter's return value — so the persistence path is covered too. This genuinely fixes blank item names for the ~18.4% of the catalogue with no SKU.
+`src/lib/server/products.ts:84`: explicit uuid → `sku` → `normalizeProductName(articulo || spokenName)`
+against `name_normalized`, `limit(1)` (not `maybeSingle()`, which PostgREST errors on duplicate
+normalized names). Failure contract unchanged: `null`, never a throw.
 
-**6.6/6.7 auditor system-stock + trace read-back: REAL.**
-`frontend/src/pages/api/auditor/records.ts` filters `warehouse_stock_balances` on **both** ids and keys the map on the `(warehouse_id, product_id)` pair; the test proves the discrimination with a decoy row (`wh-1` qty 120 vs `wh-9` qty 7 for the same product, asserting 120 wins) — a real negative case, not a happy path. A missing balance yields `null`, explicitly distinguished from a stock of `0`. `auditor_actions` are read back with `.order('created_at', ascending)` and joined to `profiles.full_name`; the test asserts full object equality including the joined name and the ordering. Both have companion "empty list rather than omitted field" tests, so the empty-collection assertions are not orphaned. The apply report's disclosure that `stub-db.ts`'s `order()` was a silent no-op and had to be made to really sort before the ordering test could fail is exactly the right instinct and checks out.
+**Wired on BOTH server paths** — the previous report's specific warning is answered:
 
-### TDD Compliance
+- write path: `CountSession.tsx:311-313` passes `articulo: record.articulo` → `CreateRecordInput.articulo`
+  (`operational.ts:86`) → `createRecord` sends the whole input object → `readInput`
+  (`records/index.ts:80`) → `resolveProductId`. The "some identity required" guard at line 87 accepts
+  the name alone.
+- anomaly path: `httpEngine.ts:85,101` sends `articulo: item.picked.articulo` → `readCountFacts`
+  (`anomaly-check.ts:45`) → `resolveProductId` (line 73). Same relaxed guard at line 50.
 
-| Check | Result | Details |
+12 resolver tests including "resolves a sku-less product when the caller carries no nr_articulo at
+all", "folds accents and case the way the catalogue stored the name", and "queries name_normalized,
+not name".
+
+#### COUNT_STATUS — corroborated by a second, non-circular witness
+
+`records/index.ts:55-58` is now `{ ok: 'recorded', anomaly: 'flagged' }`. `'confirmed'` survives
+only inside the explanatory comment (grep of `src/` + `tests/` finds no other occurrence).
+
+Beyond taking the orchestrator's enum as given, this verifier found **independent in-repo
+corroboration**: `design.md:98` records the live `v_oracle_export_preview` definition captured via
+`pg_get_viewdef` against the same project —
+
+```
+WHERE NOT cr.is_deleted AND cr.status = ANY (ARRAY['recorded','verified']);
+```
+
+The live view itself names `recorded` and `verified` as `count_records.status` members and does not
+name `confirmed`. Two independent live reads agree. This fix is sound.
+
+---
+
+### Non-negotiables — re-confirmed
+
+| Invariant | Status | Evidence |
 |---|---|---|
-| TDD Evidence reported | PASS | Two "TDD Cycle Evidence" tables in `apply-progress.md` |
-| All tasks have tests | PASS | 23 test files changed; every listed file exists |
-| RED confirmed (tests exist) | PASS | All 24 table rows resolve to real files |
-| GREEN confirmed (tests pass) | PASS | 847/847 pass on independent execution |
-| Triangulation adequate | PASS | Multi-case throughout; no single-case-for-multi-scenario found |
-| Safety Net for modified files | PASS | Pre-change counts recorded for every modified file |
-| Reported vs actual case counts | WARN | 4 rows drifted (see SUGGESTION-1) — all but one are undercounts from later batches |
+| RF-07 route-level plan scoping | ✅ | `assertPlanAssignment` first on POST, DELETE and the new GET; `resolveProductId` deliberately after it so a refused caller cannot probe the catalogue. |
+| RF-18 operator blindness | ✅ | `toOperatorVerdict` is an explicit allowlist; the new read route is blind by projection. |
+| Service-role containment | ✅ | 9 real importers of `_supabase.ts`, all `pages/api/*` + 1 test. `lib/identity.ts` and `lib/server/db.ts` only MENTION it in comments. `grep -rli supabase frontend/dist/client/` → empty; `SERVICE_ROLE` → empty. |
+| No `PUBLIC_SUPABASE*` secret | ✅ | Only a comment in `_supabase.ts`. |
+| `services/` untouched | ✅ | `git diff --stat $(git merge-base main HEAD)..HEAD -- services/` is empty. (A plain `main..HEAD` diff is misleading — see WARNING-2.) |
+| RF-21 soft delete only | ✅ | The ONLY `.update()` / `.delete()` / `.upsert()` / `.rpc()` call in all of `src/` is the soft delete at `records/[id].ts:50`. |
 
-### Test Layer Distribution
+### Assertion quality (Strict TDD Step 5f) — batch 6.8–6.12
 
-| Layer | Tests | Files | Tools |
+| File | Tests | Assertions | Tautologies | `vi.mock()` | Lone type-only |
+|---|---|---|---|---|---|
+| `tests/server/products.test.ts` | 12 | 15 | 0 | 0 | 0 |
+| `tests/server/records-read.test.ts` | 14 | 18 | 0 | 0 | 0 |
+| `tests/session/resume.test.ts` | 12 | 14 | 0 | 0 | 0 |
+| `tests/components/session/count-session-resume.test.tsx` | 11 | 13 | 0 | 0 | 0 |
+| `tests/server/records-write.test.ts` | 19 | 37 | 0 | 0 | 0 |
+
+**Assertion quality**: ✅ All assertions verify real behaviour. Zero mocks — every seam is a prop or
+parameter. TDD Cycle Evidence tables present in `apply-progress.md` for all three batches
+(lines 143, 252, 324).
+
+---
+
+## CRITICAL-1 (NEW) — auditor approval never persists, and approved records are silently dropped from the Oracle export
+
+**This is the same defect class as the previous pass's CRITICAL-1: a read path whose writer does not exist.**
+
+`src/lib/auditor/records.ts:127` decides the "Verificado" badge from persisted state:
+
+```ts
+verified: dto.status === VERIFIED,   // VERIFIED = 'verified'
+```
+
+and `alertOf` (line 42) counts an alert only while `anomaly.status === 'open'`.
+
+**No code path in the entire `src/` tree ever writes `count_records.status = 'verified'`, and none ever
+moves `record_anomalies.status` off `'open'`.** Exhaustively verified: the only mutation of an existing
+row anywhere in `src/` is the soft delete at `records/[id].ts:50`. `POST /api/auditor/actions` inserts
+an `auditor_actions` row (and, for `request_recount`, a `recount_requests` row) and stops there.
+
+Three consequences, all confirmed in source:
+
+1. **REQ-AUD-4's "Approving an alerted record MUST mark it 'Verificado' and decrement the open-alert
+   count" is session-local only.** `AuditorReview.tsx` `sign()` flips `verified` inside `setLoad(...)`
+   — in-memory React state. On reload the record comes back with `status = 'flagged'` and an anomaly
+   still `open`, so the badge reverts and the header pill re-increments. Task 6.7 made the *trace*
+   survive; the *verdict* does not. "Requieren mirada" can therefore never be emptied across reloads.
+2. **The Oracle export silently omits exactly the records the auditor just approved.** In-session the
+   gate lifts (`openAlerts === 0`), the auditor clicks "Generar y descargar", and `POST /api/export`
+   re-reads the truth from the database: `openAnomalyIds` (`export.ts:23-31`) queries
+   `record_anomalies` where `status = 'open'`, still finds those rows, sets `hasOpenAnomaly: true`
+   (line 118), and `buildExportLines` filters them out (`lib/server/export.ts:49`). The CSV is
+   truncated with **no error**, and `export_batches.record_count` is written from the truncated
+   `lines.length` (line 131), so the database corroborates the truncated file. Nobody sees the loss
+   until the warehouse notices missing lines in Oracle.
+3. Net effect: **any record that ever carried an anomaly is permanently unexportable.**
+
+**Why the 906-test suite cannot catch it**: `tests/auditor/records.test.ts:169` seeds
+`dto({ status: 'verified' })` directly and asserts the mapper handles it. The mapper does. The test
+proves the reader works while no writer exists — the same structural blind spot that hid
+`COUNT_STATUS = 'confirmed'`.
+
+**Classification note**: like the previous REQ-OCF-13 finding, this is a *decomposition* defect, not a
+false checkbox — no task ever asked for the status write. REQ-AUD-4/REQ-AUD-5 are MODIFIED
+requirements OF THIS CHANGE and `records.ts:127` is code authored by this change, so it is in scope.
+
+**Smallest correct fix**: in `handleAuditorAction`, after the `auditor_actions` insert succeeds, for
+`action === 'approve'` also `update` the record's open `record_anomalies` rows to a resolved status and
+set `count_records.status = 'verified'` (a member of the live enum, and the value
+`v_oracle_export_preview` already treats as exportable alongside `recorded`). RED first: a test
+asserting that after an approve, a subsequent `handleExport` INCLUDES the previously-flagged record.
+Both writes need their live enum values confirmed (see WARNING-3).
+
+---
+
+## WARNING-1 — the `name_normalized` fallback rests on an unverified normalization rule
+
+`normalizeProductName` (`products.ts:53`) does NFD + strip the U+0300-U+036F combining range + collapse whitespace +
+uppercase, preserving punctuation. The real seed (`docs/database/03_teammate_seed.sql`) confirms the
+punctuation and case halves exactly — `'caf. Velas suministros'` → `'CAF. VELAS SUMINISTROS'`,
+`'ARAGAN MEDIANO 51 CMS C/PALO 1.50'` unchanged.
+
+**What no sample in the repo proves is the diacritic half.** Every seeded name is already unaccented.
+If the ingest's `name_normalized` only upper-cases and does NOT fold accents, then for every Spanish
+catalogue name containing `Á É Í Ó Ú Ñ` (AZÚCAR, PIÑA, JAMÓN, MAÍZ, ATÚN, LIMÓN, PLÁTANO…) the JS side
+produces `AZUCAR` while the column holds `AZÚCAR`, and the 6.10 fallback silently never matches —
+leaving exactly those sku-less products still uncountable. The stub suite cannot detect this because
+every test seeds `name_normalized` with the value it then looks up.
+
+**One query settles it** (for the orchestrator, who has live access):
+`select name, name_normalized from products where name ~ '[áéíóúÁÉÍÓÚñÑ]' limit 10;`
+
+## WARNING-2 — the branch is 26 commits behind `main` and will NOT merge cleanly
+
+`main` has advanced from `932ba2c` to `0fe1c3a` (the whole `redis-catalogue-cache` line merged). A
+read-only `git merge-tree --write-tree main HEAD` reports **two real content conflicts**:
+
+- `frontend/tests/components/operator/plans-screen.test.tsx`
+- `frontend/tests/session/no-soft-lock.test.ts`
+
+and `main` now contains `4d3697f fix(frontend)!: speak the warehouse-code catalogue vocabulary` — a
+BREAKING frontend change to exactly the catalogue vocabulary this branch's `catalogueId` plumbing and
+`CATALOGUES[0]` test fixtures depend on.
+
+Consequence for routing: **the 906/906 green measured here describes the stale base, not what would
+land on main.** All three gates must be re-run after the rebase/merge, before the PR is considered
+verified. (Also note any plain `git diff main..HEAD` is now misleading — use the merge-base.)
+
+## WARNING-3 — nine live-schema literals still unverified (the same class as `'confirmed'`)
+
+Task 6.12 is proof this class is *present*, not theoretical. Every literal below is a value or column
+this code writes/expects that no stub can validate. Ranked by blast radius, for the orchestrator to
+check against project `blvdxsoaopcvtzawvgbt`:
+
+| # | Literal | Where | If wrong |
 |---|---|---|---|
-| Unit (server/pure) | ~200 | 13 | vitest |
-| Component (integration) | ~250 | 5 | vitest + testing-library + preact |
-| E2E | 0 | 0 | not installed |
-| **Total (whole suite)** | **847** | **46** | |
+| 1 | `record_anomalies.type` ∈ `unit_mismatch`, `atypical_quantity`, `negative_balance` | `validation.ts:209,216,224` | **Amplified**: the insert failure at `records/index.ts:181` is only `console.error`'d, so the count row is written `status='flagged'` while NO anomaly row exists — the auditor never sees the flag AND the export happily ships the record. `docs/database/DATABASE_ARCHITECTURE.md:217` names the vocabulary `'invalid_unit'`, not `'unit_mismatch'` (that doc is a stale/aspirational design — its `count_records.status` list is flatly wrong vs the live enum — but the naming divergence is a real signal). |
+| 2 | `record_anomalies.severity` ∈ `warning`, `error` | `validation.ts` | Same silent-loss path as #1. |
+| 3 | `record_anomalies.status = 'open'` | `records/index.ts:111`, read by `export.ts:29` | Export eligibility and the auditor badge both hinge on it. |
+| 4 | `count_records.source = 'voice'` | `records/index.ts:159` | Every count write 500s (the `'confirmed'` failure mode again). |
+| 5 | `auditor_actions.action` ∈ `approve`, `correct`, `reject`, `request_recount` | `actions.ts:66` | Every auditor action 500s. |
+| 6 | `export_batches.status = 'generated'`, `format = 'csv'` | `export.ts:129-130` | Export 500s after the CSV is already built. |
+| 7 | `recount_requests.status = 'open'` + columns `record_id, requested_by, status, reason` | `actions.ts:83-88` | "Pedir reconteo" 500s. This table was not in task 1.1's verified set. |
+| 8 | `voice_consents.status = 'granted'` | `consent.ts:36` | S1 consent blocks the whole flow (REQ-SDA-2 makes it blocking by design). |
+| 9 | `count_records.status = 'verified'` + a resolved value for `record_anomalies.status` | needed by CRITICAL-1's fix | Blocks the fix. |
 
-E2E absence is a tooling reality, not a defect — but it is precisely the gap task 6.4 was meant to cover manually.
+**Resolved by this pass, no action needed**: `products.name` and `products.sku` both exist —
+independently confirmed from already-merged, live-running code, `main`'s
+`services/matcher/src/matcher/supabase_source.py:46` (`products!inner(name,sku)`). `units.code` and
+`units.label_es` exist — confirmed by `docs/database/03_teammate_seed.sql:6-11`.
 
-### Assertion Quality
+## WARNING-4 — task 6.4's descope: keep it, but harden it. The rationale has weakened, not strengthened.
 
-Audited all 23 changed test files.
+Re-judged as asked. The **deferral itself remains correct**: `SUPABASE_SERVICE_ROLE_KEY` is
+structurally unobtainable by any agent (Supabase MCP exposes only the publishable key by design), it
+is unavoidable production configuration regardless, and the task is honestly marked `[~]` with a
+recorded decision. Blocking a PR on a secret only the maintainer holds would be theatre.
 
-- Tautologies (`expect(true).toBe(true)`): **0**
-- Lone type-only assertions (`toBeDefined()`, `not.toBeNull()`): **0**
-- Smoke-test-only (render + `toBeInTheDocument` with no behavioural assertion): **0**
-- CSS-class / implementation-detail assertions: **0**
-- `vi.mock()` calls: **0** across all 23 files — every double is injected through a prop or parameter seam
-- Orphan empty-collection assertions: **0** — each has a companion non-empty test
+But the **stated rationale is now demonstrably weaker than when it was written**, and the conclusion
+should move with the evidence:
 
-**Assertion quality**: All assertions verify real behaviour. This is an unusually clean suite.
+- Rationale (1) — "the properties 6.4 exists to prove are already asserted by 847 tests" — was already
+  wrong for integration concerns, and 6.12 has now *proved* it wrong by counterexample: a bug that
+  would have 500'd **every single count write in production** sat under 906 green tests, and was found
+  only by a human/orchestrator with live schema access.
+- The premise in this re-verification's brief — that the two bugs 6.4 was implicitly covering are now
+  fixed by other means — holds for those two, but **CRITICAL-1 above is a third**, and it is precisely
+  a 6.4-shaped finding: 6.4's own script is "auditor approve → export CSV", which surfaces the silent
+  truncation in about sixty seconds. WARNING-3 lists nine more.
+- "First deploy IS the smoke test" is true but incomplete: a first deploy at Colsubsidio with
+  CRITICAL-1 unfixed does not fail loudly, it hands the warehouse a short file.
+
+**Revised recommendation**: keep the descope; upgrade the pre-deploy item from a prose paragraph to a
+**hard gate with a named owner and an explicit checklist** — the WARNING-3 table row by row, then the
+6.4 walkthrough, with an agreed rollback if any row fails. Do not let it enter the PR as
+"already covered".
+
+---
+
+### Suggestions
+
+- **S1 — `tasks.md` itself now contains a literal NUL byte.** Offset 20172, **line 111** — inside the
+  text of task 6.8, in the phrase "Replace the raw byte with the `<NUL>` escape". Introduced by
+  `4b37ef6`, the very commit that added the task instructing removal of a NUL byte. `file(1)` reports
+  `data`; POSIX `grep` returns nothing on this file (this verifier hit it three times before
+  diagnosing it). **Impact is narrower than the 6.8 case**: git still diffs it as text (150
+  insertions) because the byte sits past git's 8 KB binary-sniff window, and ripgrep reads it fine —
+  so the PR diff is unaffected. Same one-token fix.
+- **S2 — `resolveProductId` does not filter `products.is_active`**, while the matcher does
+  (`products.is_active=eq.true`). Combined with `limit(1)` and no ordering, a count can be attributed
+  to a retired catalogue row when an active and an inactive product share a normalized name.
+- **S3 — stale doubt comment.** `products.ts:13-23` still declares the `nr_articulo` ↔ `sku` mapping
+  "UNVERIFIED against live data (task 6.4)" directly above the fallback that was added precisely to
+  survive that uncertainty. Real doubt and stale doubt now read identically.
+- **S4 — traceability drift.** The table still maps `REQ-OCF-13 → 3.6, 3.7, 5.1`. The implementing
+  task is 6.11; 5.1 is the auditor route. This mis-mapping is what let the requirement go unimplemented
+  for 15 commits.
+- **S5 — `apply-progress.md` header says "55 of 56 tasks"**; tasks.md now carries 57 (56 `[x]` + 1 `[~]`).
+- **S6 — `handleListRecords` maps every non-`flagged` status to `'ok'`** (`records/index.ts:297`),
+  including `verified`, `discarded` and `pending_sync`. Harmless while only this app writes the column;
+  worth an explicit map once CRITICAL-1 introduces `verified`.
+- **S7 — test-suite port coupling.** Several component tests reach a real relative `fetch` under
+  jsdom's `localhost:3000` origin and depend on the connection being refused. Inject the seam or stub
+  `fetch` so the suite does not depend on nothing listening on that port.
+
+---
+
+### Spec compliance matrix
+
+| Requirement | Scenario | Covering test | Result |
+|---|---|---|---|
+| REQ-SDA-1 | Key never reaches the client | `tests/server/supabase-client.test.ts` + `grep dist/client` | ✅ COMPLIANT |
+| REQ-SDA-2 | Consent survives reload / write failure blocks advance | `tests/api-routes/consent.test.ts`, `consent-screen.test.tsx` | ✅ COMPLIANT |
+| REQ-SDA-3 | Only assigned plans listed | `tests/api-routes/plans.test.ts` | ✅ COMPLIANT |
+| REQ-SDA-4 | Redo is soft-delete plus insert | `tests/server/records-delete.test.ts`, `count-session.test.tsx` | ✅ COMPLIANT |
+| REQ-SDA-5 | Unassigned plan write rejected | `tests/server/records-write.test.ts`, `authz.test.ts` | ✅ COMPLIANT |
+| REQ-AV-1 | Out-of-range flags / in-range passes | `tests/server/validation.test.ts` | ✅ COMPLIANT |
+| REQ-AV-2 | Anomaly survives reload | `tests/server/records-write.test.ts`, `records-read.test.ts` | ✅ COMPLIANT |
+| REQ-AV-3 | Response payload is blind | `validation.test.ts`, `records-read.test.ts:229` | ✅ COMPLIANT |
+| REQ-OE-1 | Batch and lines created | `tests/server/export.test.ts` | ⚠️ PARTIAL — correct for clean records; approved-then-flagged records are permanently excluded (CRITICAL-1) |
+| REQ-OE-2 | File equals lines / failure is honest | `tests/server/export.test.ts` | ✅ COMPLIANT |
+| REQ-OCF-4 | No voice mutation / redo semantics | `count-session.test.tsx`, `records-delete.test.ts` | ✅ COMPLIANT |
+| REQ-OCF-8 | Real catalogue_id / only assigned plans | `plans-screen.test.tsx`, `plans.test.ts` | ✅ COMPLIANT |
+| REQ-OCF-10 | Consent copy + acceptance writes consent | `consent-screen.test.tsx` | ✅ COMPLIANT |
+| **REQ-OCF-13** | **Records survive reload** | `records-read.test.ts`, `resume.test.ts`, `count-session-resume.test.tsx` | **✅ COMPLIANT (was the prior CRITICAL-1)** |
+| REQ-AUD-3 | Filters and badges / operator write appears | `auditor-records.test.ts`, `auditor/records.test.ts` | ✅ COMPLIANT |
+| REQ-AUD-4 | Approve decrements pill | `auditor-review.test.tsx` | ⚠️ PARTIAL — passes in-session; the "Verificado" state does not survive reload (CRITICAL-1) |
+| REQ-AUD-4 | Trace survives reload | `auditor-records.test.ts` (task 6.7) | ✅ COMPLIANT |
+| REQ-AUD-5 | Blocked modal / gate lifts and export is real | `auditor-review.test.tsx`, `export.test.ts` | ⚠️ PARTIAL — the gate lifts and a real batch is produced, but the file omits the approved records (CRITICAL-1) |
+
+**Compliance summary**: 25/26 scenarios pass as written; 3 scenarios pass only because they are
+asserted in-session, and the requirement text behind them ("MUST mark it 'Verificado'") is not durably
+satisfied.
 
 ### Coherence (Design)
 
 | Decision | Followed? | Notes |
 |---|---|---|
-| D1 server-only client | Yes | Proven against the built bundle |
-| D2 route-level RF-07 | Yes | Debt named honestly in code |
-| D3 blind counting at the boundary | Yes | Allowlist serializer, not UI filtering |
-| D4 async anomaly engine | Yes | but leaves 5 type errors in the untouched fixture-engine test (WARNING-1) |
-| D5 optimistic records / blocking consent | Yes | `attempted` ref enforces one POST per record |
-| D6 soft delete | Yes | `.delete()` proven unused |
-| D7 pessimistic auditor writes | Yes | Trace only after 2xx |
-| D8 single atomic export route | Yes | No orphan batches |
-| D9 live schema as truth | Partial | Verified by the orchestrator, but stale "UNVERIFIED" comments remain in `validation.ts` and `records/index.ts` (SUGGESTION-2) |
-| D10 additive demo seed | Yes | Ids recorded in `design.md` |
+| D1 server-only client | ✅ | Build-artifact proof. |
+| D2 request identity, route re-checks | ✅ | `identity.ts` is comment-only w.r.t. `_supabase`. |
+| D4 `AnomalyEngine.check: Promise<Anomaly \| null>` | ✅ | The union is gone (6.9) — this is the design, restored. |
+| D5 optimistic persistence | ✅ | Effect driven off record state; restored records are settled so never re-written. |
+| D6 soft delete only | ✅ | Only `.update()` in `src/`. |
+| D7 pessimistic trace append | ✅ | `sign()` writes before appending. |
+| D8 export column layout | ✅ | Matches `v_oracle_export_preview` incl. both COALESCE fallbacks (5.11). |
+| 6.11 deviation (`sessionStorage` for plan scope) | ✅ Accepted | The task said "call `fetchRecords` on mount", but `CountSession` learns `planId` only from `PLAN_STARTED`, which a reload destroys. The deviation is necessary, documented, and the stored projection is four ids asserted by exact key-set equality. |
+
+---
 
 ### Issues Found
 
-**CRITICAL**
+**CRITICAL (1)**
+1. Auditor approval never persists (`count_records.status='verified'` and `record_anomalies.status`
+   have no writer), so approved records are silently omitted from the Oracle CSV and the "Verificado"
+   badge evaporates on reload.
 
-- **CRITICAL-1 — REQ-OCF-13 "Records survive reload" is unimplemented and untested.**
-  The requirement states: *"reloading `/conteo` mid-count MUST restore the persisted records of the active plan session"*, with the scenario *"the same 3 records render from `count_records`"*. There is **no `GET /api/records`** route, **no `fetchRecords`** in `lib/api/operational.ts`, and **no restore-on-mount** in `CountSession.tsx` — it initialises with `useReducer(sessionReducer, initialSessionState)` and nothing rehydrates it. The traceability table maps REQ-OCF-13 to tasks 3.6/3.7/5.1, but 3.6/3.7 are reducer *write*-side events and 5.1 is the *auditor* route; none restores operator records. All three tasks were genuinely done — the task decomposition simply under-covered the requirement, so this is a traceability defect rather than a false checkbox.
-  **The consequence is not cosmetic**: `initialSessionState.screen` is `'permiso'`, so a reload throws the operator back to the consent screen with an empty record list while the rows exist in Supabase. The idempotency key is client-minted (`rec-${at}-${seq}`, `reducer.ts:120`), so re-dictating the same shelf after a reload produces a *new* `client_record_id` and therefore a **duplicate `count_records` row** — double-counted inventory, which is the exact failure class this system exists to prevent.
+**WARNING (4)**
+1. `name_normalized` diacritic-folding assumption unverified — accented sku-less products may still be uncountable.
+2. Branch 26 commits behind `main`; 2 real merge conflicts; `main` carries a BREAKING frontend catalogue-vocabulary change. Current green evidence does not describe the merged result.
+3. Nine live-schema literals unverified; `record_anomalies.type` is the highest risk because its insert failure is only logged.
+4. 6.4 descope: keep, but promote to a hard pre-deploy gate with a named owner and the WARNING-3 checklist; retire the "already covered by tests" rationale.
 
-- **CRITICAL-2 — `nr_articulo` to `products.sku` is an unvalidated assumption with a known ~18% blast radius.**
-  `frontend/src/lib/server/products.ts` lines 16-23 state in their own comment that *"the matcher's `nr_articulo` IS that same code is still UNVERIFIED against live data (task 6.4)"*, while also recording that `products.sku` is **null for ~18% of the catalogue**. If the mapping is wrong, or for every SKU-less product, `resolveProductId` returns `null` and `POST /api/records` answers `400 "No encontramos ese artículo en el catálogo"` — **the operator cannot count roughly one in five articles**. No stub test can detect this (the stubs seed the very `sku` they then look up). This is not a code defect — the module fails loudly and is a one-line reconciliation by design — but it is an unretired integration risk, and it is the single strongest reason task 6.4 cannot simply be waved through. `apply-progress.md` lists it under "Remaining named debt" as *"nr_articulo to products.id resolution still missing"*, which understates it: the resolution is **implemented on an unverified assumption**, which reads as done and is therefore easier to forget than something visibly missing.
+**SUGGESTION (7)**
+S1 NUL byte in `tasks.md:111` · S2 no `is_active` filter in `resolveProductId` · S3 stale UNVERIFIED
+comment · S4 traceability still maps REQ-OCF-13 to 3.6/3.7/5.1 · S5 apply-progress task count stale ·
+S6 non-`flagged` status collapses to `ok` · S7 tests depend on port 3000 being closed.
 
-**WARNING**
-
-- **WARNING-1 — 11 type errors introduced by this change, mis-reported as pre-existing.**
-  `cd frontend && npm run check` exits **1** with 11 errors. `apply-progress.md` states *"11 type errors, all pre-existing (verified by stash in the prior batch)"*. That claim is **false**, proven four ways:
-  - `git show main:frontend/src/lib/session/types.ts` has **no `unitCode`** on `CountRecord`; this change adds it as a **required** field.
-  - `src/fixtures/operatorSeed.ts` (x3), `tests/components/operator/count-screen.test.tsx`, and `tests/components/operator/record-list.test.tsx` are **unmodified by this change** yet now fail with `Property 'unitCode' is missing … but required in type 'CountRecord'`. They compiled cleanly on `main`.
-  - `tests/anomaly/fixture-engine.test.ts` (x5) is likewise unmodified and now fails with `Property 'kind' does not exist on type 'Anomaly | Promise<Anomaly | null>'` — a direct consequence of the D4 async widening.
-  - The remaining error is `tests/session/reducer.test.ts:65`, same `unitCode` cause.
-  Runtime is unaffected (vitest does not type-check; `astro build` does not check test files), so this is not a functional break. But `npm run check` is a red gate today, one error is in a **`src/` file** (`operatorSeed.ts`), and the incorrect "all pre-existing" reassurance would mislead a reviewer reading the PR description. The fix is mechanical: add `unitCode: null` to the three seed/factory literals and await the widened `check()` in the fixture-engine test.
-
-- **WARNING-2 — `frontend/src/pages/api/auditor/records.ts` is binary to git; its 7.2 KB will not render in the PR diff.**
-  `balanceKey()` (line 56) embeds a **literal NUL byte (0x00)** as the composite-key separator inside a template literal. Git therefore classifies the file as binary (`Bin 0 -> 7200 bytes` in `git diff --stat`) and `file(1)` reports `data`. The technique is valid JavaScript and a sound collision-proof delimiter, but the cost is that **an entire security-relevant route — the one carrying the auditor's `systemQty` and the RF-32 trail — is invisible to human review on GitHub**, and grep-based tooling silently skips it (it was omitted from my first import scan for exactly this reason). The fix is one token: write the six-character escape sequence (backslash-u-0-0-0-0) instead of the raw byte. Identical runtime value, the file stays text, and the diff becomes reviewable.
-
-- **WARNING-3 — Task 6.4's descope is a legitimate deferral, but its stated rationale overstates what the tests prove.**
-  My independent judgment: **the deferral itself is defensible and correctly handled** — the secret is genuinely unobtainable by any agent (Supabase's MCP surface exposes only the publishable key by design), it is marked `[~]` rather than silently `[x]`, the reasoning is written down, and a concrete "Action required before/at deploy" checklist with the exact seeded ids is recorded. That is the right way to descope; I would not block a PR on a credential only the maintainer holds.
-  **But reason (1) of the rationale does not hold up.** It claims the properties 6.4 exists to prove *"are already asserted by 847 passing automated tests"*. Those tests run against `createStubDb`, a hand-written stub of the supabase-js surface. They prove the **route logic** is right; they cannot prove the **integration** is right. Concretely unretired by any test: (a) the `nr_articulo`/`sku` mapping of CRITICAL-2; (b) `COUNT_STATUS = { ok: 'confirmed', anomaly: 'flagged' }` in `records/index.ts` lines 52-55, whose own comment admits the live enum *"could not be re-verified"* — task 1.1 confirmed columns exist, not that the `status` check constraint accepts these two values; if it does not, **every count write 500s**; (c) real PostgREST semantics for `.maybeSingle()`, `.in()` with empty arrays, and `insert().select().single()` error shapes. Reasons (2) live schema/seed/RLS verification and (3) the key being unavoidable deployment configuration are both sound.
-  Net: keep the descope, but record it as an **explicitly accepted deployment risk with a named owner**, not as "already covered". The first deploy is carrying real, enumerable failure modes — it should be treated as a gated smoke test with a rollback plan, not a formality.
-
-**SUGGESTION**
-
-- **SUGGESTION-1 — TDD evidence table case counts have drifted.** Reported vs actual: `records-delete.test.ts` 9 vs 8 (over-reported), `anomaly-check.test.ts` 6 vs 9, `http-engine.test.ts` 8 vs 9, `auditor/records.test.ts` 8 vs 12 (under-reported, from later batches). Cosmetic; the files and their green status are real.
-- **SUGGESTION-2 — Stale "UNVERIFIED" comments.** `validation.ts` lines 29-33 and `records/index.ts` lines 47-51 still say the live schema *"could not be re-verified in this apply session"*. Task 1.1 was later completed by the orchestrator with no deltas. Leaving these in makes real doubt (the `COUNT_STATUS` enum, per WARNING-3) indistinguishable from resolved doubt.
-- **SUGGESTION-3 — Engram `apply-progress` metadata is stale.** Observation #159 records HEAD `1c3a84e` and 13 commits; the actual state is `091f65d` and 15 commits. The file twin is current; only the Engram copy lags.
-- **SUGGESTION-4 — Task ordering.** `tasks.md` lists 6.6 and 6.7 before 6.5; harmless but reads oddly.
+---
 
 ### Verdict
 
-**FAIL** — narrowly, on one requirement.
+**FAIL (narrow)** — every one of the five remediation claims is genuine and all three gates are
+independently clean (906/906, 0 type errors, build 0), but a new CRITICAL of the same structural class
+was found: an auditor's approval has no writer, so the Oracle export silently ships without the
+records the auditor just approved. That is the deliverable's payload, and it fails silently.
 
-This is high-quality work: both non-negotiables (RF-07 ordering, RF-18 payload blindness) are correctly implemented at the boundary rather than the renderer and are backed by genuinely adversarial tests; service-role containment is proven against the built bundle; `services/` is untouched; both orchestrator-driven corrections are real and well-tested; and the assertion quality across 23 test files is exemplary (zero tautologies, zero smoke tests, zero mocks).
+**Do not open the PR to `main` yet.** Two things must happen first, in this order:
+1. Fix CRITICAL-1 (RED-first: assert that after an approve, `handleExport` INCLUDES the previously
+   flagged record), with the two enum values from WARNING-3 row 9 confirmed live.
+2. Rebase or merge onto `0fe1c3a`, resolve the two test conflicts, and re-run all three gates — the
+   evidence in this report is against a base that no longer exists on `main`.
 
-It fails verification because **REQ-OCF-13's reload-restore half is unimplemented, untested, and can produce duplicate `count_records` rows** — a data-integrity consequence in the system's core domain, not a cosmetic omission. That single gap, plus a red `npm run check` whose 11 errors are misattributed as pre-existing, is what stands between this and a PASS.
-
-**Path to PASS — four concrete items:**
-
-1. Implement REQ-OCF-13 (`GET /api/records?plan=&operator=` plus restore-on-mount in `CountSession`, RED-first) **or** formally amend the spec to defer it with the same rigour as 6.4's descope.
-2. Fix the 11 type errors and correct the "all pre-existing" statement in `apply-progress.md`.
-3. Replace the literal NUL byte in `auditor/records.ts` line 56 with the escape sequence so the route is reviewable in the PR.
-4. Promote CRITICAL-2 (`nr_articulo`/`sku`) and the `COUNT_STATUS` enum question into the pre-deploy checklist alongside 6.4, with a named owner.
-
-Items 2 and 3 are minutes of work. Item 1 is the real decision: implement it, or descope it explicitly and honestly the way 6.4 was.
+Then WARNING-3 and WARNING-4 become the pre-deploy checklist, with a named owner.
