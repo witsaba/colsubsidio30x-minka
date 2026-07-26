@@ -16,13 +16,18 @@ Catalogue data must come from the live source of truth (Supabase) without paying
 ### Out of Scope
 - Any change to trigram scoring, `decide()` thresholds, or measured accuracy — the algorithm carries over byte-identical.
 - Deleting `scripts/build_bodegas_sqlite.py`, `data/`, and the archived xlsx→sqlite change (dead for matcher runtime; separate cleanup PR).
-- Per-request Supabase/Redis reads, write paths, stock quantities, product_identification service, frontend update (coordinated separately).
+- Per-request Supabase/Redis reads, write paths, stock quantities, product_identification service.
+- ~~frontend update (coordinated separately)~~ — **pulled into scope.** The frontend merged to `main` mid-implementation (PR #13) hardcoding the retired catalogue ids, so migrating them is now part of this change (WU-12).
 
 ## Key Decisions (design tensions, positions taken)
 
-1. **`catalogue_id` becomes `warehouses.code` — clean break, no compatibility mapping.** Breaking API change on `POST /match` and `GET /catalogues`. The only consumers are the service's own tests (services/matcher/tests/api/test_http.py) and the unmerged `feat/voice-counter-frontend` branch, which can adopt the new IDs before merge. A shim would preserve a dead identifier scheme.
+1. **`catalogue_id` becomes `warehouses.code` — clean break, no compatibility mapping.** Breaking API change on `POST /match` and `GET /catalogues`. A shim would preserve a dead identifier scheme.
 
-   **Corrected after live inspection** (this proposal originally assumed 8 → 56): `warehouses` holds 56 rows, but only **8** carry any `warehouse_products`, and those 8 correspond 1:1 to the legacy SQLite tables, differing only by upper-casing — with one trap. `zoologico_suministros` maps to `ZOOLOGICO_SUMINISTROS_2`, not `ZOOLOGICO_SUMINISTROS` (a load-time code collision), so a naive `upper()` remap silently drops 193 rows. Row totals also differ: 1,405 in Supabase against 1,461 in SQLite, most likely `products.name_normalized` UNIQUE deduping. The break is therefore far smaller than first assessed, but the eval remap must handle the `_2` case and account for the 56 missing rows explicitly rather than letting coverage quietly fall.
+   **Superseded by events**: this proposal assumed the only consumers were the service's own tests and the *unmerged* `feat/voice-counter-frontend` branch, which would adopt the new IDs before merging. It merged instead (PR #13) while this change was being implemented, so the frontend migration ships **inside this PR** — see WU-12.
+
+   **Corrected after live inspection** (this proposal originally assumed 8 → 56): `warehouses` holds 56 rows, but only **8** carry any `warehouse_products`, and those 8 correspond 1:1 to the legacy SQLite tables, differing only by upper-casing — with one trap. `zoologico_suministros` maps to `ZOOLOGICO_SUMINISTROS_2`, not `ZOOLOGICO_SUMINISTROS` (a load-time code collision), so a naive `upper()` remap silently drops 193 rows. The break is therefore far smaller than first assessed, but the eval remap must handle the `_2` case.
+
+   **The "56 missing rows" were a phantom.** This proposal first reported 1,405 rows in Supabase against 1,461 in SQLite and guessed at `products.name_normalized` deduping. Measured directly against the file: the 8 stock tables hold 1,413 rowids, each with exactly one `articulo IS NULL` spreadsheet header row the loader always discarded — 1,405. The 1,461 figure additionally counted the 48-row `bodegas_disponibles` lookup, which was never catalogue data. Nothing was lost, and **zero eval cases were dropped** in the remap; all 624 survived.
 2. **Credential — corrected after live inspection.** This proposal assumed a least-privilege Supabase key scoped to the four catalogue tables. That is not available today: the `anon` role holds no `GRANT` on any catalogue table (PostgREST answers HTTP 401 `42501`), every read policy targets the `authenticated` role, and `warehouse_products_read` further demands `private.is_staff()`. Per the user's decision the matcher uses the **`service_role` key**, which bypasses RLS. Stock isolation is therefore enforced by the service and its tests — the source never issues a `warehouse_stock_balances` query and the snapshot never carries stock fields — not by the credential. A scoped catalogue-reader role remains a worthwhile follow-up for the Data Engineer. See REQ-CSS-4.
 
 3. **`Row.sd` is DROPPED.** Verified unused by matching: scoring.py:9 ("Stock level (`sd`) is never a matching prior"), `decide()`'s `RowLike` (decision.py:38-44) reads only `articulo/unidad/nr_articulo`, and tests/unit/test_scoring.py:127-129 asserts REQ-ENG-2 (`sd` must never influence ranking). Dropping it means the matcher never reads `warehouse_stock_balances` (RF-18/RLS-protected `theoretical_qty`) and the Redis snapshot never holds RF-18-restricted data. (The original claim that this also removed the need for a privileged key did not survive contact with the live project — see decision 2.)
@@ -96,7 +101,7 @@ Single revert of the feature branch/PR chain restores the SQLite path; `data/bod
 
 The major scope questions were already answered by the user (one change for both; SQLite removed entirely — final, not revisited). Remaining assumptions taken in this proposal that merit user confirmation before spec/design:
 
-1. **Clean break on `catalogue_id`** (warehouse codes, no legacy-name mapping) — acceptable for the unmerged frontend branch?
+1. **Clean break on `catalogue_id`** (warehouse codes, no legacy-name mapping) — answered yes; the frontend branch has since merged, so the migration ships here (WU-12).
 2. **Drop `sd` from the matcher entirely** (verified unused by ranking) so the service needs no privileged Supabase key — confirm the matcher has no other planned consumer of stock levels.
 3. **Inactive/merged rows excluded**: filter `is_active = true` and exclude warehouses with `merged_into_warehouse_id` set — correct business rule?
 4. **Startup abort philosophy kept**: both Supabase and Redis unreachable at start → abort, never serve empty — confirm.
