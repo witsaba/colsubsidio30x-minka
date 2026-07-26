@@ -84,5 +84,35 @@ No schema changes. Demo operational seed (D10) is additive data. Rollback = reve
 
 ## Open Questions
 
-- [ ] Does the live `count_records` schema carry a client-id/idempotency column with a unique index? Verify at apply (D9); if absent, flag duplicate-on-retry risk as follow-up.
-- [ ] Exact "Import Count Sequences" CSV column layout — confirm against `v_oracle_export_preview` view definition at apply.
+- [x] Does the live `count_records` schema carry a client-id/idempotency column with a unique index? **Resolved**: `client_record_id text unique nullable`, confirmed via `list_tables(verbose=true)` against the live project. Used as the idempotency key in tasks 3.2/3.3.
+- [x] Exact "Import Count Sequences" CSV column layout — confirm against `v_oracle_export_preview` view definition at apply. **Resolved, CORRECTED 2026-07-25**: an earlier orchestrator pass wrongly reported this view absent — `list_tables()` only enumerates tables, not views, and missed it. It DOES exist (`security_invoker=true`), confirmed via `pg_get_viewdef`:
+  ```sql
+  SELECT cr.plan_id, w.code AS subinventory, COALESCE(p.sku, p.name_normalized) AS item,
+         cr.quantity AS count_qty, cr.unit_code AS uom,
+         COALESCE(prof.counter_code, upper(replace(prof.full_name, ' ', '.'))) AS counter,
+         cr.id AS record_id, cr.counted_at
+  FROM count_records cr
+    JOIN warehouses w ON w.id = cr.warehouse_id
+    JOIN products p ON p.id = cr.product_id
+    LEFT JOIN profiles prof ON prof.id = cr.counted_by
+  WHERE NOT cr.is_deleted AND cr.status = ANY (ARRAY['recorded','verified']);
+  ```
+  Column names match the design (`subinventory,item,count_qty,uom,counter`), confirming that part. **But it also revealed a real bug in the already-implemented `frontend/src/pages/api/export.ts`**: the route computes `item` as `product.sku ?? ''` (empty string when null) instead of the view's `COALESCE(sku, name_normalized)`, and `counter` as `profile.counter_code ?? null` instead of falling back to a formatted `full_name`. Since 18.4% of the real catalogue has no SKU (learnings obs #129), the current code would export a blank item name for those rows. Assigned as a follow-up fix task (see tasks.md 5.11, new) — the view's open-anomaly filter still can't be reused as-is since it doesn't exclude records with an open `record_anomalies` row, so the route keeps its own join structure and just needs the two COALESCE fallbacks corrected to match.
+
+## Task 1.1 — Live Schema Re-verification (orchestrator-executed, 2026-07-25)
+
+Ran `list_tables(verbose=true)` against the live project directly. All columns named across Phase 2–5 of `tasks.md` (consent, plans, count_records, record_anomalies, anomaly_evidence, auditor_actions, audit_plans, plan_operators, profiles, export_batches, export_lines) exist with the exact names/types assumed by spec and design. No deltas found. `v_oracle_export_preview` was initially misreported absent (see corrected Open Questions entry above — `list_tables` doesn't enumerate views; a direct `pg_views`/`pg_get_viewdef` query found it, with a real fallback-logic bug it exposed in `export.ts`).
+
+## Task 1.4/1.5 — Demo Identity and Plan Seed (orchestrator-executed via MCP `execute_sql`, 2026-07-25)
+
+Additive SQL, not a migration, per D10. Real `auth.users` rows created first (GoTrue-documented seed pattern: `id, email, raw_user_meta_data` only — no password, not login-capable, matches the Hybrid access pattern's "no real auth" scope), then `profiles` rows pointing at them.
+
+| Role | `profiles.id` | `counter_code` | Notes |
+|------|----------------|-----------------|-------|
+| operator | `11111111-1111-4111-8111-111111111111` | `OP.001` | assigned to demo plan, `plan_operators.status='in_progress'` |
+| operator | `22222222-2222-4222-8222-222222222222` | `OP.002` | assigned to demo plan, `plan_operators.status='scheduled'` |
+| auditor | `33333333-3333-4333-8333-333333333333` | `AUD.001` | `audit_plans.created_by` |
+
+Demo `audit_plans` row: id `44444444-4444-4444-8444-444444444444`, code `PLAN-DEMO-001`, `warehouse_id` = `28f1c715-4c42-4920-bf4b-6127e40ce11f` (`STOCK_RESTAURANTE_FUENTES_AYB`, chosen for having the most active `warehouse_products` rows among real warehouses: 344), `status='active'`, `period_start=today`, `period_end=today+7d`, `expected_item_count=344`.
+
+`GET /api/plans?operator=11111111-1111-4111-8111-111111111111` and `...operator=22222222-2222-4222-8222-222222222222` should now return this one plan; any other operator id returns `[]` (RF-07/RF-11).
