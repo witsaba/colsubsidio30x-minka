@@ -232,7 +232,7 @@ describe('match', () => {
       request_id: 'm-1',
     });
 
-    await match({ spoken_name: 'lechuga batavia', catalogue_id: 'stock_restaurante_fuentes_ayb' });
+    await match({ spoken_name: 'lechuga batavia', catalogue_id: 'STOCK_RESTAURANTE_FUENTES_AYB' });
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('/api/match');
@@ -241,7 +241,7 @@ describe('match', () => {
     expect((init.headers as Record<string, string>)['content-type']).toBe('application/json');
     expect(JSON.parse(init.body as string)).toEqual({
       spoken_name: 'lechuga batavia',
-      catalogue_id: 'stock_restaurante_fuentes_ayb',
+      catalogue_id: 'STOCK_RESTAURANTE_FUENTES_AYB',
     });
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
@@ -362,8 +362,10 @@ describe('match', () => {
 describe('getCatalogues', () => {
   it('GETs the same-origin proxy and returns the catalogue list', async () => {
     const fetchMock = stubFetchJson([
-      { catalogue_id: 'stock_restaurante_fuentes_ayb', rows: 107 },
-      { catalogue_id: 'stock_cafeteria', rows: 42 },
+      { catalogue_id: 'STOCK_RESTAURANTE_FUENTES_AYB', rows: 107 },
+      // Not one of the 8: this asserts the client passes through whatever the
+      // service sends rather than filtering against its own list.
+      { catalogue_id: 'STOCK_CAFETERIA', rows: 42 },
     ]);
 
     const res = await getCatalogues();
@@ -372,7 +374,7 @@ describe('getCatalogues', () => {
     expect(url).toBe('/api/catalogues');
     expect(init.method ?? 'GET').toBe('GET');
     expect(res).toHaveLength(2);
-    expect(res[0]!.catalogue_id).toBe('stock_restaurante_fuentes_ayb');
+    expect(res[0]!.catalogue_id).toBe('STOCK_RESTAURANTE_FUENTES_AYB');
   });
 
   it('maps an unreachable proxy to proxy_unreachable', async () => {

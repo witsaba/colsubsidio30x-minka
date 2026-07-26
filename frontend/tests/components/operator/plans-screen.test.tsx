@@ -33,8 +33,8 @@ describe('PlansScreen — the 8 real catalogues (REQ-OCF-8)', () => {
   it('renders the real catalogue_id verbatim, never an invented bodega key', () => {
     const { container } = renderPlans();
 
-    expect(container.textContent).toContain('stock_restaurante_fuentes_ayb');
-    expect(container.textContent).toContain('zoologico_suministros');
+    expect(container.textContent).toContain('STOCK_RESTAURANTE_FUENTES_AYB');
+    expect(container.textContent).toContain('ZOOLOGICO_SUMINISTROS_2');
   });
 
   it('states the RF-11 limitation instead of faking a bodega mapping', () => {
@@ -48,7 +48,7 @@ describe('PlansScreen — the 8 real catalogues (REQ-OCF-8)', () => {
 
     fireEvent.click(getByRole('button', { name: 'Iniciar conteo · Zoológico · AyB' }));
 
-    expect(dispatch).toHaveBeenCalledWith({ type: 'PLAN_STARTED', catalogueId: 'zoologico' });
+    expect(dispatch).toHaveBeenCalledWith({ type: 'PLAN_STARTED', catalogueId: 'ZOOLOGICO' });
   });
 
   it('dispatches a different catalogue_id for a different card', () => {
@@ -58,14 +58,14 @@ describe('PlansScreen — the 8 real catalogues (REQ-OCF-8)', () => {
 
     expect(dispatch).toHaveBeenCalledWith({
       type: 'PLAN_STARTED',
-      catalogueId: 'stock_almacen_suministros',
+      catalogueId: 'STOCK_ALMACEN_SUMINISTROS',
     });
   });
 });
 
 describe('PlansScreen — only assigned plans are shown', () => {
   it('renders exactly the assigned subset and hides the rest', () => {
-    const { getAllByRole, getByText, queryByText } = renderPlans(['zoologico', 'stock_almacen_ayb']);
+    const { getAllByRole, getByText, queryByText } = renderPlans(['ZOOLOGICO', 'STOCK_ALMACEN_AYB']);
 
     expect(getAllByRole('button', { name: /^Iniciar conteo · / })).toHaveLength(2);
     expect(getByText('Zoológico · AyB')).toBeTruthy();
@@ -74,7 +74,7 @@ describe('PlansScreen — only assigned plans are shown', () => {
   });
 
   it('renders the blind-counting footer verbatim', () => {
-    const { container } = renderPlans(['zoologico']);
+    const { container } = renderPlans(['ZOOLOGICO']);
 
     expect(container.textContent).toContain(
       'Solo ves las bodegas que te asignaron. El conteo es ciego.',

@@ -81,7 +81,7 @@ demo video) is the pitch artifact Daniel asked for.
 
 | Scenario | Reliability % | Max proven capacity | Where it fails | What it cannot do |
 | --- | --- | --- | --- | --- |
-| Product match, exact dictation | 98.60% top-1, 100% recall@3 (n=430) | 1,405-row catalogue, 8 tables | 6/430 top-1 misses (recovered in top-3) | Cannot distinguish SKUs whose names differ only by data absent from dictation |
+| Product match, exact dictation | 98.37% top-1, 100% recall@3 (n=430) | 1,405-row catalogue, 8 warehouse codes | 7/430 top-1 misses (all recovered within top 3: 6 at rank 2, 1 at rank 3) | Cannot distinguish SKUs whose names differ only by data absent from dictation |
 | Product match, garbage input | 99.46% correct rejection (1/184 false-confidence) | 300-char input cap | Confident match on 1 adversarial phrase | Cannot flag ambiguity when `MATCH_MAX_CANDIDATES=1` (documented footgun) |
 | Matcher availability | Verified: healthy ≤ 12 s; retry drill 3 warned attempts → exit 3 → restart layer | — | Wedged-but-alive process is not auto-restarted (healthcheck has no consumer) | No auth/rate-limit (demo scope) |
 | STT es-CO, quiet / noisy | *pending C4* | *pending* | *pending* | *pending* |

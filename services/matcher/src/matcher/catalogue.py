@@ -1,87 +1,147 @@
-"""Read-only catalogue loading (REQ-API-5, design D2).
+"""Catalogue resolution at startup (REQ-CSS-1/5, design D2/D5).
 
-Promoted from `spikes/matching/catalogue.py` with exactly the two design-D2
-edits: the connection is opened through a `mode=ro` URI, and the database path
-is a required parameter instead of a module-level default. Everything else --
-the stock table list, the `Row` shape, the null-`articulo` skip -- is unchanged.
+The catalogue no longer comes from a SQLite file: it is read from Supabase
+through a `CatalogueSource` and cached as a versioned snapshot behind a
+`SnapshotCache`. `load_index` is the fallback chain between the two.
 
-The whole catalogue is read into memory once at startup, so no connection
-outlives the load and the service never writes.
+`Row`, `Snapshot` and the two Protocols live in `ports.py` and are re-exported
+here, so the public `matcher.catalogue.Row` import path design D2 specifies
+keeps resolving. The SQLite loader (`STOCK_TABLES`, `open_readonly`,
+`load_catalogue` and the old stock-carrying `Row`) is deleted with the
+requirement it served: REQ-API-5 is REMOVED by this change's spec delta, and
+under REQ-CSS-4 stock is now never even loaded.
 """
 from __future__ import annotations
 
-import sqlite3
+import logging
 from dataclasses import dataclass
-from pathlib import Path
+from datetime import UTC, datetime
 
-STOCK_TABLES = [
-    "stock_almacen_ayb",
-    "stock_almacen_suministros",
-    "stock_kiosco_piscigiros_ayb",
-    "stock_kiosco_taquilla_ayb",
-    "stock_restaurante_fuentes_ayb",
-    "stock_restaurante_fuentes_sumin",
-    "zoologico",
-    "zoologico_suministros",
+from matcher.ports import CatalogueSource, Row, Snapshot, SnapshotCache
+
+__all__ = [
+    "CatalogueSource",
+    "CatalogueUnavailableError",
+    "LoadedCatalogue",
+    "Row",
+    "Snapshot",
+    "SnapshotCache",
+    "as_utc",
+    "flatten_catalogue",
+    "group_rows",
+    "load_index",
 ]
+
+logger = logging.getLogger("matcher")
+
+SOURCE_REDIS_SNAPSHOT = "redis-snapshot"
+SOURCE_REDIS_SNAPSHOT_STALE = "redis-snapshot-stale"
+SOURCE_SUPABASE = "supabase"
 
 
 class CatalogueUnavailableError(RuntimeError):
     """The catalogue cannot be loaded: startup must abort, never serve empty."""
 
 
-@dataclass
-class Row:
-    table: str
-    rowid: int
-    articulo: str
-    unidad: str | None
-    sd: float | None
-    nr_articulo: str | None
+@dataclass(frozen=True)
+class LoadedCatalogue:
+    """The catalogue, where it came from, and when it was read at the origin.
 
-    @property
-    def uid(self) -> str:
-        return f"{self.table}#{self.rowid}"
+    `loaded_at` is the *origin* timestamp, not the moment this process built
+    the index: for a snapshot it is the instant the winning replica read
+    Supabase. Refresh compares it against a competitor's snapshot to decide
+    whether that snapshot is worth adopting (D4), so it must not be reset here.
+    """
 
-
-def open_readonly(db_path: Path) -> sqlite3.Connection:
-    """Open the catalogue strictly read-only; a missing file is never created."""
-    return sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    catalogue: dict[str, list[Row]]
+    source: str
+    loaded_at: datetime
 
 
-def load_catalogue(db_path: Path) -> dict[str, list[Row]]:
-    """Load every stock table into memory, or raise `CatalogueUnavailableError`."""
+def group_rows(rows: list[Row]) -> dict[str, list[Row]]:
+    """Rebuild the per-warehouse grouping from a flat snapshot payload."""
+    grouped: dict[str, list[Row]] = {}
+    for row in rows:
+        grouped.setdefault(row.warehouse_code, []).append(row)
+    return grouped
+
+
+def flatten_catalogue(catalogue: dict[str, list[Row]]) -> list[Row]:
+    return [row for rows in catalogue.values() for row in rows]
+
+
+def as_utc(moment: datetime) -> datetime:
+    """Naive timestamps are read as UTC, so two `loaded_at` are comparable."""
+    if moment.tzinfo is None:
+        return moment.replace(tzinfo=UTC)
+    return moment.astimezone(UTC)
+
+
+def _is_fresh(snapshot: Snapshot, ttl_seconds: int) -> bool:
+    """Freshness is judged from `loaded_at`, never from the Redis key expiry."""
+    age = datetime.now(UTC) - as_utc(snapshot.loaded_at)
+    return age.total_seconds() < ttl_seconds
+
+
+def _cached(cache: SnapshotCache) -> Snapshot | None:
+    """Read the cache, tolerating an adapter that fails louder than its port.
+
+    `RedisSnapshotCache` already swallows every `redis.RedisError` into a miss,
+    so this guard only catches a cache that breaks its own contract -- but a
+    cache is a soft dependency (REQ-RCC-3) and must never abort a startup that
+    Supabase could still serve. A snapshot with no rows is treated as a miss:
+    an empty catalogue is never a valid result (REQ-CSS-5).
+    """
     try:
-        con = open_readonly(db_path)
-    except sqlite3.Error as exc:
-        raise CatalogueUnavailableError(
-            f"cannot open catalogue database '{db_path}': {exc}"
-        ) from exc
+        snapshot = cache.get()
+    except Exception as exc:  # noqa: BLE001 - a cache must never break startup
+        logger.warning("catalogue snapshot unreadable, ignoring cache: %s", exc)
+        return None
+    if snapshot is None or not snapshot.rows:
+        return None
+    return snapshot
+
+
+def load_index(
+    source: CatalogueSource,
+    cache: SnapshotCache,
+    ttl_seconds: int,
+) -> LoadedCatalogue:
+    """Resolve the catalogue at startup through the D5 fallback chain.
+
+    1. a fresh snapshot is used as-is -- **zero** source calls (REQ-RCC-1);
+    2. otherwise the source is read and the snapshot written back (best effort);
+    3. otherwise a stale-but-parseable snapshot is served with a warning;
+    4. otherwise `CatalogueUnavailableError` aborts startup (REQ-CSS-5).
+    """
+    snapshot = _cached(cache)
+    if snapshot is not None and _is_fresh(snapshot, ttl_seconds):
+        return LoadedCatalogue(
+            group_rows(snapshot.rows),
+            SOURCE_REDIS_SNAPSHOT,
+            as_utc(snapshot.loaded_at),
+        )
 
     try:
-        cur = con.cursor()
-        out: dict[str, list[Row]] = {}
-        for t in STOCK_TABLES:
-            try:
-                cur.execute(
-                    f'SELECT rowid, articulo, unidad, sd, nr_articulo FROM "{t}"'
-                )
-                # fetchall() belongs inside the same guard: sqlite only detects
-                # page-level corruption ("database disk image is malformed")
-                # while it streams rows, so a fetch-time failure must produce
-                # the same contextual error as a plan-time one.
-                rows_raw = cur.fetchall()
-            except sqlite3.Error as exc:
-                raise CatalogueUnavailableError(
-                    f"catalogue database '{db_path}' is unusable "
-                    f"(table '{t}'): {exc}"
-                ) from exc
-            rows = []
-            for rowid, articulo, unidad, sd, nr_articulo in rows_raw:
-                if articulo is None:
-                    continue
-                rows.append(Row(t, rowid, articulo, unidad, sd, nr_articulo))
-            out[t] = rows
-        return out
-    finally:
-        con.close()
+        catalogue = source.load()
+    except CatalogueUnavailableError as exc:
+        if snapshot is None:
+            raise
+        logger.warning(
+            "catalogue source unavailable, serving the stale snapshot "
+            "loaded at %s: %s",
+            snapshot.loaded_at,
+            exc,
+        )
+        return LoadedCatalogue(
+            group_rows(snapshot.rows),
+            SOURCE_REDIS_SNAPSHOT_STALE,
+            as_utc(snapshot.loaded_at),
+        )
+
+    loaded_at = datetime.now(UTC)
+    try:
+        cache.put(Snapshot(rows=flatten_catalogue(catalogue), loaded_at=loaded_at))
+    except Exception as exc:  # noqa: BLE001 - the write back is best effort
+        logger.warning("catalogue snapshot not cached: %s", exc)
+    return LoadedCatalogue(catalogue, SOURCE_SUPABASE, loaded_at)
