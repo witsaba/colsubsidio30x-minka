@@ -68,7 +68,7 @@ function resolvedWith(queue: QueueEntry[]): SessionState {
     ...initialSessionState,
     screen: 'count',
     micPermission: 'granted',
-    catalogueId: 'stock_restaurante_fuentes_ayb',
+    catalogueId: 'STOCK_RESTAURANTE_FUENTES_AYB',
     requestInFlight: true,
     overlay: { kind: 'processing', transcript: null },
   };

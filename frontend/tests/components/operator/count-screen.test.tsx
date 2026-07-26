@@ -41,7 +41,7 @@ function countState(patch: Partial<SessionState> = {}): SessionState {
     ...initialSessionState,
     screen: 'count',
     micPermission: 'granted',
-    catalogueId: 'stock_restaurante_fuentes_ayb',
+    catalogueId: 'STOCK_RESTAURANTE_FUENTES_AYB',
     records: [record()],
     ...patch,
   };

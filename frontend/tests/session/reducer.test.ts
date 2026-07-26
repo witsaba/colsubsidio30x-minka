@@ -83,7 +83,7 @@ function counting(over: Partial<SessionState> = {}): SessionState {
     screen: 'count',
     consentChecked: true,
     micPermission: 'granted',
-    catalogueId: 'stock_restaurante_fuentes_ayb',
+    catalogueId: 'STOCK_RESTAURANTE_FUENTES_AYB',
     ...over,
   };
 }
@@ -143,14 +143,14 @@ describe('S2 plans', () => {
   test('PLAN_STARTED carries the real catalogue_id onto the count screen (REQ-OCF-8)', () => {
     const s = sessionReducer(
       { ...initialSessionState, screen: 'plans', micPermission: 'granted', consentChecked: true },
-      { type: 'PLAN_STARTED', catalogueId: 'stock_almacen_ayb' },
+      { type: 'PLAN_STARTED', catalogueId: 'STOCK_ALMACEN_AYB' },
     );
-    expect(s).toMatchObject({ screen: 'count', overlay: null, catalogueId: 'stock_almacen_ayb' });
+    expect(s).toMatchObject({ screen: 'count', overlay: null, catalogueId: 'STOCK_ALMACEN_AYB' });
   });
 
   test('PLAN_STARTED is ignored from permiso', () => {
     const s = initialSessionState;
-    expect(sessionReducer(s, { type: 'PLAN_STARTED', catalogueId: 'zoologico' })).toBe(s);
+    expect(sessionReducer(s, { type: 'PLAN_STARTED', catalogueId: 'ZOOLOGICO' })).toBe(s);
   });
 });
 
@@ -546,7 +546,7 @@ describe('voice creates only', () => {
       { type: 'MIC_REQUESTED' },
       { type: 'MIC_GRANTED' },
       { type: 'MIC_DENIED' },
-      { type: 'PLAN_STARTED', catalogueId: 'zoologico' },
+      { type: 'PLAN_STARTED', catalogueId: 'ZOOLOGICO' },
       { type: 'REC_STARTED' },
       { type: 'REC_STOPPED', audio },
       { type: 'REC_REJECTED', reason: 'too_large' },
@@ -630,7 +630,7 @@ describe('blind counting invariant', () => {
     const flow: SessionEvent[] = [
       { type: 'CONSENT_TOGGLED' },
       { type: 'MIC_GRANTED' },
-      { type: 'PLAN_STARTED', catalogueId: 'stock_restaurante_fuentes_ayb' },
+      { type: 'PLAN_STARTED', catalogueId: 'STOCK_RESTAURANTE_FUENTES_AYB' },
       { type: 'REC_STARTED' },
       { type: 'REC_STOPPED', audio },
       { type: 'PIPELINE_TRANSCRIPT', raw: 'doce gaseosas' },
@@ -745,7 +745,7 @@ describe('the reducer is total', () => {
     { type: 'MIC_REQUESTED' },
     { type: 'MIC_GRANTED' },
     { type: 'MIC_DENIED' },
-    { type: 'PLAN_STARTED', catalogueId: 'zoologico' },
+    { type: 'PLAN_STARTED', catalogueId: 'ZOOLOGICO' },
     { type: 'REC_STARTED' },
     { type: 'REC_STOPPED', audio },
     { type: 'REC_REJECTED', reason: 'too_short' },

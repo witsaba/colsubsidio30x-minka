@@ -36,7 +36,7 @@ function memoryStorage(seed: Record<string, string> = {}): Storage {
 }
 
 const context = {
-  catalogueId: 'stock_restaurante_fuentes_ayb',
+  catalogueId: 'STOCK_RESTAURANTE_FUENTES_AYB',
   planId: 'plan-1',
   operatorId: 'op-1',
   warehouseId: 'wh-1',

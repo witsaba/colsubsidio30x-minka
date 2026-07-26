@@ -103,13 +103,13 @@ const EVERY_EVENT: SessionEvent[] = [
   { type: 'MIC_REQUESTED' },
   { type: 'MIC_GRANTED' },
   { type: 'MIC_DENIED' },
-  { type: 'PLAN_STARTED', catalogueId: 'stock_restaurante_fuentes_ayb' },
+  { type: 'PLAN_STARTED', catalogueId: 'STOCK_RESTAURANTE_FUENTES_AYB' },
   // Session resume (REQ-OCF-13): it jumps straight to the count screen with
   // records already in the list, so the walk has to prove THAT entry point is
   // escapable too — not only the one that goes through consent and plans.
   {
     type: 'SESSION_RESUMED',
-    catalogueId: 'stock_restaurante_fuentes_ayb',
+    catalogueId: 'STOCK_RESTAURANTE_FUENTES_AYB',
     planId: 'plan-1',
     operatorId: 'op-1',
     warehouseId: 'wh-1',

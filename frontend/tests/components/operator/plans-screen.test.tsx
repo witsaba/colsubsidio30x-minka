@@ -26,14 +26,14 @@ const FUENTES: PlanSummary = {
   id: '44444444-4444-4444-8444-444444444444',
   name: 'Restaurante Fuentes · AyB',
   warehouseId: '28f1c715-4c42-4920-bf4b-6127e40ce11f',
-  catalogueId: 'stock_restaurante_fuentes_ayb',
+  catalogueId: 'STOCK_RESTAURANTE_FUENTES_AYB',
 };
 
 const ZOOLOGICO: PlanSummary = {
   id: '55555555-5555-4555-8555-555555555555',
   name: 'Zoológico · AyB',
   warehouseId: 'aa000000-0000-4000-8000-000000000001',
-  catalogueId: 'zoologico',
+  catalogueId: 'ZOOLOGICO',
 };
 
 function renderPlans(loadPlans: () => Promise<PlanSummary[]>) {
@@ -133,7 +133,7 @@ describe('PlansScreen — selection carries the plan scope (REQ-OCF-8, RF-07)', 
 
     expect(view.dispatch).toHaveBeenCalledWith({
       type: 'PLAN_STARTED',
-      catalogueId: 'stock_restaurante_fuentes_ayb',
+      catalogueId: 'STOCK_RESTAURANTE_FUENTES_AYB',
       planId: FUENTES.id,
       operatorId: OPERATOR_ID,
       warehouseId: FUENTES.warehouseId,
@@ -148,7 +148,7 @@ describe('PlansScreen — selection carries the plan scope (REQ-OCF-8, RF-07)', 
 
     expect(view.dispatch).toHaveBeenCalledWith({
       type: 'PLAN_STARTED',
-      catalogueId: 'zoologico',
+      catalogueId: 'ZOOLOGICO',
       planId: ZOOLOGICO.id,
       operatorId: OPERATOR_ID,
       warehouseId: ZOOLOGICO.warehouseId,

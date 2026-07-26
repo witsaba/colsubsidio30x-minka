@@ -14,11 +14,19 @@ from __future__ import annotations
 
 import logging
 import re
-from pathlib import Path
 
 import pytest
+from conftest import (
+    FIXTURE_CATALOGUE_ID,
+    FIXTURE_ROW_COUNT,
+    FIXTURE_WAREHOUSES,
+    FakeCatalogueSource,
+    make_cache,
+    make_rows,
+)
 
-CATALOGUE = "stock_almacen_ayb"
+CATALOGUE = FIXTURE_CATALOGUE_ID
+UNKNOWN_CATALOGUE = "BOD-99"
 MATCHED_QUERY = "achiote molido"
 NO_MATCH_QUERY = "zzzzqqq xkcd"
 
@@ -67,51 +75,100 @@ class TestLoggerConfiguration:
         assert before == 1
 
 
+def _startup_line(caplog: pytest.LogCaptureFixture) -> str:
+    """The most recent startup summary.
+
+    The last one, not the first: `caplog` keeps every propagated record for the
+    whole test, so a test that starts the app twice would otherwise assert
+    against the first start's line.
+    """
+    startup = [m for m in messages(caplog, logging.INFO) if "catalogue loaded" in m]
+    assert startup, "startup must leave an INFO trace"
+    return startup[-1]
+
+
 class TestStartupLogging:
     def test_successful_startup_logs_the_catalogue_summary(
-        self,
-        catalogue_db_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
-        caplog: pytest.LogCaptureFixture,
+        self, client, caplog: pytest.LogCaptureFixture
     ) -> None:
         from fastapi.testclient import TestClient
 
         from matcher.main import app
 
-        monkeypatch.setenv("CATALOGUE_DB", str(catalogue_db_path))
         with caplog.at_level(logging.INFO, logger=LOGGER_NAME):
             with TestClient(app):
                 pass
 
-        startup = [m for m in messages(caplog, logging.INFO) if "catalogue" in m]
-        assert startup, "startup must leave an INFO trace"
-        line = startup[0]
-        assert "catalogues=8" in line
-        assert re.search(r"rows=\d+", line)
-        assert str(catalogue_db_path) in line
+        line = _startup_line(caplog)
+        assert f"catalogues={len(FIXTURE_WAREHOUSES)}" in line
+        assert f"rows={FIXTURE_ROW_COUNT}" in line
+
+    def test_it_reports_which_source_the_catalogue_came_from(
+        self, client, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """D5: a replica quietly running on a stale snapshot must be visible."""
+        from fastapi.testclient import TestClient
+
+        from matcher.main import app
+
+        with caplog.at_level(logging.INFO, logger=LOGGER_NAME):
+            with TestClient(app):
+                pass
+
+        line = _startup_line(caplog)
+        match = re.search(r"source=(\S+)", line)
+        assert match, line
+        assert match.group(1) in {"redis-snapshot", "supabase", "redis-snapshot-stale"}
+        assert "db=" not in line
+
+    def test_a_warm_start_reports_the_redis_snapshot_as_its_source(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The label is real provenance, not a constant: a shared cache that
+        already holds a fresh snapshot changes it."""
+        from fastapi.testclient import TestClient
+
+        from matcher import main as main_module
+
+        shared_cache = make_cache()
+        source = FakeCatalogueSource(make_rows())
+        monkeypatch.setattr(
+            main_module, "_build_adapters", lambda _s: (source, shared_cache)
+        )
+
+        with TestClient(main_module.app):
+            pass
+        with caplog.at_level(logging.INFO, logger=LOGGER_NAME):
+            with TestClient(main_module.app):
+                pass
+
+        assert "source=redis-snapshot" in _startup_line(caplog)
+        assert source.calls == 1, "the second start must not re-read Supabase"
 
     def test_failed_startup_logs_the_error_before_aborting(
         self,
-        tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         from fastapi.testclient import TestClient
 
+        from matcher import main as main_module
         from matcher.catalogue import CatalogueUnavailableError
-        from matcher.main import app
 
-        missing = tmp_path / "absent.sqlite"
-        monkeypatch.setenv("CATALOGUE_DB", str(missing))
+        monkeypatch.setattr(
+            main_module,
+            "_build_adapters",
+            lambda _s: (FakeCatalogueSource(fail_times=99), make_cache()),
+        )
         with caplog.at_level(logging.INFO, logger=LOGGER_NAME):
             with pytest.raises(CatalogueUnavailableError):
-                with TestClient(app):
+                with TestClient(main_module.app):
                     pass
 
         errors = messages(caplog, logging.ERROR)
         assert errors, "an aborted startup must leave an ERROR trace"
-        assert any(str(missing) in m for m in errors)
-        assert any("cannot open catalogue database" in m for m in errors)
+        assert any("startup aborted after" in m for m in errors)
+        assert any("fake catalogue source failing" in m for m in errors)
 
 
 class TestMatchRequestLogging:
@@ -158,7 +215,7 @@ class TestUnknownCatalogueLogging:
         self, client, caplog: pytest.LogCaptureFixture
     ) -> None:
         with caplog.at_level(logging.INFO, logger=LOGGER_NAME):
-            post_match(client, catalogue_id="not_a_table")
+            post_match(client, catalogue_id=UNKNOWN_CATALOGUE)
 
         assert len(messages(caplog, logging.WARNING)) == 1
 
@@ -166,15 +223,15 @@ class TestUnknownCatalogueLogging:
         self, client, caplog: pytest.LogCaptureFixture
     ) -> None:
         with caplog.at_level(logging.INFO, logger=LOGGER_NAME):
-            post_match(client, catalogue_id="not_a_table")
+            post_match(client, catalogue_id=UNKNOWN_CATALOGUE)
 
-        assert "catalogue_id=not_a_table" in messages(caplog, logging.WARNING)[0]
+        assert f"catalogue_id={UNKNOWN_CATALOGUE}" in messages(caplog, logging.WARNING)[0]
 
     def test_the_warning_carries_a_request_id(
         self, client, caplog: pytest.LogCaptureFixture
     ) -> None:
         with caplog.at_level(logging.INFO, logger=LOGGER_NAME):
-            post_match(client, catalogue_id="not_a_table")
+            post_match(client, catalogue_id=UNKNOWN_CATALOGUE)
         line = messages(caplog, logging.WARNING)[0]
 
         assert re.search(
@@ -185,7 +242,7 @@ class TestUnknownCatalogueLogging:
         self, client, caplog: pytest.LogCaptureFixture
     ) -> None:
         with caplog.at_level(logging.INFO, logger=LOGGER_NAME):
-            post_match(client, catalogue_id="not_a_table")
+            post_match(client, catalogue_id=UNKNOWN_CATALOGUE)
 
         assert messages(caplog, logging.INFO) == []
 
@@ -210,7 +267,7 @@ class TestNoTranscriptEverReachesTheLog:
         self, client, caplog: pytest.LogCaptureFixture
     ) -> None:
         with caplog.at_level(logging.DEBUG):
-            post_match(client, spoken_name=MATCHED_QUERY, catalogue_id="not_a_table")
+            post_match(client, spoken_name=MATCHED_QUERY, catalogue_id=UNKNOWN_CATALOGUE)
         blob = "\n".join(r.getMessage() for r in caplog.records).lower()
 
         assert MATCHED_QUERY.lower() not in blob
