@@ -20,5 +20,6 @@ __pycache__/
 !.env.example
 gen-lang-client-*.json
 *-key.json
+key-gcp.json
 service-account*.json
 
