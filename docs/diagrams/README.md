@@ -7,6 +7,7 @@ below reproduce step labels that were explicitly corrected during the meeting.
 | --- | --- |
 | [`01-end-to-end-flow.png`](01-end-to-end-flow.png) · [source](01-end-to-end-flow.html) | End-to-end capture flow, 10 steps |
 | [`02-two-apps-architecture.png`](02-two-apps-architecture.png) · [source](02-two-apps-architecture.html) | Two-app split, operator / auditor, shared backend |
+| [`03-implementation-flow.md`](03-implementation-flow.md) | Implementation flow as the code actually runs — Mermaid (flowchart + sequence + state + failure map + port map). Source-of-truth for what would happen if you pushed the mic right now. |
 
 Originals: `01_detailed_flow.{html,png}`, `02_two_apps_architecture.{html,png}`. The `.html` files are
 the editable sources (inline SVG); each carries a "Download PNG" button that regenerates its `.png`.
