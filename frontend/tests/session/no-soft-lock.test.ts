@@ -127,6 +127,10 @@ const EVERY_EVENT: SessionEvent[] = [
   { type: 'SEARCH_PICKED', candidate: candidate() },
   { type: 'SEARCH_DISMISSED' },
   { type: 'RECORD_DELETED', id: 'nope' },
+  // Persistence outcomes (D5): the walk must prove that a failed write cannot
+  // strand the operator either — `sync` plus a banner is always escapable.
+  { type: 'RECORD_PERSISTED', id: 'nope', serverId: 'srv-1' },
+  { type: 'RECORD_PERSIST_FAILED', id: 'nope', error: new UiError('proxy_unreachable') },
   { type: 'COUNT_FINISHED' },
   { type: 'BACK_TO_PLANS' },
   { type: 'ERROR_DISMISSED' },

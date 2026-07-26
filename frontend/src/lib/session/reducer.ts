@@ -33,6 +33,9 @@ export const initialSessionState: SessionState = {
   records: [],
   progress: { counted: 45, total: 107 },
   catalogueId: null,
+  planId: null,
+  operatorId: null,
+  warehouseId: null,
   lastTranscript: null,
   error: null,
 };
@@ -179,7 +182,17 @@ export function sessionReducer(state: SessionState, event: SessionEvent): Sessio
 
     case 'PLAN_STARTED':
       if (state.screen !== 'plans') return state;
-      return { ...state, screen: 'count', overlay: null, catalogueId: event.catalogueId };
+      return {
+        ...state,
+        screen: 'count',
+        overlay: null,
+        catalogueId: event.catalogueId,
+        // Absent on the fixture/demo path; every server write is guarded by the
+        // route anyway, so a null here simply means "nothing to persist against".
+        planId: event.planId ?? null,
+        operatorId: event.operatorId ?? null,
+        warehouseId: event.warehouseId ?? null,
+      };
 
     /* --- S3 recording -------------------------------------------------- */
 
@@ -245,8 +258,10 @@ export function sessionReducer(state: SessionState, event: SessionEvent): Sessio
 
     case 'CONFIRM_ACCEPTED': {
       if (state.overlay?.kind !== 'confirm') return state;
+      // `sync` until the server confirms (design D5): the record is on screen
+      // immediately, but it does not claim to be settled until it really is.
       const created = state.overlay.items.map((item, i) =>
-        toRecord(item, event.at, state.records.length + i, 'ok'),
+        toRecord(item, event.at, state.records.length + i, 'sync'),
       );
       return { ...appendRecords(state, created), overlay: null };
     }
@@ -267,7 +282,9 @@ export function sessionReducer(state: SessionState, event: SessionEvent): Sessio
     case 'ANOMALY_KEEP_NOTED': {
       if (state.overlay?.kind !== 'anomaly') return state;
       const { item, anomaly, queue } = state.overlay;
-      const kept = toRecord(item, event.at, state.records.length, 'anom_noted', anomaly);
+      // Also optimistic: it settles as `anom_noted` on `RECORD_PERSISTED`,
+      // which reads the anomaly back off the record itself.
+      const kept = toRecord(item, event.at, state.records.length, 'sync', anomaly);
       return { ...appendRecords(state, [kept]), overlay: openNext(queue, state.lastTranscript ?? '') };
     }
 
@@ -310,6 +327,29 @@ export function sessionReducer(state: SessionState, event: SessionEvent): Sessio
         records,
         progress: { ...state.progress, counted: Math.max(0, state.progress.counted - removed) },
       };
+    }
+
+    /* --- persistence outcomes (REQ-OCF-13, D5) -------------------------- */
+
+    case 'RECORD_PERSISTED': {
+      const index = state.records.findIndex((r) => r.id === event.id);
+      if (index === -1) return state;
+      const target = state.records[index]!;
+      // The settled state is DERIVED from the record, not carried on the event:
+      // the reducer already knows whether the operator kept an anomaly, and a
+      // second source of truth could disagree with the badge on screen.
+      const settled = target.anomaly ? 'anom_noted' : 'ok';
+      const records = [...state.records];
+      records[index] = { ...target, state: settled, serverId: event.serverId };
+      return { ...state, records };
+    }
+
+    case 'RECORD_PERSIST_FAILED': {
+      const index = state.records.findIndex((r) => r.id === event.id);
+      if (index === -1) return state;
+      // The record STAYS. Dropping it would silently lose a physical count the
+      // operator already performed; `sync` plus the banner tells the truth.
+      return { ...state, error: event.error };
     }
 
     /* --- S9 «Terminar conteo» (REQ-OCF-9, D9 — authored control) -------- */

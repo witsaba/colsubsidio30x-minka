@@ -295,7 +295,9 @@ describe('S5 confirmation', () => {
     expect(s.records).toHaveLength(2);
     expect(s.progress.counted).toBe(counting().progress.counted + 2);
     expect(s.overlay).toBeNull();
-    expect(s.records.every((r) => r.state === 'ok')).toBe(true);
+    // Optimistic persistence (design D5): a confirmed record enters `sync` and
+    // only becomes `ok` once `RECORD_PERSISTED` reports the server accepted it.
+    expect(s.records.every((r) => r.state === 'sync')).toBe(true);
     expect(new Set(s.records.map((r) => r.id)).size).toBe(2);
   });
 
@@ -406,10 +408,11 @@ describe('S6 anomaly block', () => {
     expect(blocked(s)).toBe(false);
   });
 
-  test('ANOMALY_KEEP_NOTED appends an anom_noted record carrying the anomaly, then pops the queue', () => {
+  test('ANOMALY_KEEP_NOTED appends a kept record carrying the anomaly, then pops the queue', () => {
     const s = sessionReducer(anomalyOverlay, { type: 'ANOMALY_KEEP_NOTED', at: AT });
     expect(s.records).toHaveLength(1);
-    expect(s.records[0]?.state).toBe('anom_noted');
+    // Optimistic (design D5): `sync` until the server confirms, then `anom_noted`.
+    expect(s.records[0]?.state).toBe('sync');
     expect(s.records[0]?.anomaly).toEqual(anomaly);
     expect(s.records[0]?.createdAt).toBe(AT);
     expect(s.progress.counted).toBe(counting().progress.counted + 1);
@@ -751,5 +754,79 @@ describe('the reducer is total', () => {
     const snapshot = JSON.stringify(s);
     for (const event of everyEvent) sessionReducer(s, event);
     expect(JSON.stringify(s)).toBe(snapshot);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Persistence events (REQ-OCF-13, design D5)                                  */
+/* -------------------------------------------------------------------------- */
+
+describe('optimistic record persistence', () => {
+  const anomaly: Anomaly = {
+    kind: 'cantidad',
+    title: 'Cantidad fuera de lo habitual',
+    reason: 'r',
+    hint: 'h',
+  };
+
+  function withPending(overrides: Partial<CountRecord> = {}) {
+    return counting({ records: [record({ id: 'rec-1', state: 'sync', ...overrides })] });
+  }
+
+  test('RECORD_PERSISTED settles a clean record as ok and stores the server id', () => {
+    const s = sessionReducer(withPending(), {
+      type: 'RECORD_PERSISTED',
+      id: 'rec-1',
+      serverId: 'srv-9',
+    });
+    expect(s.records[0]?.state).toBe('ok');
+    expect(s.records[0]?.serverId).toBe('srv-9');
+    expect(s.error).toBeNull();
+  });
+
+  test('RECORD_PERSISTED settles a flagged record as anom_noted, keeping the anomaly', () => {
+    const s = sessionReducer(withPending({ anomaly }), {
+      type: 'RECORD_PERSISTED',
+      id: 'rec-1',
+      serverId: 'srv-9',
+    });
+    expect(s.records[0]?.state).toBe('anom_noted');
+    expect(s.records[0]?.anomaly).toEqual(anomaly);
+  });
+
+  test('RECORD_PERSISTED for an unknown id returns the identical state', () => {
+    const s = withPending();
+    expect(sessionReducer(s, { type: 'RECORD_PERSISTED', id: 'ghost', serverId: 'x' })).toBe(s);
+  });
+
+  test('RECORD_PERSIST_FAILED keeps the record in sync and raises the error banner', () => {
+    const error = new UiError('proxy_unreachable');
+    const s = sessionReducer(withPending(), { type: 'RECORD_PERSIST_FAILED', id: 'rec-1', error });
+    expect(s.records[0]?.state).toBe('sync');
+    expect(s.error).toBe(error);
+  });
+
+  test('a failed persist never removes the record — the count is not lost', () => {
+    const s = sessionReducer(withPending(), {
+      type: 'RECORD_PERSIST_FAILED',
+      id: 'rec-1',
+      error: new UiError('vendor_error'),
+    });
+    expect(s.records).toHaveLength(1);
+    expect(s.progress.counted).toBe(withPending().progress.counted);
+  });
+
+  test('PLAN_STARTED stores the plan and operator alongside the catalogue', () => {
+    const s = sessionReducer(counting({ screen: 'plans' }), {
+      type: 'PLAN_STARTED',
+      catalogueId: 'cat-1',
+      planId: 'plan-1',
+      operatorId: 'op-1',
+      warehouseId: 'wh-1',
+    });
+    expect(s.planId).toBe('plan-1');
+    expect(s.operatorId).toBe('op-1');
+    expect(s.warehouseId).toBe('wh-1');
+    expect(s.catalogueId).toBe('cat-1');
   });
 });
