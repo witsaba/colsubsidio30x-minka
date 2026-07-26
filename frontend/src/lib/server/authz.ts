@@ -54,19 +54,29 @@ export async function assertPlanAssignment(
 
   const { data: plan } = await db
     .from('audit_plans')
-    .select('id, status, warehouse_id, catalogue_id')
+    .select('id, status, warehouse_id')
     .eq('id', planId)
     .maybeSingle();
 
   if (!plan) return refuse('El plan no existe.');
   if (plan.status !== ACTIVE) return refuse('El plan no está activo.');
 
+  // The catalogue vocabulary IS `warehouses.code` (breaking change
+  // `redis-catalogue-cache`); `audit_plans` carries no catalogue column at all.
+  // Resolved with a second lookup rather than an embedded join, matching the
+  // sequential-read style used everywhere else in this module.
+  const { data: warehouse } = await db
+    .from('warehouses')
+    .select('code')
+    .eq('id', plan.warehouse_id)
+    .maybeSingle();
+
   return {
     ok: true,
     plan: {
       id: String(plan.id),
       warehouseId: String(plan.warehouse_id),
-      catalogueId: typeof plan.catalogue_id === 'string' ? plan.catalogue_id : null,
+      catalogueId: typeof warehouse?.code === 'string' ? warehouse.code : null,
     },
   };
 }

@@ -23,6 +23,12 @@ export interface StubCall {
   op: StubOperation;
   /** Equality/`in` filters accumulated on the builder, in application order. */
   filters: Array<{ column: string; value: unknown }>;
+  /**
+   * The column list handed to `.select(...)`, split and trimmed. Recorded because
+   * PostgREST errors the WHOLE query on an unknown column, so a test must be able
+   * to assert that a select never names a column the live table does not have.
+   */
+  columns: string[];
   /** Rows for an insert, patch values for an update; `null` for reads. */
   payload: unknown;
 }
@@ -66,7 +72,7 @@ export function createStubDb(options: StubDbOptions = {}): StubDb {
   }
 
   function build(table: string): DbQuery<DbRow> {
-    const call: StubCall = { table, op: 'select', filters: [], payload: null };
+    const call: StubCall = { table, op: 'select', filters: [], columns: [], payload: null };
     calls.push(call);
 
     let pendingInsert: DbRow[] | null = null;
@@ -121,7 +127,13 @@ export function createStubDb(options: StubDbOptions = {}): StubDb {
     }
 
     const query: DbQuery<DbRow> = {
-      select() {
+      select(columns?: string) {
+        if (columns) {
+          call.columns = columns
+            .split(',')
+            .map((column) => column.trim())
+            .filter(Boolean);
+        }
         return query;
       },
       insert(rows) {
