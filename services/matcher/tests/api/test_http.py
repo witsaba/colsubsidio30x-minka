@@ -85,7 +85,7 @@ class TestMatchResponseShape:
 
     def test_unidad_display_is_the_spanish_short_form(self, client) -> None:
         candidate = post_match(client).json()["candidates"][0]
-        assert candidate["unidad"] == "Kilogram"
+        assert candidate["unidad"] == "KG"
         assert candidate["unidad_display"] == "kg"
 
     def test_scores_are_floats_in_the_unit_interval(self, client) -> None:

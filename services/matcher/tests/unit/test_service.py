@@ -238,3 +238,44 @@ class TestServiceMatch:
             service.match("BOD-77", "aceite de oliva", None)
 
         assert source.calls == 1
+
+
+class TestUnitVocabulary:
+    """REQ-ENG-5 end to end: `unidad` speaks `warehouse_products.unit_code`.
+
+    The retired SQLite catalogue stored the workbook *labels*
+    (`Kilogram`/`Liter`/`Unidad`/`Portion`); Supabase keeps those in
+    `units.source_label` and serves the *codes* (`KG`/`LT`/`UND`/`POR`/`CAJA`)
+    on `warehouse_products.unit_code`, which is what `Row.unidad` now carries.
+    A display map keyed on the retired vocabulary silently returns `None` for
+    every real row, so this is asserted through `MatcherService.match()` -- the
+    exact path `POST /match` takes -- rather than against the map directly.
+    """
+
+    @pytest.mark.parametrize(
+        ("unit_code", "display"),
+        [
+            ("KG", "kg"),
+            ("LT", "litros"),
+            ("UND", "unidades"),
+            ("POR", "porciones"),
+        ],
+    )
+    def test_a_code_vocabulary_unidad_still_renders_its_display_copy(
+        self, settings: Settings, unit_code: str, display: str
+    ) -> None:
+        rows = [
+            Row(
+                warehouse_code="BOD-77",
+                uid="BOD-77-0001",
+                articulo="PANELA CUADRADA",
+                unidad=unit_code,
+                nr_articulo="7100",
+            )
+        ]
+        service = build(settings, rows)
+
+        top = service.match("BOD-77", "panela cuadrada", None).candidates[0]
+
+        assert top.unidad == unit_code
+        assert top.unidad_display == display

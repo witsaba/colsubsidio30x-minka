@@ -36,19 +36,19 @@ RowSpec = str | tuple[str, str | None, str | None]
 
 FIXTURE_CATALOGUE: dict[str, Sequence[RowSpec]] = {
     "AYB-01": [
-        ("ACHIOTE MOLIDO", "Kilogram", "7003"),
-        ("ACEITE DE OLIVA", "Liter", "8001"),
-        ("ACEITE DE OLIVA EXTRA VIRGEN", "Liter", "8002"),
-        ("ARROZ BLANCO", "Kilogram", "7004"),
+        ("ACHIOTE MOLIDO", "KG", "7003"),
+        ("ACEITE DE OLIVA", "LT", "8001"),
+        ("ACEITE DE OLIVA EXTRA VIRGEN", "LT", "8002"),
+        ("ARROZ BLANCO", "KG", "7004"),
         ("PANELA CUADRADA", None, None),
     ],
     "SUM-02": [
-        ("JABON EN POLVO", "Unidad", "9001"),
-        ("ESCOBA PLASTICA", "Unidad", "9002"),
+        ("JABON EN POLVO", "UND", "9001"),
+        ("ESCOBA PLASTICA", "UND", "9002"),
     ],
     "ZOO-03": [
-        ("CONCENTRADO PARA AVES", "Kilogram", "9101"),
-        ("HENO DE ALFALFA", "Kilogram", "9102"),
+        ("CONCENTRADO PARA AVES", "KG", "9101"),
+        ("HENO DE ALFALFA", "KG", "9102"),
     ],
 }
 """Three warehouses reaching all three decision statuses.
@@ -98,7 +98,7 @@ def make_rows(
         for position, spec in enumerate(specs, start=1):
             uid = f"{warehouse_code}-{position:04d}"
             if isinstance(spec, str):
-                articulo, unidad, nr_articulo = spec, "Kilogram", f"SKU-{uid}"
+                articulo, unidad, nr_articulo = spec, "KG", f"SKU-{uid}"
             else:
                 articulo, unidad, nr_articulo = spec
             rows.append(

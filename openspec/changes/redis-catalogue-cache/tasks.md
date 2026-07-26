@@ -429,6 +429,54 @@ human, through a one-shot script whose output is checked in.
 - [ ] 9.3 **NON-TDD, blocked-without-credentials, MANUAL EVIDENCE** — REQ-CSS-4's second scenario ("the matcher's credential cannot read `warehouse_stock_balances`") cannot be verified offline: it is a live authorization property, and no CI test may reach the network. **CI treatment**: the offline guarantee is `test_supabase_source.py::TestQueryShape::test_it_never_queries_warehouse_stock_balances` (the client provably never *constructs* such a query) plus `test_snapshot_codec.py::TestSnapshotContentSafety` (no stock bytes can enter Redis). **Manual evidence**: with the least-privilege key, `curl -H "apikey: $SUPABASE_KEY" "$SUPABASE_URL/rest/v1/warehouse_stock_balances?select=theoretical_qty&limit=1"` must return 401/403 (or an empty RLS-filtered result). Paste the status code into the PR body. Record it as an open item if the least-privilege key is not yet provisioned — the design's Open Questions note the anon-key fallback is acceptable only if RLS denies that read.
 - [ ] 9.4 **FINAL VERIFICATION** — `uv run pytest` from the repository root. **PASS = exactly `1 failed`, and the failure is `tests/deployment/test_root_compose.py::TestSecretSafeEnvWorkflow::test_no_committed_file_carries_a_credential_shaped_default`.** Any other count, or any other failing test id, is a regression. Zero `skip`/`xfail` markers may remain in `services/matcher/tests/eval/`.
 
+## WU-10: Unit vocabulary regression — restore REQ-ENG-5 against the code vocabulary
+
+Fixes the defect recorded as WU-6 deviation 29. The cutover swapped the *vocabulary* of the
+`unidad` column: the retired SQLite catalogue carried the workbook labels
+(`Kilogram`/`Liter`/`Unidad`/`Portion`, which Supabase now keeps in `units.source_label`),
+while `warehouse_products.unit_code` — the column the new source reads — carries the codes
+(`KG`/`LT`/`UND`/`POR`/`CAJA`). `units.py` still speaks the labels, so `unidad_display` is
+`None` on every `/match` response and `_unit_rerank` can never fire. This is a **pure
+restoration**, not a behaviour change: every spoken synonym must keep resolving to the same
+physical unit it did before, and every display string is preserved verbatim.
+
+- [x] 10.1 **RED — display copy** — `services/matcher/tests/unit/test_service.py::TestUnitVocabulary::test_a_code_vocabulary_unidad_still_renders_its_display_copy`: build a service over a `Row(unidad="KG")` and assert the top candidate's `unidad_display == "kg"`, plus the same for `LT`/`UND`/`POR`. **Expected RED:** `assert None == 'kg'` — `UNIT_DISPLAY.get("KG")` is `None`.
+- [x] 10.2 **RED — the re-rank actually fires** — `services/matcher/tests/unit/test_decision.py::TestUnitRerankSpeaksTheCatalogueVocabulary`: a three-candidate band whose `unidad` values are the Supabase codes; assert a spoken `"litros"` promotes the `LT` candidate inside the band. **Expected RED:** the raw order survives, because `resolve_unit("litros")` returns a label that no candidate carries. Include a companion asserting `resolve_unit` returns a value that the catalogue's `unidad` vocabulary can actually equal.
+- [x] 10.3 **GREEN** — rekey `UNIT_SYNONYMS` and `UNIT_DISPLAY` in `services/matcher/src/matcher/units.py` to `KG`/`LT`/`UND`/`POR`, preserving every synonym set and every display string. `caja`/`cajas` continues to resolve to `UND` exactly as before.
+- [x] 10.4 **Migrate the test fixtures to the source vocabulary** — `services/matcher/tests/conftest.py`, `tests/unit/test_decision.py`, `tests/unit/test_units.py`, `tests/api/test_http.py`. These fixtures asserted the workbook labels and are precisely why the regression was invisible; a fixture that does not speak the source's vocabulary cannot catch a vocabulary drift.
+- [x] 10.5 **OUT OF SCOPE, recorded deliberately** — Supabase carries a distinct `CAJA` unit code that the workbook never had. Whether spoken "caja" should resolve to `CAJA` instead of `UND`, and how RF-15 resolves a dictated box to a stocked unit, is a domain decision for a follow-up change. Note it in `units.py` and do not decide it here.
+- [x] 10.6 **Verify** — `uv run pytest` → still exactly **1 failed, 1 skipped**. **Measured: 1 failed, 520 passed, 1 skipped** (+13 over WU-6's 507).
+
+### WU-10 deviations, recorded at apply time
+
+30. **The spec text needed no correction.** `specs/catalogue-source-supabase/spec.md`
+    (REQ-CSS-2) already says `unidad` = `warehouse_products.unit_code`, and
+    `specs/matcher-service-api/spec.md` names the field without pinning a vocabulary.
+    The workbook labels were only ever hard-coded in `units.py` and in the test
+    fixtures — the specs were right and the code was wrong.
+31. **Task 10.4 was not cosmetic and is the reason the defect was invisible.**
+    `conftest.FIXTURE_CATALOGUE`, `test_decision.py`, `test_http.py` and
+    `test_units.py` all asserted the workbook labels, so the whole suite agreed with
+    the broken map. Two guards were added so the vocabulary cannot drift back:
+    `test_neither_map_is_keyed_on_a_retired_workbook_label` and
+    `TestUnitRerankSpeaksTheCatalogueVocabulary::test_the_rerank_is_inert_for_a_retired_label_vocabulary_row`.
+32. **`test_the_rerank_is_inert_for_a_retired_label_vocabulary_row` was RED for the
+    *opposite* reason to the other two** — before the fix a `Liter` row *was* treated
+    as unit-equal (`['2','1']`), which is exactly the confusion being removed. It is
+    kept because it pins the direction of the migration, not just its outcome.
+
+## WU-11: Deterministic tie-break in ranking
+
+WU-6 proved the eval movement (`no_code` 0.98824 → 0.92941) was caused purely by catalogue
+row order (`rowid` → `warehouse_products.id` UUID) deciding rank 1 among **exactly equal**
+scores. Ranking must not depend on the order the source happens to return rows in.
+
+- [ ] 11.1 **RED — order independence** — `services/matcher/tests/unit/test_scoring.py::TestDeterministicTieBreak::test_the_same_catalogue_in_two_row_orders_ranks_identically`: build one catalogue twice, second time with the row list reversed/shuffled, over rows whose trigram scores tie; assert `rank()` returns the same `uid` sequence. **Expected RED:** the two orders disagree.
+- [ ] 11.2 **RED — the tie-break touches only ties** — `test_rows_with_different_scores_keep_their_score_order`: assert a strictly-descending score set is returned in score order regardless of `uid`, so the stable key can never outrank a better score.
+- [ ] 11.3 **GREEN** — sort `TrigramSimilarityMatcher.rank` by `(-score, uid)`. The scoring function itself is untouched; REQ-ENG-2 still holds (stock is never a matching prior and `sd` no longer exists).
+- [ ] 11.4 **Re-measure and re-pin** — run `uv run pytest services/matcher/tests/eval -s`, re-pin `TOP1_FLOOR`, `HAS_CODE_TOP1_BASELINE`, `NO_CODE_TOP1_BASELINE`, `RECALL3_FLOOR`, `FALSE_CONFIDENCE_CEILING` to the newly measured values with a dated provenance note that replaces WU-6's order-dependence explanation. **Report the numbers honestly against both prior sets.** A tie-break picks a *stable* winner, not necessarily the *correct* one — an unchanged or slightly worse cohort figure is a legitimate outcome and must be reported, never tuned away.
+- [ ] 11.5 **Verify** — `uv run pytest` → still exactly **1 failed, 1 skipped**.
+
 ## Requirement traceability
 
 | Requirement | Covering tasks |
