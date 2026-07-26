@@ -17,19 +17,41 @@ import { supabase } from './_supabase';
 import { supabaseDb } from '../../lib/server/db';
 import type { Db } from '../../lib/server/db';
 import { badRequest, json, optionalString, readJsonBody, requireNumber, requireString } from '../../lib/server/http';
+import { resolveProductId } from '../../lib/server/products';
 import { toOperatorVerdict, validateCount, type CountFacts } from '../../lib/server/validation';
 
 export const prerender = false;
 
+/**
+ * Validation facts still missing their product uuid.
+ *
+ * The article arrives as EITHER a `products.id` or the matcher's `nr_articulo`
+ * (see `lib/server/products.ts`), so the decode cannot produce `CountFacts`
+ * on its own — resolving needs the database.
+ */
+type PendingFacts = Omit<CountFacts, 'productId'> & {
+  productId: string | null;
+  nrArticulo: string | null;
+};
+
 /** Decode the request body into validation facts, or `null` when malformed. */
-export function readCountFacts(body: Record<string, unknown>): CountFacts | null {
+export function readCountFacts(body: Record<string, unknown>): PendingFacts | null {
   const planId = requireString(body, 'planId');
   const warehouseId = requireString(body, 'warehouseId');
-  const productId = requireString(body, 'productId');
+  const productId = optionalString(body, 'productId');
+  const nrArticulo = optionalString(body, 'nrArticulo');
   const quantity = requireNumber(body, 'quantity');
-  if (!planId || !warehouseId || !productId || quantity === null) return null;
+  if (!planId || !warehouseId || quantity === null) return null;
+  if (!productId && !nrArticulo) return null;
 
-  return { planId, warehouseId, productId, quantity, unitCode: optionalString(body, 'unitCode') };
+  return {
+    planId,
+    warehouseId,
+    productId,
+    nrArticulo,
+    quantity,
+    unitCode: optionalString(body, 'unitCode'),
+  };
 }
 
 /** Injectable handler: tests drive it with a stub `Db`, Astro with the real one. */
@@ -37,8 +59,21 @@ export async function handleAnomalyCheck(db: Db, request: Request): Promise<Resp
   const body = await readJsonBody(request);
   if (!body) return badRequest('Cuerpo JSON inválido.');
 
-  const facts = readCountFacts(body);
-  if (!facts) return badRequest('Faltan planId, warehouseId, productId o quantity.');
+  const pending = readCountFacts(body);
+  if (!pending) {
+    return badRequest('Faltan planId, warehouseId, quantity o la identidad del artículo.');
+  }
+
+  const productId = await resolveProductId(db, pending);
+  if (!productId) return badRequest('No encontramos ese artículo en el catálogo.');
+
+  const facts: CountFacts = {
+    planId: pending.planId,
+    warehouseId: pending.warehouseId,
+    productId,
+    quantity: pending.quantity,
+    unitCode: pending.unitCode,
+  };
 
   return json(toOperatorVerdict(await validateCount(db, facts)));
 }

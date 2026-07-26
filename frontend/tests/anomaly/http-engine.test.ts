@@ -68,9 +68,28 @@ describe('createHttpAnomalyEngine', () => {
       planId: 'plan-1',
       warehouseId: 'wh-1',
       productId: 'prod-1',
+      // The article code travels too, so the route can resolve a product uuid
+      // the browser has no way of knowing (`lib/server/products.ts`).
+      nrArticulo: 'SKU-1',
       quantity: 20,
-      unitCode: 'kilos',
+      // CHANGED: the CANONICAL catalogue unit, not the Spanish `extracted.unit`
+      // the operator dictated. `POST /api/records` re-runs the very same
+      // validation before writing `record_anomalies` (design D4) and writes the
+      // canonical code to `count_records.unit_code`; sending a different unit
+      // here would let the advisory verdict and the authoritative one disagree
+      // about the same count.
+      unitCode: 'kg',
     });
+  });
+
+  it('asks the route to resolve the article when no product uuid is known', async () => {
+    const fetcher = stubFetch(verdictResponse({ verdict: 'ok', anomaly: null }));
+    const engine = createHttpAnomalyEngine({ ...context, productIdOf: () => null }, fetcher.fn);
+
+    await engine.check(item({ quantity: 20 }));
+
+    expect(fetcher.calls).toHaveLength(1);
+    expect(fetcher.calls[0]!.body).toMatchObject({ productId: null, nrArticulo: 'SKU-1' });
   });
 
   it('resolves null for a clean verdict', async () => {
@@ -148,11 +167,16 @@ describe('createHttpAnomalyEngine', () => {
     await expect(engine.check(item())).resolves.toBeNull();
   });
 
-  it('never calls the service when the item has no resolvable catalogue product', async () => {
+  it('never calls the service when the item has no catalogue identity at all', async () => {
     const fetcher = stubFetch(verdictResponse({ verdict: 'ok', anomaly: null }));
     const engine = createHttpAnomalyEngine({ ...context, productIdOf: () => null }, fetcher.fn);
+    // Neither a product uuid nor an article code: there is nothing the route
+    // could validate against, so staying silent beats inventing an anomaly the
+    // auditor cannot trace to a product.
+    const anonymous = item();
+    (anonymous.picked as { nr_articulo: string | null }).nr_articulo = null;
 
-    await expect(engine.check(item())).resolves.toBeNull();
+    await expect(engine.check(anonymous)).resolves.toBeNull();
     expect(fetcher.calls).toEqual([]);
   });
 });

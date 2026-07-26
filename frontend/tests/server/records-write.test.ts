@@ -193,3 +193,81 @@ describe('POST /api/records — server re-validation (REQ-AV-2, RF-18)', () => {
     }
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* Product identity — the matcher speaks nr_articulo, the database speaks uuid */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The browser never sees `products.id`. The matcher answers with catalogue rows
+ * keyed by `nr_articulo`, so the resolution to a Supabase product uuid has to
+ * happen HERE — the client has no product table to look in, and giving it one
+ * would mean shipping the catalogue to the device.
+ *
+ * The resolution is loud on failure by design: an unresolvable article must not
+ * silently become a count against nothing.
+ */
+describe('POST /api/records — resolves nrArticulo to a product uuid', () => {
+  function catalogueDb(options: { assigned?: boolean } = {}) {
+    const stub = db(options);
+    stub.rows('products').push(
+      { id: 'prod-1', sku: 'SKU-1', name_normalized: 'ACEITE GIRASOL 900' },
+      { id: 'prod-2', sku: 'SKU-2', name_normalized: 'LECHUGA BATAVIA' },
+    );
+    return stub;
+  }
+
+  it('writes the resolved product uuid when the body carries only nrArticulo', async () => {
+    const stub = catalogueDb();
+
+    const response = await handleCreateRecord(
+      stub,
+      request({ productId: undefined, nrArticulo: 'SKU-1' }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(stub.rows('count_records')[0]!.product_id).toBe('prod-1');
+  });
+
+  it('resolves a DIFFERENT article to its own uuid', async () => {
+    const stub = catalogueDb();
+
+    await handleCreateRecord(stub, request({ productId: undefined, nrArticulo: 'SKU-2' }));
+
+    expect(stub.rows('count_records')[0]!.product_id).toBe('prod-2');
+  });
+
+  it('refuses with 400 and writes nothing when the article resolves to no product', async () => {
+    const stub = catalogueDb();
+
+    const response = await handleCreateRecord(
+      stub,
+      request({ productId: undefined, nrArticulo: 'SKU-UNKNOWN' }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain('No encontramos ese artículo en el catálogo.');
+    expect(stub.rows('count_records')).toEqual([]);
+  });
+
+  it('prefers an explicit productId and never looks the article up', async () => {
+    const stub = catalogueDb();
+
+    await handleCreateRecord(stub, request({ productId: 'prod-2', nrArticulo: 'SKU-1' }));
+
+    expect(stub.rows('count_records')[0]!.product_id).toBe('prod-2');
+    expect(stub.calls.filter((call) => call.table === 'products')).toEqual([]);
+  });
+
+  it('still authorizes first: an unassigned operator is refused before any lookup', async () => {
+    const stub = catalogueDb({ assigned: false });
+
+    const response = await handleCreateRecord(
+      stub,
+      request({ productId: undefined, nrArticulo: 'SKU-1' }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(stub.calls.filter((call) => call.table === 'products')).toEqual([]);
+  });
+});

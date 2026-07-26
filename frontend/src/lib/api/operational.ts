@@ -68,7 +68,14 @@ export interface CreateRecordInput {
   clientRecordId: string;
   planId: string;
   operatorId: string;
-  productId: string;
+  /**
+   * The article, as EITHER identity. The browser normally has only the
+   * matcher's `nrArticulo`; the route resolves it to a `products.id`
+   * (`lib/server/products.ts`) because shipping the product table to the device
+   * is not a trade this app makes.
+   */
+  productId?: string | null;
+  nrArticulo?: string | null;
   quantity: number;
   unitCode: string | null;
   spokenName: string;

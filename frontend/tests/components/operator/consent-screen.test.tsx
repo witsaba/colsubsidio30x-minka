@@ -5,7 +5,7 @@
  * legally false under RNF-04, so the corrected copy must be present verbatim and
  * the old claim must be unreachable from any render path.
  */
-import { fireEvent, render, waitFor } from '@testing-library/preact';
+import { fireEvent, render, waitFor, within } from '@testing-library/preact';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ConsentScreen } from '../../../src/components/operator/ConsentScreen';
@@ -23,14 +23,38 @@ const FALLBACK_NOTE =
   'Sin autorización el conteo se hace escribiendo artículo por artículo. ' +
   'Puedes autorizar más tarde desde tu perfil.';
 
+const OPERATOR_ID = '11111111-1111-4111-8111-111111111111';
+
+/** REQ-SDA-2: the consent write is blocking, so every render needs the seam. */
+const PERSIST_ERROR = 'No pudimos registrar tu autorización. Revisa la conexión e inténtalo de nuevo.';
+
 function permisoState(patch: Partial<SessionState> = {}): SessionState {
   return { ...initialSessionState, ...patch };
 }
 
-function renderConsent(patch: Partial<SessionState> = {}) {
+function renderConsent(
+  patch: Partial<SessionState> = {},
+  persistConsent: (input: { operatorId: string }) => Promise<unknown> = async () => ({ id: 'vc-1' }),
+) {
   const dispatch = vi.fn<(event: SessionEvent) => void>();
-  const view = render(<ConsentScreen state={permisoState(patch)} dispatch={dispatch} />);
-  return { ...view, dispatch };
+  const persist = vi.fn(persistConsent);
+  const view = render(
+    <ConsentScreen
+      state={permisoState(patch)}
+      dispatch={dispatch}
+      operatorId={OPERATOR_ID}
+      persistConsent={persist}
+    />,
+  );
+  return { ...view, dispatch, persist };
+}
+
+/** A PlansScreen that never touches the network — the copy checks below only
+ *  care about what the screen renders, not where the plans came from. */
+function renderPlans() {
+  return render(
+    <PlansScreen dispatch={vi.fn()} operatorId={OPERATOR_ID} loadPlans={async () => []} />,
+  );
 }
 
 function notAllowed(): Error {
@@ -60,7 +84,7 @@ describe('ConsentScreen — C1 corrected retention copy (REQ-OCF-10)', () => {
   });
 
   it('never renders the false "12 meses" claim on the plans screen either', () => {
-    const { container } = render(<PlansScreen dispatch={vi.fn()} />);
+    const { container } = renderPlans();
 
     expect(container.textContent).not.toContain('12 meses');
     expect(container.textContent).not.toMatch(/el audio se guarda/i);
@@ -70,7 +94,7 @@ describe('ConsentScreen — C1 corrected retention copy (REQ-OCF-10)', () => {
 describe('ConsentScreen — C2 no offline claim (REQ-OCF-11)', () => {
   it('never renders "Funciona sin señal"', () => {
     const { container } = renderConsent();
-    const plans = render(<PlansScreen dispatch={vi.fn()} />);
+    const plans = renderPlans();
 
     expect(container.textContent).not.toContain('Funciona sin señal');
     expect(plans.container.textContent).not.toContain('Funciona sin señal');
@@ -145,6 +169,93 @@ describe('ConsentScreen — microphone permission is requested at consent (REQ-V
     await waitFor(() => expect(dispatch).toHaveBeenCalledWith({ type: 'MIC_DENIED' }));
     expect(dispatch).not.toHaveBeenCalledWith({ type: 'MIC_GRANTED' });
     expect(container.textContent).toContain(FALLBACK_NOTE);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Task 2.7 — the consent write is BLOCKING (REQ-SDA-2, REQ-OCF-10, D5)        */
+/* -------------------------------------------------------------------------- */
+
+describe('ConsentScreen — acceptance persists before it advances (REQ-SDA-2)', () => {
+  it('writes the consent for the identified operator and only then dispatches MIC_GRANTED', async () => {
+    const { getByRole, dispatch, persist } = renderConsent({ consentChecked: true });
+
+    fireEvent.click(getByRole('button', { name: 'Permitir el micrófono' }));
+
+    await waitFor(() => expect(dispatch).toHaveBeenCalledWith({ type: 'MIC_GRANTED' }));
+    expect(persist).toHaveBeenCalledWith({ operatorId: OPERATOR_ID });
+  });
+
+  it('does NOT advance while the write is still in flight', async () => {
+    let settle = (): void => {};
+    const gate = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    const { getByRole, dispatch } = renderConsent({ consentChecked: true }, async () => {
+      await gate;
+      return { id: 'vc-1' };
+    });
+
+    fireEvent.click(getByRole('button', { name: 'Permitir el micrófono' }));
+
+    // The microphone is already granted, yet the flow is still on S1: consent is
+    // legally significant, so nothing advances until the row really exists.
+    await waitFor(() => expect(getUserMediaMock).toHaveBeenCalledTimes(1));
+    expect(dispatch).not.toHaveBeenCalledWith({ type: 'MIC_GRANTED' });
+
+    settle();
+    await waitFor(() => expect(dispatch).toHaveBeenCalledWith({ type: 'MIC_GRANTED' }));
+  });
+
+  it('shows a retryable error and stays on S1 when the write fails', async () => {
+    const { getByRole, findByRole, dispatch } = renderConsent(
+      { consentChecked: true },
+      async () => {
+        throw new Error('network down');
+      },
+    );
+
+    fireEvent.click(getByRole('button', { name: 'Permitir el micrófono' }));
+
+    const alert = await findByRole('alert');
+    expect(alert.textContent).toContain(PERSIST_ERROR);
+    expect(dispatch).not.toHaveBeenCalledWith({ type: 'MIC_GRANTED' });
+    expect(getByRole('button', { name: 'Reintentar' })).toBeTruthy();
+    // The consent CTA is still there: the operator never left the screen.
+    expect(getByRole('button', { name: 'Permitir el micrófono' })).toBeTruthy();
+  });
+
+  it('«Reintentar» re-attempts the write and advances once it succeeds', async () => {
+    let attempts = 0;
+    const { getByRole, findByRole, dispatch, persist } = renderConsent(
+      { consentChecked: true },
+      async () => {
+        attempts += 1;
+        if (attempts === 1) throw new Error('network down');
+        return { id: 'vc-2' };
+      },
+    );
+
+    fireEvent.click(getByRole('button', { name: 'Permitir el micrófono' }));
+    const retry = within(await findByRole('alert')).getByRole('button', { name: 'Reintentar' });
+
+    fireEvent.click(retry);
+
+    await waitFor(() => expect(dispatch).toHaveBeenCalledWith({ type: 'MIC_GRANTED' }));
+    expect(persist).toHaveBeenCalledTimes(2);
+    // The retry writes consent again; it does NOT re-prompt for the microphone,
+    // which the operator already granted.
+    expect(getUserMediaMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('never writes consent when the microphone is denied', async () => {
+    getUserMediaMock.mockRejectedValueOnce(notAllowed());
+    const { getByRole, dispatch, persist } = renderConsent({ consentChecked: true });
+
+    fireEvent.click(getByRole('button', { name: 'Permitir el micrófono' }));
+
+    await waitFor(() => expect(dispatch).toHaveBeenCalledWith({ type: 'MIC_DENIED' }));
+    expect(persist).not.toHaveBeenCalled();
   });
 });
 

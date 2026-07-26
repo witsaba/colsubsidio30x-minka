@@ -49,10 +49,10 @@ Note: absent the pre-accepted `size:exception`, this would split into 4 chained 
 - [x] 2.4 GREEN `frontend/src/pages/api/consent.ts` (`prerender = false`), thin handler over `Db`.
 - [x] 2.5 RED `frontend/tests/api-routes/plans.test.ts`: `GET /api/plans?operator=` returns only plans joined through `plan_operators` for that operator; an operator with no assignments gets `[]`, never a raw plan listing (RF-11).
 - [x] 2.6 GREEN `frontend/src/pages/api/plans.ts`.
-- [ ] 2.7 RED extend `frontend/tests/components/operator/consent-screen.test.tsx`: acceptance does not advance until the injected persist fn resolves; on rejection an error/retry is shown and the screen stays (S1 blocking, D5).
-- [ ] 2.8 GREEN wire `ConsentScreen.tsx` + `CountSession.tsx` to dispatch `MIC_GRANTED` only after `POST /api/consent` resolves; add `postConsent`/`fetchPlans` to `frontend/src/lib/api/operational.ts`.
-- [ ] 2.9 RED extend `frontend/tests/components/operator/plans-screen.test.tsx`: renders fetched plans from an injected fetcher, with loading and error states; selection stores `planId` + `operatorId`.
-- [ ] 2.10 GREEN update `PlansScreen.tsx`; add `planId`/`operatorId` to `frontend/src/lib/session/types.ts` and the selection reducer case.
+- [x] 2.7 RED extend `frontend/tests/components/operator/consent-screen.test.tsx`: acceptance does not advance until the injected persist fn resolves; on rejection an error/retry is shown and the screen stays (S1 blocking, D5).
+- [x] 2.8 GREEN wire `ConsentScreen.tsx` + `CountSession.tsx` to dispatch `MIC_GRANTED` only after `POST /api/consent` resolves; add `postConsent`/`fetchPlans` to `frontend/src/lib/api/operational.ts`.
+- [x] 2.9 RED extend `frontend/tests/components/operator/plans-screen.test.tsx`: renders fetched plans from an injected fetcher, with loading and error states; selection stores `planId` + `operatorId`.
+- [x] 2.10 GREEN update `PlansScreen.tsx`; add `planId`/`operatorId` to `frontend/src/lib/session/types.ts` and the selection reducer case.
 
 ## Phase 3: Count records (REQ-SDA-4, D5, D6)
 
@@ -63,8 +63,8 @@ Note: absent the pre-accepted `size:exception`, this would split into 4 chained 
 - [x] 3.5 GREEN `frontend/src/pages/api/records/[id].ts`.
 - [x] 3.6 RED extend `frontend/tests/session/reducer.test.ts`: new records start in `sync`; `RECORD_PERSISTED` flips to `ok`/`anom_noted` and stores the server id; `RECORD_PERSIST_FAILED` keeps `sync` and sets an error.
 - [x] 3.7 GREEN add both events to `frontend/src/lib/session/{types,reducer}.ts`.
-- [ ] 3.8 RED extend `frontend/tests/components/session/count-session.test.tsx`: confirm fires the injected persist fn optimistically; redo after delete issues a soft-delete then a NEW create, never an update.
-- [ ] 3.9 GREEN wire `CountSession.tsx` persistence seams (props defaulted to `operational.ts` fns).
+- [x] 3.8 RED extend `frontend/tests/components/session/count-session.test.tsx`: confirm fires the injected persist fn optimistically; redo after delete issues a soft-delete then a NEW create, never an update.
+- [x] 3.9 GREEN wire `CountSession.tsx` persistence seams (props defaulted to `operational.ts` fns).
 
 ## Phase 4: Anomaly validation and RF-18 blindness (REQ-AV-1/2/3, D3, D4)
 

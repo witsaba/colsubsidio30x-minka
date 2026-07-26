@@ -19,6 +19,13 @@ import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { CountSession } from '../../../src/components/operator/CountSession';
+import { fixtureAnomalyEngine } from '../../../src/lib/anomaly/fixtureEngine';
+import type { AnomalyEngine } from '../../../src/lib/anomaly/engine';
+import type {
+  CreateRecordInput,
+  CreatedRecord,
+  PlanSummary,
+} from '../../../src/lib/api/operational';
 import { UiError } from '../../../src/lib/api/types';
 import type {
   Candidate,
@@ -93,15 +100,30 @@ const capture: CapturedAudio = {
 /* Harness                                                                    */
 /* -------------------------------------------------------------------------- */
 
+const OPERATOR_ID = '11111111-1111-4111-8111-111111111111';
+
+/** The one plan the stub fetcher hands back — named after the demo catalogue. */
+const DEMO_PLAN: PlanSummary = {
+  id: '44444444-4444-4444-8444-444444444444',
+  name: FIRST.label,
+  warehouseId: '28f1c715-4c42-4920-bf4b-6127e40ce11f',
+  catalogueId: FIRST.catalogueId,
+};
+
 interface Stubs {
   transcript?: string;
   transcribe?: (audio: CapturedAudio) => Promise<TranscribeResponse>;
   match?: (req: MatchRequest) => Promise<MatchResponse>;
   requestMic?: () => Promise<MicrophoneResult>;
   audio?: CapturedAudio;
+  persistRecord?: (input: CreateRecordInput) => Promise<CreatedRecord>;
+  removeRecord?: (id: string, input: { operatorId: string }) => Promise<{ id: string; deleted: boolean }>;
+  /** Omit to exercise the REAL composition-root engine (the HTTP one). */
+  anomalies?: AnomalyEngine;
 }
 
 function mount(stubs: Stubs = {}) {
+  let persistSeq = 0;
   const audio = stubs.audio ?? capture;
   const stop = vi.fn(async () => audio);
   const start = vi.fn<() => void>();
@@ -115,6 +137,18 @@ function mount(stubs: Stubs = {}) {
     stubs.requestMic ?? (async (): Promise<MicrophoneResult> => ({ ok: true, stream: fakeMediaStream() })),
   );
   const openRecorder = vi.fn((_stream: MediaStream) => handle);
+  const loadPlans = vi.fn(async () => [DEMO_PLAN]);
+  const persistConsent = vi.fn(async () => ({ id: 'consent-1' }));
+  const persistRecord = vi.fn(
+    stubs.persistRecord ??
+      (async (_input: CreateRecordInput): Promise<CreatedRecord> => {
+        persistSeq += 1;
+        return { id: `server-${persistSeq}`, verdict: 'ok', anomaly: null };
+      }),
+  );
+  const removeRecord = vi.fn(
+    stubs.removeRecord ?? (async (id: string) => ({ id, deleted: true })),
+  );
 
   const view = render(
     <CountSession
@@ -124,10 +158,29 @@ function mount(stubs: Stubs = {}) {
       openRecorder={openRecorder}
       searchDebounceMs={0}
       now={() => Date.UTC(2026, 6, 25, 14, 41, 0)}
+      operatorId={OPERATOR_ID}
+      loadPlans={loadPlans}
+      persistConsent={persistConsent}
+      persistRecord={persistRecord}
+      removeRecord={removeRecord}
+      {...(stubs.anomalies ? { anomalies: stubs.anomalies } : {})}
     />,
   );
 
-  return { ...view, transcribe, match, requestMic, openRecorder, handle, start, stop };
+  return {
+    ...view,
+    transcribe,
+    match,
+    requestMic,
+    openRecorder,
+    handle,
+    start,
+    stop,
+    loadPlans,
+    persistConsent,
+    persistRecord,
+    removeRecord,
+  };
 }
 
 /** Consent -> plans -> count, through the real screens and the real reducer. */
@@ -136,9 +189,19 @@ async function reachCountScreen(view: ReturnType<typeof mount>): Promise<void> {
   await act(async () => {
     fireEvent.click(view.getByRole('button', { name: 'Permitir el micrófono' }));
   });
-  await view.findByRole('button', { name: `Iniciar conteo · ${FIRST.label}` });
-  fireEvent.click(view.getByRole('button', { name: `Iniciar conteo · ${FIRST.label}` }));
+  const start = await view.findByRole('button', { name: `Iniciar conteo · ${FIRST.label}` });
+  await act(async () => {
+    fireEvent.click(start);
+  });
   await view.findByRole('button', { name: /Mantén presionado para dictar/ });
+}
+
+/** Confirms the sheet currently open and lets the persistence effect settle. */
+async function confirmSheet(view: ReturnType<typeof mount>): Promise<void> {
+  const sheet = await view.findByTestId('confirm-sheet');
+  await act(async () => {
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Confirmar' }));
+  });
 }
 
 /** One complete press-and-hold take. */
@@ -245,8 +308,11 @@ describe('CountSession — the operator walk-through, end to end', () => {
 describe('CountSession — anomaly blocks the microphone', () => {
   async function reachAnomaly() {
     // 900 gramos (mass) against a catalogue article counted in litros (volume):
-    // the real FixtureAnomalyEngine rule (a).
+    // the real FixtureAnomalyEngine rule (a). It is injected explicitly because
+    // the composition root now defaults to the HTTP engine once a plan is
+    // active — these cases are about the fixture RULES, not the transport.
     const view = mount({
+      anomalies: fixtureAnomalyEngine,
       transcript: SCRIPT_2,
       match: async (_req: MatchRequest) =>
         matched({
@@ -293,6 +359,157 @@ describe('CountSession — anomaly blocks the microphone', () => {
     expect(view.getByText('ACEITE DE OLIVA EXTRA VIRGEN 500ML')).toBeTruthy();
     // A null nr_articulo is rendered as absence, never as "null" or "0".
     expect(view.getByTestId('record-meta').textContent).toContain('Sin código');
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Persistence — tasks 3.8/3.9 (REQ-SDA-4, REQ-OCF-4/13, D5, D6, RF-20/21)    */
+/* -------------------------------------------------------------------------- */
+
+/** The `RecordList` state icon is the only place the record state is visible. */
+const recordState = (view: ReturnType<typeof mount>): string[] =>
+  view.getAllByRole('img').map((icon) => icon.getAttribute('aria-label') ?? '');
+
+describe('CountSession — confirmed records are persisted optimistically (D5)', () => {
+  it('shows the record immediately, then settles it once the write resolves', async () => {
+    let settle = (created: CreatedRecord): void => void created;
+    const view = mount({
+      persistRecord: () =>
+        new Promise<CreatedRecord>((resolve) => {
+          settle = resolve;
+        }),
+    });
+    await reachCountScreen(view);
+    await dictate(view);
+    await confirmSheet(view);
+
+    // Optimistic: the count is on screen before the server has heard of it.
+    expect(view.getByText('LECHUGA BATAVIA')).toBeTruthy();
+    expect(recordState(view)).toContain('Pendiente de subir');
+
+    await act(async () => {
+      settle({ id: 'count-record-1', verdict: 'ok', anomaly: null });
+    });
+
+    expect(recordState(view)).toContain('Registro confirmado');
+    expect(recordState(view)).not.toContain('Pendiente de subir');
+  });
+
+  it('sends the plan scope, the article code and the canonical unit', async () => {
+    const view = mount();
+    await reachCountScreen(view);
+    await dictate(view);
+    await confirmSheet(view);
+
+    expect(view.persistRecord).toHaveBeenCalledTimes(1);
+    expect(view.persistRecord.mock.calls[0]![0]).toMatchObject({
+      planId: DEMO_PLAN.id,
+      operatorId: OPERATOR_ID,
+      nrArticulo: '100221',
+      quantity: 3,
+      // `unidad_display` is 'kilos'; the SERVER gets the canonical code.
+      unitCode: 'Kilogram',
+      spokenName: 'lechuga batavia',
+    });
+    // The idempotency key is the client-minted record id, so a retry of this
+    // very body resolves to the same row instead of counting the shelf twice.
+    expect(view.persistRecord.mock.calls[0]![0].clientRecordId).toBeTruthy();
+  });
+
+  it('keeps the record and raises the banner when the write fails (never drops a count)', async () => {
+    const view = mount({
+      persistRecord: async () => {
+        throw new UiError('proxy_unreachable');
+      },
+    });
+    await reachCountScreen(view);
+    await dictate(view);
+    await confirmSheet(view);
+
+    const banner = await view.findByTestId('count-error');
+    expect(banner.textContent).toContain('No hay conexión con el servidor.');
+    // The physical count the operator performed is still on screen.
+    expect(view.getByText('LECHUGA BATAVIA')).toBeTruthy();
+    expect(recordState(view)).toContain('Pendiente de subir');
+  });
+
+  it('writes one row per confirmed record, each with its own idempotency key', async () => {
+    const view = mount();
+    await reachCountScreen(view);
+
+    for (const _take of [0, 1]) {
+      await dictate(view);
+      await confirmSheet(view);
+    }
+
+    expect(view.persistRecord).toHaveBeenCalledTimes(2);
+    const keys = view.persistRecord.mock.calls.map((call) => call[0].clientRecordId);
+    expect(new Set(keys).size).toBe(2);
+  });
+});
+
+describe('CountSession — delete-and-redo is soft-delete plus a NEW row (RF-20/21, D6)', () => {
+  it('soft-deletes the persisted row and never updates it', async () => {
+    const view = mount();
+    await reachCountScreen(view);
+    await dictate(view);
+    await confirmSheet(view);
+
+    await act(async () => {
+      fireEvent.click(view.getByRole('button', { name: /Eliminar registro · LECHUGA BATAVIA/ }));
+    });
+
+    expect(view.removeRecord).toHaveBeenCalledTimes(1);
+    // Addressed by the SERVER id: `count_records.id`, not the client key.
+    expect(view.removeRecord.mock.calls[0]![0]).toBe('server-1');
+    expect(view.removeRecord.mock.calls[0]![1]).toMatchObject({ operatorId: OPERATOR_ID });
+    expect(view.getByText('0 registros')).toBeTruthy();
+  });
+
+  it('re-dictating after a delete creates a SECOND row, never a correction of the first', async () => {
+    const view = mount();
+    await reachCountScreen(view);
+    await dictate(view);
+    await confirmSheet(view);
+    const firstKey = view.persistRecord.mock.calls[0]![0].clientRecordId;
+
+    await act(async () => {
+      fireEvent.click(view.getByRole('button', { name: /Eliminar registro · LECHUGA BATAVIA/ }));
+    });
+    await dictate(view);
+    await confirmSheet(view);
+
+    expect(view.persistRecord).toHaveBeenCalledTimes(2);
+    const secondKey = view.persistRecord.mock.calls[1]![0].clientRecordId;
+    // A NEW key means a NEW row. Reusing the first one would resolve to the
+    // soft-deleted record instead of creating the redictation.
+    expect(secondKey).not.toBe(firstKey);
+    // And the delete happened exactly once: nothing "moved" the old value.
+    expect(view.removeRecord).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not call the server for a record that was never persisted', async () => {
+    let settle = (created: CreatedRecord): void => void created;
+    const view = mount({
+      persistRecord: () =>
+        new Promise<CreatedRecord>((resolve) => {
+          settle = resolve;
+        }),
+    });
+    await reachCountScreen(view);
+    await dictate(view);
+    await confirmSheet(view);
+
+    await act(async () => {
+      fireEvent.click(view.getByRole('button', { name: /Eliminar registro · LECHUGA BATAVIA/ }));
+    });
+
+    // There is no `count_records.id` to soft-delete yet; deleting nothing is the
+    // only honest option, and the pending write is abandoned rather than undone.
+    expect(view.removeRecord).not.toHaveBeenCalled();
+    await act(async () => {
+      settle({ id: 'server-late', verdict: 'ok', anomaly: null });
+    });
   });
 });
 
@@ -559,7 +776,8 @@ describe('DoneScreen — S9 verbatim copy over real session state', () => {
       fireEvent.click(view.getByRole('button', { name: 'Volver a mis conteos' }));
     });
 
-    expect(view.getByRole('button', { name: `Iniciar conteo · ${FIRST.label}` })).toBeTruthy();
+    // The plan list is fetched again on the way back, so the card arrives async.
+    expect(await view.findByRole('button', { name: `Iniciar conteo · ${FIRST.label}` })).toBeTruthy();
   });
 
   it('C2 — the done screen never claims offline capability', async () => {

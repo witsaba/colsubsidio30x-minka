@@ -31,6 +31,7 @@ export const initialSessionState: SessionState = {
   recording: false,
   requestInFlight: false,
   records: [],
+  recordSeq: 0,
   progress: { counted: 45, total: 107 },
   catalogueId: null,
   planId: null,
@@ -119,6 +120,7 @@ function toRecord(
     id: `rec-${at}-${seq}`,
     quantity: item.extracted.quantity,
     unitDisplay: item.picked.unidad_display,
+    unitCode: item.picked.unidad,
     articulo: item.picked.articulo,
     nrArticulo: item.picked.nr_articulo,
     spokenName: item.extracted.spokenName,
@@ -128,11 +130,18 @@ function toRecord(
   };
 }
 
-/** Newest first (design §6). Voice only ever prepends — never edits (RF-20). */
+/**
+ * Newest first (design §6). Voice only ever prepends — never edits (RF-20).
+ *
+ * `recordSeq` advances by the number created and is never wound back, so the
+ * ids handed to the server as idempotency keys stay unique for the whole
+ * session even after a delete-and-redictate.
+ */
 function appendRecords(state: SessionState, created: CountRecord[]): SessionState {
   return {
     ...state,
     records: [...created, ...state.records],
+    recordSeq: state.recordSeq + created.length,
     progress: { ...state.progress, counted: state.progress.counted + created.length },
   };
 }
@@ -261,7 +270,7 @@ export function sessionReducer(state: SessionState, event: SessionEvent): Sessio
       // `sync` until the server confirms (design D5): the record is on screen
       // immediately, but it does not claim to be settled until it really is.
       const created = state.overlay.items.map((item, i) =>
-        toRecord(item, event.at, state.records.length + i, 'sync'),
+        toRecord(item, event.at, state.recordSeq + i, 'sync'),
       );
       return { ...appendRecords(state, created), overlay: null };
     }
@@ -284,7 +293,7 @@ export function sessionReducer(state: SessionState, event: SessionEvent): Sessio
       const { item, anomaly, queue } = state.overlay;
       // Also optimistic: it settles as `anom_noted` on `RECORD_PERSISTED`,
       // which reads the anomaly back off the record itself.
-      const kept = toRecord(item, event.at, state.records.length, 'sync', anomaly);
+      const kept = toRecord(item, event.at, state.recordSeq, 'sync', anomaly);
       return { ...appendRecords(state, [kept]), overlay: openNext(queue, state.lastTranscript ?? '') };
     }
 

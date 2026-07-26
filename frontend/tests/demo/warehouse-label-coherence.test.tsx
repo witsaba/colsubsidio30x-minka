@@ -35,11 +35,25 @@ const counting = (): SessionState => ({
 });
 
 describe('one bodega name across the whole demo', () => {
-  it('names the same bodega on the plan card, the count header, the done screen and the auditor review header', () => {
+  it('names the same bodega on the plan card, the count header, the done screen and the auditor review header', async () => {
     const noop = () => undefined;
 
-    const plans = render(<PlansScreen dispatch={noop} assignedCatalogueIds={[DEMO_CATALOGUE_ID]} />);
-    const planLabel = plans.container.querySelector('.plan-card__title')?.textContent;
+    // The plan card no longer reads `lib/catalogues.ts`: the name comes from
+    // `audit_plans` now (REQ-OCF-8 as modified). The coherence requirement is
+    // unchanged and is now a requirement on the SEEDED PLAN — the demo plan must
+    // be named after the catalogue it is bound to, or the operator and the
+    // auditor are again looking at two different bodegas.
+    const plans = render(
+      <PlansScreen
+        dispatch={noop}
+        operatorId="op-demo"
+        loadPlans={async () => [
+          { id: 'plan-demo', name: LABEL, warehouseId: 'wh-demo', catalogueId: DEMO_CATALOGUE_ID },
+        ]}
+      />,
+    );
+    const card = await plans.findByRole('heading', { level: 2 });
+    const planLabel = card.textContent;
     plans.unmount();
 
     const count = render(<CountScreen state={counting()} dispatch={noop} />);

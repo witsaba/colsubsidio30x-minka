@@ -22,6 +22,7 @@ import { supabase } from '../_supabase';
 import { supabaseDb } from '../../../lib/server/db';
 import type { Db } from '../../../lib/server/db';
 import { assertPlanAssignment } from '../../../lib/server/authz';
+import { resolveProductId } from '../../../lib/server/products';
 import {
   badRequest,
   forbidden,
@@ -57,7 +58,9 @@ interface RecordInput {
   clientRecordId: string;
   planId: string;
   operatorId: string;
-  productId: string;
+  /** Null when the caller identified the article by `nrArticulo` instead. */
+  productId: string | null;
+  nrArticulo: string | null;
   quantity: number;
   unitCode: string | null;
   spokenName: string;
@@ -67,15 +70,20 @@ function readInput(body: Record<string, unknown>): RecordInput | null {
   const clientRecordId = requireString(body, 'clientRecordId');
   const planId = requireString(body, 'planId');
   const operatorId = requireString(body, 'operatorId');
-  const productId = requireString(body, 'productId');
+  const productId = optionalString(body, 'productId');
+  const nrArticulo = optionalString(body, 'nrArticulo');
   const quantity = requireNumber(body, 'quantity');
-  if (!clientRecordId || !planId || !operatorId || !productId || quantity === null) return null;
+  if (!clientRecordId || !planId || !operatorId || quantity === null) return null;
+  // One of the two article identities must be present; which one depends on
+  // whether the caller already knows the Supabase uuid.
+  if (!productId && !nrArticulo) return null;
 
   return {
     clientRecordId,
     planId,
     operatorId,
     productId,
+    nrArticulo,
     quantity,
     unitCode: optionalString(body, 'unitCode'),
     spokenName: optionalString(body, 'spokenName') ?? '',
@@ -101,11 +109,16 @@ export async function handleCreateRecord(db: Db, request: Request): Promise<Resp
 
   const input = readInput(body);
   if (!input) {
-    return badRequest('Faltan clientRecordId, planId, operatorId, productId o quantity.');
+    return badRequest('Faltan clientRecordId, planId, operatorId, quantity o la identidad del artículo.');
   }
 
   const assignment = await assertPlanAssignment(db, input.planId, input.operatorId);
   if (!assignment.ok) return forbidden(assignment.reason);
+
+  // AFTER the RF-07 guard: an unauthorized caller must not be able to probe the
+  // catalogue for which article codes exist.
+  const productId: string | null = await resolveProductId(db, input);
+  if (!productId) return badRequest('No encontramos ese artículo en el catálogo.');
 
   // Idempotency: a retried POST must resolve, not duplicate.
   const { data: existing } = await db
@@ -117,7 +130,7 @@ export async function handleCreateRecord(db: Db, request: Request): Promise<Resp
   const verdict: InternalVerdict = await validateCount(db, {
     planId: input.planId,
     warehouseId: assignment.plan.warehouseId,
-    productId: input.productId,
+    productId,
     quantity: input.quantity,
     unitCode: input.unitCode,
   });
@@ -131,7 +144,7 @@ export async function handleCreateRecord(db: Db, request: Request): Promise<Resp
     .insert({
       plan_id: input.planId,
       warehouse_id: assignment.plan.warehouseId,
-      product_id: input.productId,
+      product_id: productId,
       quantity: input.quantity,
       unit_code: input.unitCode,
       source: 'voice',

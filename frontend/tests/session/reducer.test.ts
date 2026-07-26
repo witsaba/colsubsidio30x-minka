@@ -316,8 +316,46 @@ describe('S5 confirmation', () => {
     });
     const [r] = sessionReducer(nulled, { type: 'CONFIRM_ACCEPTED', at: AT }).records;
     expect(r?.nrArticulo).toBeNull();
+    // REQ-OCF-7 is about what is RENDERED: `unitDisplay` is the only unit any
+    // screen reads, and a null one renders nothing rather than a guess. The
+    // render-path guard lives where rendering happens
+    // (`count-session.test.tsx`: the English unit never reaches the DOM).
     expect(r?.unitDisplay).toBeNull();
-    expect(JSON.stringify(r)).not.toContain('Kilogram');
+  });
+
+  test('records carry the canonical unit code for the SERVER write only (REQ-SDA-4)', () => {
+    // `POST /api/records` writes `count_records.unit_code` and re-validates the
+    // unit against the catalogue. The Spanish `unidad_display` is a rendering,
+    // not an identity, so the record has to keep the canonical code too — it is
+    // simply never read by a screen.
+    const s = sessionReducer(
+      counting({
+        overlay: {
+          kind: 'confirm',
+          transcript: 't',
+          items: [confirmable({ picked: candidate({ unidad: 'Kilogram', unidad_display: 'kilos' }) })],
+        },
+      }),
+      { type: 'CONFIRM_ACCEPTED', at: AT },
+    );
+
+    expect(s.records[0]?.unitCode).toBe('Kilogram');
+    expect(s.records[0]?.unitDisplay).toBe('kilos');
+  });
+
+  test('a dictation the matcher could not give a unit keeps a null unit code', () => {
+    const s = sessionReducer(
+      counting({
+        overlay: {
+          kind: 'confirm',
+          transcript: 't',
+          items: [confirmable({ picked: candidate({ unidad: null, unidad_display: null }) })],
+        },
+      }),
+      { type: 'CONFIRM_ACCEPTED', at: AT },
+    );
+
+    expect(s.records[0]?.unitCode).toBeNull();
   });
 
   test('newest records come first', () => {
@@ -626,8 +664,20 @@ describe('blind counting invariant', () => {
       counting({ overlay: { kind: 'confirm', transcript: 't', items: [confirmable()] } }),
       { type: 'CONFIRM_ACCEPTED', at: AT },
     );
+    // `unitCode` joins the whitelist: it is the unit the operator DICTATED,
+    // carried for the server write, not a reference value from the system.
     expect(Object.keys(s.records[0] ?? {}).sort()).toEqual(
-      ['articulo', 'createdAt', 'id', 'nrArticulo', 'quantity', 'spokenName', 'state', 'unitDisplay'].sort(),
+      [
+        'articulo',
+        'createdAt',
+        'id',
+        'nrArticulo',
+        'quantity',
+        'spokenName',
+        'state',
+        'unitCode',
+        'unitDisplay',
+      ].sort(),
     );
   });
 });
@@ -828,5 +878,42 @@ describe('optimistic record persistence', () => {
     expect(s.operatorId).toBe('op-1');
     expect(s.warehouseId).toBe('wh-1');
     expect(s.catalogueId).toBe('cat-1');
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Record ids are idempotency keys, so they must never be reused              */
+/* -------------------------------------------------------------------------- */
+
+describe('record ids survive deletion (REQ-SDA-4, RF-20/21)', () => {
+  test('a record created after a delete does NOT reuse the deleted record’s id', () => {
+    // The id is sent as `count_records.client_record_id`, which is unique and is
+    // how a retried POST resolves to an existing row. Deriving it from
+    // `records.length` made a delete-then-redictate mint the SAME key, so the
+    // redictation would resolve to the soft-deleted row instead of creating one.
+    const sheet = { kind: 'confirm' as const, transcript: 't', items: [confirmable()] };
+
+    const first = sessionReducer(counting({ overlay: sheet }), { type: 'CONFIRM_ACCEPTED', at: AT });
+    const firstId = first.records[0]!.id;
+
+    const emptied = sessionReducer(first, { type: 'RECORD_DELETED', id: firstId });
+    expect(emptied.records).toEqual([]);
+
+    const second = sessionReducer({ ...emptied, overlay: sheet }, { type: 'CONFIRM_ACCEPTED', at: AT });
+
+    expect(second.records).toHaveLength(1);
+    expect(second.records[0]!.id).not.toBe(firstId);
+  });
+
+  test('two items confirmed in one sheet still get distinct ids', () => {
+    const s = sessionReducer(
+      counting({
+        overlay: { kind: 'confirm', transcript: 't', items: [confirmable(), confirmable()] },
+      }),
+      { type: 'CONFIRM_ACCEPTED', at: AT },
+    );
+
+    expect(s.records).toHaveLength(2);
+    expect(s.records[0]!.id).not.toBe(s.records[1]!.id);
   });
 });

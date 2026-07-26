@@ -210,6 +210,26 @@
   flex: none;
 }
 
+/* A failed consent WRITE (REQ-SDA-2) — retryable, and never mistakable for a
+   microphone problem, which is why it is a separate block from the fallback. */
+.consent__error {
+  display: grid;
+  gap: var(--sp-3);
+  justify-items: start;
+  margin-inline: var(--sp-5);
+  padding: var(--sp-4);
+  border: 1px solid var(--warn-border);
+  border-radius: var(--r-card);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.consent__error p {
+  margin: 0;
+}
+
 .consent__fallback {
   margin-inline: var(--sp-5);
   padding: var(--sp-3) var(--sp-4);
@@ -317,6 +337,34 @@
   border-radius: var(--r-card);
   background: var(--surface-alt);
   color: var(--text-soft-3);
+}
+
+/* Loading / empty / error for the real plan fetch (REQ-SDA-3). */
+
+.plans__loading,
+.plans__empty {
+  margin: 0;
+  padding-inline: var(--sp-5);
+  color: var(--text-on-blue);
+  font-size: var(--fs-body);
+}
+
+.plans__error {
+  display: grid;
+  gap: var(--sp-3);
+  justify-items: start;
+  margin-inline: var(--sp-5);
+  padding: var(--sp-4);
+  border: 1px solid var(--warn-border);
+  border-radius: var(--r-card);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.plans__error p {
+  margin: 0;
 }
 
 /* ---------------------------------------------------------- S3 count screen */

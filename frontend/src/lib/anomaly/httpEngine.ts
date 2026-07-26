@@ -79,9 +79,11 @@ export function createHttpAnomalyEngine(
   return {
     async check(item: ConfirmableItem): Promise<Anomaly | null> {
       const productId = context.productIdOf(item);
-      // No catalogue identity, nothing to validate against: stay silent rather
-      // than invent an anomaly the auditor cannot trace to a product.
-      if (!productId) return null;
+      const nrArticulo = item.picked.nr_articulo;
+      // No catalogue identity at all, nothing to validate against: stay silent
+      // rather than invent an anomaly the auditor cannot trace to a product.
+      // An `nr_articulo` alone is enough — the route resolves it to a uuid.
+      if (!productId && !nrArticulo) return null;
 
       try {
         const response = await fetchFn(ANOMALY_CHECK_URL, {
@@ -91,8 +93,14 @@ export function createHttpAnomalyEngine(
             planId: context.planId,
             warehouseId: context.warehouseId,
             productId,
+            nrArticulo,
             quantity: item.extracted.quantity,
-            unitCode: item.extracted.unit,
+            // The CANONICAL catalogue unit, not the Spanish one the operator
+            // dictated: `POST /api/records` re-runs this same validation and
+            // writes this same code to `count_records.unit_code` (design D4),
+            // so the advisory and the authoritative verdict must be computed
+            // from identical facts.
+            unitCode: item.picked.unidad,
           }),
         });
         if (!response.ok) return null;

@@ -25,10 +25,22 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'preact/hooks';
 
 import { fixtureAnomalyEngine } from '../../lib/anomaly/fixtureEngine';
+import { createHttpAnomalyEngine } from '../../lib/anomaly/httpEngine';
 import type { AnomalyEngine } from '../../lib/anomaly/engine';
 import { match as realMatch, transcribe as realTranscribe } from '../../lib/api/client';
+import {
+  createRecord as realCreateRecord,
+  deleteRecord as realDeleteRecord,
+  fetchPlans as realFetchPlans,
+  postConsent as realPostConsent,
+  type ConsentInput,
+  type CreateRecordInput,
+  type CreatedRecord,
+  type PlanSummary,
+} from '../../lib/api/operational';
 import { UiError } from '../../lib/api/types';
 import type { Candidate, MatchFn, TranscribeFn } from '../../lib/api/types';
+import { DEMO_OPERATOR_ID } from '../../lib/identity';
 import { createRecorder, exceedsSizeLimit, requestMicrophone } from '../../lib/audio/capture';
 import type { MicrophoneResult } from '../../lib/audio/capture';
 import type { RecorderHandle } from '../../lib/audio/types';
@@ -36,6 +48,7 @@ import { mockExtractionAdapter } from '../../lib/extraction/mock';
 import type { ExtractionAdapter } from '../../lib/extraction/adapter';
 import { runPipeline, type PipelineDeps } from '../../lib/pipeline';
 import { initialSessionState, sessionReducer } from '../../lib/session/reducer';
+import type { SessionEvent } from '../../lib/session/types';
 import { AnomalySheet } from './AnomalySheet';
 import { ConfirmSheet } from './ConfirmSheet';
 import { ConsentScreen } from './ConsentScreen';
@@ -50,6 +63,11 @@ export interface CountSessionProps {
   transcribe?: TranscribeFn;
   match?: MatchFn;
   extraction?: ExtractionAdapter;
+  /**
+   * Overrides the engine entirely. Left out, the composition root picks the
+   * REAL `httpAnomalyEngine` once a plan is active and the fixture engine
+   * before that — design D4's promised one-line swap, made here and nowhere else.
+   */
   anomalies?: AnomalyEngine;
   requestMic?: () => Promise<MicrophoneResult>;
   openRecorder?: (stream: MediaStream) => RecorderHandle;
@@ -58,7 +76,16 @@ export interface CountSessionProps {
   /** Debounce applied to the manual-search re-query. */
   searchDebounceMs?: number;
   operatorName?: string;
-  assignedCatalogueIds?: readonly string[];
+  /** Who the browser claims to be (design D2 — see `lib/identity.ts`). */
+  operatorId?: string;
+  /** Operational seams, defaulted to `lib/api/operational.ts`. */
+  loadPlans?: (operatorId: string, opts?: { signal?: AbortSignal }) => Promise<PlanSummary[]>;
+  persistConsent?: (input: ConsentInput) => Promise<unknown>;
+  persistRecord?: (input: CreateRecordInput) => Promise<CreatedRecord>;
+  removeRecord?: (
+    id: string,
+    input: { operatorId: string; reason?: string },
+  ) => Promise<{ id: string; deleted: boolean }>;
 }
 
 /**
@@ -74,13 +101,17 @@ export function CountSession({
   transcribe = realTranscribe,
   match = realMatch,
   extraction = mockExtractionAdapter,
-  anomalies = fixtureAnomalyEngine,
+  anomalies,
   requestMic = requestMicrophone,
   openRecorder = createRecorder,
   now = Date.now,
   searchDebounceMs,
   operatorName,
-  assignedCatalogueIds,
+  operatorId = DEMO_OPERATOR_ID,
+  loadPlans = realFetchPlans,
+  persistConsent = realPostConsent,
+  persistRecord = realCreateRecord,
+  removeRecord = realDeleteRecord,
 }: CountSessionProps) {
   const [state, dispatch] = useReducer(sessionReducer, initialSessionState);
 
@@ -101,6 +132,28 @@ export function CountSession({
     if (state.screen === 'done' && finishedAt === null) setFinishedAt(now());
   }, [state.screen, startedAt, finishedAt, now]);
 
+  /* ------------------------------------------------------- anomaly engine (D4) */
+
+  const { planId, warehouseId } = state;
+
+  /**
+   * The one place the engine is chosen. With a plan in hand the REAL service is
+   * used — it is the only one that knows this warehouse's statistics. Before
+   * that (and in the fixture demo path) the offline rules stand in, because a
+   * validation request with no plan scope has nothing to validate against.
+   */
+  const engine: AnomalyEngine = useMemo(() => {
+    if (anomalies) return anomalies;
+    if (planId === null || warehouseId === null) return fixtureAnomalyEngine;
+    return createHttpAnomalyEngine({
+      planId,
+      warehouseId,
+      // The browser holds no product table: the article travels as the
+      // matcher's `nr_articulo` and the ROUTE resolves it to a uuid.
+      productIdOf: () => null,
+    });
+  }, [anomalies, planId, warehouseId]);
+
   /* ---------------------------------------------------------------- pipeline */
 
   const deps: PipelineDeps = useMemo(
@@ -108,12 +161,12 @@ export function CountSession({
       transcribe,
       extraction,
       match,
-      anomalies,
+      anomalies: engine,
       // The producer of `PIPELINE_TRANSCRIPT`: the S4 sheet shows what was heard
       // while the match calls are still in flight.
       onTranscript: (raw: string) => dispatch({ type: 'PIPELINE_TRANSCRIPT', raw }),
     }),
-    [transcribe, extraction, match, anomalies],
+    [transcribe, extraction, match, engine],
   );
 
   const runChain = useCallback(
@@ -128,6 +181,83 @@ export function CountSession({
       }
     },
     [deps],
+  );
+
+  /* ------------------------------------------------------- persistence (D5/D6) */
+
+  /**
+   * Record ids whose write has already been fired. The effect below is driven by
+   * `state.records`, which changes for many reasons, so this ref is what keeps
+   * one confirmed count to exactly one POST.
+   *
+   * It is also the no-auto-retry rule: `RECORD_PERSIST_FAILED` deliberately
+   * leaves the record in `sync`, and re-firing on the next render would hammer a
+   * server that just failed. The banner tells the operator what happened.
+   */
+  const attempted = useRef<Set<string>>(new Set());
+
+  /**
+   * OPTIMISTIC (design D5). The reducer has already appended the record in
+   * `sync`; this effect is the side of the split that talks to the network and
+   * feeds the outcome back as an event. Driving it off the RECORD STATE rather
+   * than off the confirm handler means the anomaly "keep noted" path is covered
+   * by exactly the same code — there is no second persistence path to forget.
+   */
+  useEffect(() => {
+    if (planId === null) return;
+
+    for (const record of state.records) {
+      if (record.state !== 'sync' || record.serverId) continue;
+      if (attempted.current.has(record.id)) continue;
+      attempted.current.add(record.id);
+
+      void (async () => {
+        try {
+          const created = await persistRecord({
+            // The local id IS the idempotency key: a retried POST resolves to
+            // the existing row instead of counting the same shelf twice.
+            clientRecordId: record.id,
+            planId,
+            operatorId,
+            nrArticulo: record.nrArticulo,
+            quantity: record.quantity,
+            unitCode: record.unitCode,
+            spokenName: record.spokenName,
+          });
+          dispatch({ type: 'RECORD_PERSISTED', id: record.id, serverId: created.id });
+        } catch (error) {
+          dispatch({ type: 'RECORD_PERSIST_FAILED', id: record.id, error: toUiError(error) });
+        }
+      })();
+    }
+  }, [state.records, planId, operatorId, persistRecord]);
+
+  /**
+   * Deletion is a SOFT delete on the server (RF-21, design D6), and the reducer
+   * drops the row from the screen, so the server call has to be made from the
+   * event on its way in — afterwards the record is gone and its `serverId` with
+   * it. Wrapping dispatch keeps that in ONE place instead of threading a second
+   * callback through `CountScreen` and `RecordList`.
+   */
+  const dispatchWithEffects = useCallback(
+    (event: SessionEvent): void => {
+      if (event.type === 'RECORD_DELETED') {
+        const record = stateRef.current.records.find((r) => r.id === event.id);
+        // No `serverId` means the write never landed: there is nothing to soft
+        // delete, and inventing an id to delete would be worse than doing nothing.
+        if (record?.serverId) {
+          void removeRecord(record.serverId, { operatorId }).catch((error) => {
+            // The row is already off the screen, so there is no record left to
+            // attach a banner to. Logged rather than swallowed: a failed soft
+            // delete leaves a live `count_records` row the operator believes is
+            // gone, and the auditor is the one who will see it.
+            console.error('soft delete failed', { recordId: record.serverId, error });
+          });
+        }
+      }
+      dispatch(event);
+    },
+    [operatorId, removeRecord],
   );
 
   /* --------------------------------------------------------------- recording */
@@ -220,6 +350,8 @@ export function CountSession({
       <ConsentScreen
         state={state}
         dispatch={dispatch}
+        operatorId={operatorId}
+        persistConsent={persistConsent}
         requestMic={requestMic}
         onGranted={(stream) => {
           streamRef.current = stream;
@@ -232,8 +364,9 @@ export function CountSession({
     return (
       <PlansScreen
         dispatch={dispatch}
+        operatorId={operatorId}
+        loadPlans={loadPlans}
         {...(operatorName === undefined ? {} : { operatorName })}
-        {...(assignedCatalogueIds === undefined ? {} : { assignedCatalogueIds })}
       />
     );
   }
@@ -254,7 +387,7 @@ export function CountSession({
     <>
       <CountScreen
         state={state}
-        dispatch={dispatch}
+        dispatch={dispatchWithEffects}
         onStartRecording={onStartRecording}
         onStopRecording={onStopRecording}
       />

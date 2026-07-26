@@ -64,6 +64,14 @@ export interface CountRecord {
   /** Rendered from `Candidate.unidad_display` only. Null renders no unit text;
    *  the English `unidad` is NEVER rendered (REQ-OCF-7). */
   unitDisplay: string | null;
+  /**
+   * The canonical `Candidate.unidad`, kept ONLY for the server write
+   * (`count_records.unit_code`) and the server-side unit re-validation
+   * (REQ-SDA-4, REQ-AV-1). No screen reads this field — `RecordList` renders a
+   * whitelist and `unitDisplay` is the only unit in it — so REQ-OCF-7 holds by
+   * the same structural argument as before: there is no code path that prints it.
+   */
+  unitCode: string | null;
   /** The catalogue article name that was matched. */
   articulo: string;
   /** Null renders the SKU line without a code (REQ-OCF-7). */
@@ -98,6 +106,17 @@ export interface SessionState {
   requestInFlight: boolean;
   /** Newest first. */
   records: CountRecord[];
+  /**
+   * MONOTONIC record counter, never decremented.
+   *
+   * `CountRecord.id` is sent as `count_records.client_record_id`, the unique
+   * idempotency key. Deriving the id from `records.length` meant a
+   * delete-then-redictate minted the SAME key as the row it replaced, so the
+   * redictation resolved to the soft-deleted record instead of creating a new
+   * one — the exact opposite of RF-20/21. This counter is why an id can never
+   * be reused within a session.
+   */
+  recordSeq: number;
   /** Seeded 45/107 from the operator fixture. */
   progress: { counted: number; total: number };
   /**

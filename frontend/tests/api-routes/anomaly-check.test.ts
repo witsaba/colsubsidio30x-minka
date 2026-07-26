@@ -96,3 +96,54 @@ describe('POST /api/anomaly-check', () => {
     expect((await handleAnomalyCheck(catalogueDb(), bad)).status).toBe(400);
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* Product identity — same resolution the record write performs               */
+/* -------------------------------------------------------------------------- */
+
+describe('POST /api/anomaly-check — accepts the matcher’s nr_articulo', () => {
+  function withProducts() {
+    const stub = catalogueDb();
+    stub.rows('products').push({ id: 'prod-1', sku: 'SKU-1' }, { id: 'prod-2', sku: 'SKU-2' });
+    return stub;
+  }
+
+  it('validates against the resolved product when only nrArticulo is sent', async () => {
+    const stub = withProducts();
+
+    const response = await handleAnomalyCheck(
+      stub,
+      request({ planId: 'plan-1', warehouseId: 'wh-1', nrArticulo: 'SKU-1', quantity: 90, unitCode: 'KG' }),
+    );
+
+    // 90 is above `expected_max` 30 for prod-1: the resolution really happened.
+    expect(await response.json()).toEqual({
+      verdict: 'warning',
+      anomaly: { type: 'atypical_quantity', severity: 'warning', title: 'Cantidad fuera de lo habitual' },
+    });
+  });
+
+  it('stays silent for an article with no statistics of its own', async () => {
+    const stub = withProducts();
+
+    const response = await handleAnomalyCheck(
+      stub,
+      request({ planId: 'plan-1', warehouseId: 'wh-1', nrArticulo: 'SKU-2', quantity: 90, unitCode: 'KG' }),
+    );
+
+    // prod-2 has no `product_count_ranges` row, so there is nothing to compare
+    // against and inventing an anomaly would be a false positive (RF-26).
+    expect(await response.json()).toEqual({ verdict: 'ok', anomaly: null });
+  });
+
+  it('refuses with 400 when the article resolves to no product', async () => {
+    const stub = withProducts();
+
+    const response = await handleAnomalyCheck(
+      stub,
+      request({ planId: 'plan-1', warehouseId: 'wh-1', nrArticulo: 'NOPE', quantity: 90 }),
+    );
+
+    expect(response.status).toBe(400);
+  });
+});
