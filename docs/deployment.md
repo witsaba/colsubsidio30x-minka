@@ -50,7 +50,7 @@ template default.
 |---|---|---|---|
 | `stt` | 8001 | `./services/stt` | Speech to text. Needs the API key of the vendor named by `STT_VENDOR`, and will not boot without it. |
 | `product_identification` | 8003 | `.` (repository root) | Product identification and voice inventory extraction using Vertex AI & Gemini dual-model consensus. |
-| `matcher` | 8002 | `.` (repository root) | Product matching. Reads the catalogue from Supabase at boot and caches it in `redis`. Needs `SUPABASE_URL` and `SUPABASE_KEY`, and will not boot without them. |
+| `matcher` | 8002 | `.` (repository root) | Product matching. Reads the catalogue from Supabase at boot and caches it in `redis`. Needs `SUPABASE_URL` and `SUPABASE_SECRET_KEY`, and will not boot without them. |
 | `redis` | — | `redis:7.4-alpine` (image) | Snapshot cache for the matcher's catalogue. Publishes no host port. |
 
 The services are deliberately independent: no `depends_on`, no custom network,
@@ -75,7 +75,7 @@ Four variables drive the catalogue path. All four are documented in
 | Variable | Compose default | What it does |
 |---|---|---|
 | `SUPABASE_URL` | blank | PostgREST base URL of the catalogue project. Blank aborts boot with a named error rather than silently starting against the wrong project. |
-| `SUPABASE_KEY` | blank | The `service_role` key. See below. |
+| `SUPABASE_SECRET_KEY` | blank | The secret (`service_role`-equivalent) key. The container reads it as `SUPABASE_KEY`; this is the host-side name. See below. |
 | `REDIS_URL` | `redis://redis:6379/0` | The snapshot cache. Reached by Compose service name, so it differs from the local-dev default (`redis://localhost:6379/0`) on purpose. |
 | `CATALOGUE_CACHE_TTL_SECONDS` | `10800` | Snapshot freshness window (3 h). The background refresh fires on this interval with ±10% jitter; the Redis key itself is set to twice this, so a stale snapshot survives to be served if Supabase is down. |
 
@@ -85,15 +85,20 @@ memory behind the Redis snapshot.
 
 ### The matcher's Supabase credential
 
-`SUPABASE_KEY` must be the project's **`service_role`** key.
+`SUPABASE_SECRET_KEY` must be the project's **secret** key (the
+`service_role` equivalent in the new Supabase API-key scheme) — its value
+starts with `sb_secret_`. A **publishable** key (`sb_publishable_...`) will
+**NOT** work: it maps to the `anon` Postgres role, which holds zero table
+privileges in this project by design.
 
 That is not the original intent and it is not least privilege. A
 least-privilege key was tried and is not available today: the `anon` role holds
 no `GRANT` on any catalogue table, so PostgREST answers `401` with code
 `42501`; every read policy on those tables targets the `authenticated` role;
-and `warehouse_products_read` additionally requires `private.is_staff()`. Until
+and `warehouse_products_read` additionally requires `private.is_staff()`. The
+server routes rely on the secret key's service-role RLS bypass. Until
 a dedicated role with `GRANT`s on the four catalogue tables is provisioned,
-`service_role` is the only key that can read the catalogue.
+the secret key is the only credential that can read the catalogue.
 
 Treat it accordingly: it carries **full database access and bypasses RLS**.
 
@@ -179,7 +184,7 @@ failing when it is absent.
 warns about it before you ever run `up`.
 
 **`matcher` is unhealthy.** It could not load the catalogue. `docker compose
-logs matcher` names the cause: a blank or wrong `SUPABASE_URL`/`SUPABASE_KEY`
+logs matcher` names the cause: a blank or wrong `SUPABASE_URL`/`SUPABASE_SECRET_KEY`
 aborts boot immediately (exit 3 after the configured retries), while an
 unreachable Redis only logs a warning and is never the reason. Fix the
 credential, then `docker compose up -d --force-recreate matcher`.

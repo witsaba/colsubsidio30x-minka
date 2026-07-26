@@ -18,14 +18,17 @@ snapshot-v1 fixture created for task 6.1 of
 Usage (from the repository root, so the `matcher` workspace member resolves)::
 
     export SUPABASE_URL=https://<project>.supabase.co
-    export SUPABASE_KEY=<service_role key>
+    export SUPABASE_SECRET_KEY=sb_secret_...
     uv run python scripts/export_catalogue_snapshot.py
 
-**`SUPABASE_KEY` must be the `service_role` key, not the `anon`/publishable
-one.** Every catalogue table answers the publishable key with HTTP 401 and
-PostgREST code `42501` ("GRANT SELECT ON public.<table>"): all RLS read
-policies target the `authenticated` role, and `warehouse_products_read`
-additionally requires `private.is_staff()`. A `service_role` key bypasses RLS
+**`SUPABASE_SECRET_KEY` must be the secret key (the service-role equivalent
+in the new Supabase API-key scheme, value starting `sb_secret_`), not the
+publishable one (`sb_publishable_...`).** Every catalogue table answers the
+publishable key with HTTP 401 and PostgREST code `42501` ("GRANT SELECT ON
+public.<table>"): the `anon` role holds zero table privileges by design, all
+RLS read policies target the `authenticated` role, and
+`warehouse_products_read` additionally requires `private.is_staff()`. The
+secret key bypasses RLS
 and is the only credential that can perform this export. It is a
 break-glass-grade secret: pass it through the environment, never through a
 flag, never into a file, and note that this script never prints or logs it --
@@ -74,10 +77,10 @@ EXIT_WRITE_ERROR = 3
 
 def read_credentials() -> tuple[str, str]:
     """Return `(base_url, key)` from the environment, or raise `KeyError`."""
-    missing = [name for name in ("SUPABASE_URL", "SUPABASE_KEY") if not os.environ.get(name)]
+    missing = [name for name in ("SUPABASE_URL", "SUPABASE_SECRET_KEY") if not os.environ.get(name)]
     if missing:
         raise KeyError(", ".join(missing))
-    return os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"]
+    return os.environ["SUPABASE_URL"], os.environ["SUPABASE_SECRET_KEY"]
 
 
 def flatten(catalogue: dict[str, list[Row]]) -> list[Row]:
@@ -113,8 +116,9 @@ def main(argv: list[str] | None = None) -> int:
     except KeyError as exc:
         print(
             f"ERROR: missing environment variable(s): {exc.args[0]}. "
-            "SUPABASE_KEY must be the service_role key; the anon/publishable "
-            "key is refused by RLS on every catalogue table.",
+            "SUPABASE_SECRET_KEY must be the secret key (sb_secret_..., the "
+            "service-role equivalent); the publishable key (sb_publishable_...) "
+            "is refused by RLS on every catalogue table.",
             file=sys.stderr,
         )
         return EXIT_MISSING_CREDENTIALS

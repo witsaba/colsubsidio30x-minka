@@ -27,10 +27,13 @@ class Settings(BaseSettings):
     one is a permanent misconfiguration that must abort startup, not retry."""
 
     supabase_key: str
-    """The Supabase **`service_role`** key, sent as `apikey` and as a bearer
-    token. Never logged and never included in an exception message (REQ-API-8).
+    """The Supabase **secret key** (the service-role equivalent in the new
+    Supabase API-key scheme, value `sb_secret_...`), sent as `apikey` and as a
+    bearer token. Never logged and never included in an exception message
+    (REQ-API-8). `SUPABASE_KEY` is the in-container name only: the root
+    docker-compose maps the host's canonical `SUPABASE_SECRET_KEY` into it.
 
-    It is NOT least-privilege: `service_role` bypasses RLS and has full database
+    It is NOT least-privilege: the secret key bypasses RLS and has full database
     access. A least-privilege alternative was investigated and is not available
     today -- the `anon` role holds no `GRANT` on any catalogue table (PostgREST
     answers HTTP 401 `42501`), every read policy targets `authenticated`, and

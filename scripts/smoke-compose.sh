@@ -97,8 +97,11 @@ if [[ -f "$repo_root/.env" ]]; then
   done <"$repo_root/.env"
 fi
 setting() {
+  # An exported variable wins even when it is empty — exactly what Compose
+  # does when it interpolates — so a test (or an operator) can blank one out
+  # without the root .env silently filling it back in.
   local name=$1
-  if [[ -n "${!name:-}" ]]; then printf '%s' "${!name}"
+  if [[ -n "${!name+x}" ]]; then printf '%s' "${!name}"
   else printf '%s' "${conf[$name]:-}"; fi
 }
 
@@ -129,9 +132,11 @@ preflight_matcher() {
   # The catalogue is read from Supabase at boot, not from a committed file, so
   # the matcher cannot become healthy without these two. Starting it anyway
   # would recreate a healthy container into a crash loop.
+  # SUPABASE_SECRET_KEY is the host-side name: docker-compose.yml feeds it to
+  # the container as SUPABASE_KEY, so the host variable is what must be set.
   local missing=()
   [[ -n "$(setting SUPABASE_URL)" ]] || missing+=(SUPABASE_URL)
-  [[ -n "$(setting SUPABASE_KEY)" ]] || missing+=(SUPABASE_KEY)
+  [[ -n "$(setting SUPABASE_SECRET_KEY)" ]] || missing+=(SUPABASE_SECRET_KEY)
   if ((${#missing[@]})); then
     printf '%s is empty and the catalogue is read from Supabase' "${missing[*]}"
     return 1

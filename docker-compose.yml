@@ -82,10 +82,11 @@ services:
       # default can be correct, and a blank one aborts boot rather than failing
       # later as an unroutable request.
       SUPABASE_URL: ${SUPABASE_URL:-}
-      # The service_role key. Full database access, so it ships blank and is
-      # never written into a committed file; see .env.example and
-      # docs/deployment.md for why a least-privilege key is not available.
-      SUPABASE_KEY: ${SUPABASE_KEY:-}
+      # The secret key (service-role equivalent in the new Supabase API-key
+      # scheme). Full database access, so it ships blank and is never written
+      # into a committed file; see .env.example and docs/deployment.md for why
+      # a least-privilege key is not available.
+      SUPABASE_KEY: ${SUPABASE_SECRET_KEY:-}
       # The sibling cache on the Compose network. Deliberately not the
       # `redis://localhost:6379/0` that Settings defaults to: that default is
       # for running the app directly on a developer machine.
@@ -187,14 +188,15 @@ services:
       # Server-only Supabase credentials for the operational routes
       # (consent, plans, count records, auditor actions, Oracle export).
       # NOT `PUBLIC_`-prefixed on purpose: Astro inlines every PUBLIC_ variable
-      # into the browser bundle, and this is the service-role key.
+      # into the browser bundle, and this is the secret (service-role
+      # equivalent) key.
       #
       # MERGE NOTE: the parallel `redis-catalogue-cache` change may introduce
       # its own Supabase variables for the matcher. These two names are the
       # canonical ones — reconcile at merge time rather than letting two
       # semantically identical names diverge.
       SUPABASE_URL: ${SUPABASE_URL:?set SUPABASE_URL in .env}
-      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?set SUPABASE_SERVICE_ROLE_KEY in .env}
+      SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY:?set SUPABASE_SECRET_KEY in .env}
       # The Node adapter binds 127.0.0.1 unless told otherwise, which no
       # published port can reach.
       HOST: 0.0.0.0

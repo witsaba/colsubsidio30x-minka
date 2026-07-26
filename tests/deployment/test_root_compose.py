@@ -131,6 +131,18 @@ class TestSoleSurface:
         assert re.search(r"^name:\s+\S+", compose, re.MULTILINE)
 
     def test_operator_docs_never_point_at_a_service_local_compose(self) -> None:
+        """The guard is about INSTRUCTIONS, so it reads line by line.
+
+        A line may name `-f services/...` in order to forbid it, or to specify
+        the very substring search this test performs — `openspec/specs/
+        unified-compose-deployment/spec.md` does both, and a whole-file
+        substring check cannot tell a prohibition from a recommendation. The
+        alternative, excluding that file, would retire the guard over exactly
+        the document that defines the rule.
+        """
+        # A line that forbids the pattern, or that specifies searching for it,
+        # is not telling an operator to run it.
+        prohibitions = ("SHALL NOT", "substring")
         offenders = []
         for path in tracked_files():
             if not path.endswith((".md", ".yaml", ".yml")):
@@ -138,8 +150,11 @@ class TestSoleSurface:
             if path.startswith("openspec/changes/"):
                 continue  # historical SDD records, not operator instructions
             text = (REPO_ROOT / path).read_text(encoding="utf-8")
-            if "-f services/" in text or "cd services/stt && docker compose" in text:
-                offenders.append(path)
+            for line in text.splitlines():
+                if any(phrase in line for phrase in prohibitions):
+                    continue
+                if "-f services/" in line or "cd services/stt && docker compose" in line:
+                    offenders.append(f"{path}: {line.strip()}")
         assert offenders == [], offenders
 
 
@@ -233,10 +248,14 @@ class TestPerServiceContract:
         self, compose: str
     ) -> None:
         """REQ-UCD-3 / REQ-UCD-12. The catalogue is unreachable without these
-        four, so a rename or a dropped line is a boot failure, not a default."""
+        four, so a rename or a dropped line is a boot failure, not a default.
+        The container variable stays SUPABASE_KEY (the matcher reads it), but
+        its value comes from the host's SUPABASE_SECRET_KEY: the catalogue is
+        only readable with the secret key, and a publishable key in a
+        same-named host variable produced a 401 crash loop."""
         matcher = service_blocks(compose)["matcher"]
         assert "SUPABASE_URL: ${SUPABASE_URL:-}" in matcher
-        assert "SUPABASE_KEY: ${SUPABASE_KEY:-}" in matcher
+        assert "SUPABASE_KEY: ${SUPABASE_SECRET_KEY:-}" in matcher
         assert "REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}" in matcher
         assert (
             "CATALOGUE_CACHE_TTL_SECONDS: ${CATALOGUE_CACHE_TTL_SECONDS:-10800}"
@@ -283,6 +302,22 @@ class TestPerServiceContract:
         assert (
             "EXTRACTOR_BASE_URL: http://product_identification:8003" in frontend
         )
+
+    def test_the_frontend_requires_the_supabase_secret_from_the_host(
+        self, compose: str
+    ) -> None:
+        """REQ-SDA-1. The operational routes cannot answer without these two,
+        so they are `:?`-required rather than defaulted. The key variable is
+        SUPABASE_SECRET_KEY — the new Supabase API-key scheme's name — and the
+        retired SUPABASE_SERVICE_ROLE_KEY must not linger as a second name for
+        the same credential."""
+        frontend = service_blocks(compose)["frontend"]
+        assert "SUPABASE_URL: ${SUPABASE_URL:?set SUPABASE_URL in .env}" in frontend
+        assert (
+            "SUPABASE_SECRET_KEY: "
+            "${SUPABASE_SECRET_KEY:?set SUPABASE_SECRET_KEY in .env}" in frontend
+        )
+        assert "SUPABASE_SERVICE_ROLE_KEY" not in compose
 
     def test_the_frontend_binds_every_interface(self, compose: str) -> None:
         """The Node adapter defaults to 127.0.0.1, which no published port can

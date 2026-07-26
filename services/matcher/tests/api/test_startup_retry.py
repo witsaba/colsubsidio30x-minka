@@ -26,7 +26,8 @@ from conftest import FakeCatalogueSource, make_cache, make_rows
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
 SENTINEL_SUPABASE_KEY = "sb-secret-DO-NOT-LEAK-8f3a1c7e94b2"
-"""A deliberately unmistakable stand-in for the live `service_role` key.
+"""A deliberately unmistakable stand-in for the live secret key
+(service-role equivalent in the new Supabase API-key scheme).
 
 REQ-API-8 is only testable with a value that cannot appear in output by
 coincidence. A placeholder like `unused` is a substring of ordinary English and
@@ -331,10 +332,11 @@ class TestTheProcessActuallyExitsThree:
         # `raise ... from exc` frame, every adapter repr, every argument the
         # exception carried. If the credential can escape at all, it escapes
         # here. A hit means an operator's logs, a crash reporter, or a support
-        # paste now carries the live `service_role` key.
+        # paste now carries the live secret key.
         for stream, contents in (("stderr", completed.stderr), ("stdout", completed.stdout)):
             assert SENTINEL_SUPABASE_KEY not in contents, (
                 f"SUPABASE_KEY leaked into {stream} of a crashing matcher: the "
-                f"service_role credential bypasses RLS, so anything that reads "
-                f"this process's output now has full database access"
+                f"secret (service-role equivalent) credential bypasses RLS, so "
+                f"anything that reads this process's output now has full "
+                f"database access"
             )

@@ -34,7 +34,8 @@ the real Redis is the `redis` service in the root `docker-compose.yml`.
 - Runtime/language: Python 3.11+ (`requires-python = ">=3.11"` for root/matcher/stt; product_identification
   allows `>=3.10`), managed by **uv** (`uv 0.11.31` observed)
 - Framework: **FastAPI** + **uvicorn** on all three services (STT :8001, matcher :8002, product_identification :8003)
-- Configuration: **pydantic-settings** (matcher: `SUPABASE_URL`/`SUPABASE_KEY`, `REDIS_URL`,
+- Configuration: **pydantic-settings** (matcher: `SUPABASE_URL`/`SUPABASE_KEY` — the in-container name;
+  Compose feeds it from the host's canonical `SUPABASE_SECRET_KEY` — `REDIS_URL`,
   `CATALOGUE_CACHE_TTL_SECONDS`, `MATCH_*` thresholds, `STARTUP_*` retry knobs;
   STT: `STT_VENDOR` and vendor credentials); product_identification uses plain `python-dotenv` + `.env` (Vertex
   AI / Gemini credentials, `USE_VERTEX_AI`, `GOOGLE_CLOUD_*`)
@@ -105,7 +106,8 @@ first, and promoted spike code is covered by characterization tests written befo
 - Product identification local: `uv run python services/product_identification/server.py --port 8003`
 - Whole stack: `./scripts/setup-env.sh` once, then `docker compose up -d` from the repository root
 - Matcher container: `docker compose up -d matcher` (build context is the repo root; no catalogue mount —
-  the catalogue is read from Supabase and cached in `redis`, so `SUPABASE_URL`/`SUPABASE_KEY` must be set)
+  the catalogue is read from Supabase and cached in `redis`, so `SUPABASE_URL`/`SUPABASE_SECRET_KEY` must be
+  set in the root `.env` — Compose maps the secret key into the container's `SUPABASE_KEY`)
 - STT container: `docker compose up -d stt` (port 8001; vendor keys come from the root `.env`)
 - Product identification container: `docker compose up -d product_identification` (port 8003; Vertex AI /
   Gemini credentials come from the root `.env`)

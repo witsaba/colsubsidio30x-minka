@@ -243,6 +243,79 @@ class TestFileSafety:
         assert "--wat" in result.stderr
 
 
+class TestSupabaseCredentialReadiness:
+    """The one credential mistake the running stack cannot report about itself.
+
+    A publishable key in the secret slot makes PostgREST answer 401, and the
+    frontend routes degrade that into an empty list — so the operator is told
+    "no plans assigned" when the truth is "wrong key". This script is the last
+    moment a human is present to hear about it, so it checks the prefix.
+
+    These runs use their own template rather than `.env.example`: the assertions
+    are about the script's readiness check, not about which variables the real
+    template happens to document today.
+    """
+
+    @pytest.fixture
+    def template(self, tmp_path: Path) -> Path:
+        path = tmp_path / ".env.example"
+        path.write_text(
+            "# Supabase secret key (sb_secret_...).\nSUPABASE_SECRET_KEY=\n",
+            encoding="utf-8",
+        )
+        return path
+
+    def run(self, template: Path, env_path: Path, value: str) -> str:
+        result = run_setup(
+            "--defaults",
+            "--template",
+            str(template),
+            "--env-file",
+            str(env_path),
+            env={"SUPABASE_SECRET_KEY": value},
+        )
+        assert result.returncode == 0, result.stderr
+        return result.stdout + result.stderr
+
+    def test_warns_when_the_secret_key_is_missing(
+        self, template: Path, env_path: Path
+    ) -> None:
+        combined = self.run(template, env_path, "")
+        assert "SUPABASE_SECRET_KEY" in combined
+        assert re.search(r"(?i)will not|won't|cannot|crash", combined), (
+            "an operator must learn the stack cannot come up before they run up"
+        )
+
+    def test_names_the_publishable_key_as_the_mistake(
+        self, template: Path, env_path: Path
+    ) -> None:
+        combined = self.run(template, env_path, "sb_publishable_AlWLC8FRFabc123")
+        assert re.search(r"(?i)publishable", combined), (
+            "the warning must name what was pasted, not just what is expected"
+        )
+        assert "sb_secret_" in combined, "and it must say what to paste instead"
+
+    def test_warns_when_the_prefix_is_neither(
+        self, template: Path, env_path: Path
+    ) -> None:
+        """A legacy JWT key is the likely third case, and it will not work."""
+        combined = self.run(template, env_path, "eyJhbGciOiJIUzI1NiIsInR5cCI6Ikp")
+        assert "sb_secret_" in combined
+
+    def test_is_quiet_when_a_real_secret_key_is_present(
+        self, template: Path, env_path: Path
+    ) -> None:
+        combined = self.run(template, env_path, "sb_secret_" + SENTINEL_SECRET)
+        assert "SUPABASE_SECRET_KEY" not in combined
+
+    def test_never_echoes_the_key_it_rejects(
+        self, template: Path, env_path: Path
+    ) -> None:
+        """Warning about a credential must not print the credential."""
+        combined = self.run(template, env_path, "sb_publishable_" + SENTINEL_SECRET)
+        assert SENTINEL_SECRET not in combined
+
+
 class TestReadiness:
     """The script's other job: say whether the stack will actually come up."""
 
@@ -266,7 +339,7 @@ class TestReadiness:
             env={"DEEPGRAM_API_KEY": SENTINEL_SECRET},
         )
         combined = result.stdout + result.stderr
-        assert not re.search(r"(?i)will not|won't boot", combined)
+        assert not re.search(r"(?i)stt.*(will not|won't boot)", combined)
 
     def test_reads_the_active_vendor_rather_than_assuming_deepgram(
         self, env_path: Path
@@ -278,7 +351,7 @@ class TestReadiness:
             env={"STT_VENDOR": "groq", "GROQ_API_KEY": SENTINEL_SECRET},
         )
         combined = result.stdout + result.stderr
-        assert not re.search(r"(?i)will not|won't boot", combined)
+        assert not re.search(r"(?i)stt.*(will not|won't boot)", combined)
 
     def test_every_secret_named_in_the_template_is_treated_as_one(self) -> None:
         """Regression guard: the script's masking is name-driven, so a new

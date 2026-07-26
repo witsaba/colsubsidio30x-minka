@@ -33,6 +33,17 @@ SECRET_ENV = (
     "ELEVENLABS_API_KEY",
 )
 
+#: Pinned Supabase values the `rendered` fixture writes into its env file.
+#: The frontend's interpolations are `:?`-required, so rendering needs values
+#: at all; pinning them here — instead of inheriting whatever the developer's
+#: shell happens to export — keeps every assertion below deterministic, and
+#: lets the matcher test prove its `SUPABASE_KEY` is sourced from the host's
+#: `SUPABASE_SECRET_KEY` rather than merely being non-empty.
+SUPABASE_FIXTURE_ENV = {
+    "SUPABASE_URL": "https://fixture.supabase.co",
+    "SUPABASE_SECRET_KEY": "sb_secret_fixture",
+}
+
 #: `{service: published host port}` — the whole stack, in one place, so a new
 #: service is one line here and every contract below covers it.
 SERVICE_PORTS = {
@@ -68,13 +79,19 @@ def compose_config(*extra: str, env: dict[str, str] | None = None):
 
 @pytest.fixture(scope="module")
 def rendered(tmp_path_factory: pytest.TempPathFactory) -> dict:
-    """The file as Compose resolves it, isolated from any local `.env`."""
-    empty_env = tmp_path_factory.mktemp("env") / "empty.env"
-    empty_env.write_text("", encoding="utf-8")
+    """The file as Compose resolves it, isolated from any local `.env` AND
+    from the caller's shell: Compose gives an exported variable precedence
+    over the env file, so the `SUPABASE_*` exports a developer (or CI) may
+    carry are stripped and only the pinned fixture values can be resolved."""
+    env_file = tmp_path_factory.mktemp("env") / "fixture.env"
+    env_file.write_text(
+        "".join(f"{name}={value}\n" for name, value in SUPABASE_FIXTURE_ENV.items()),
+        encoding="utf-8",
+    )
     result = subprocess.run(
         [
             "docker", "compose",
-            "--env-file", str(empty_env),
+            "--env-file", str(env_file),
             "-f", str(COMPOSE_PATH),
             "config", "--format", "json",
         ],
@@ -82,7 +99,7 @@ def rendered(tmp_path_factory: pytest.TempPathFactory) -> dict:
         capture_output=True,
         text=True,
         env={key: value for key, value in os.environ.items()
-             if key not in SECRET_ENV},
+             if key not in SECRET_ENV and not key.startswith("SUPABASE_")},
     )
     assert result.returncode == 0, result.stderr
     return json.loads(result.stdout)
@@ -129,10 +146,14 @@ class TestRenderedContract:
         self, rendered: dict
     ) -> None:
         environment = rendered["services"]["matcher"]["environment"]
-        # Rendered against an empty env file, so the secret resolves to blank
-        # and the two cache knobs to their reviewed defaults.
-        assert environment["SUPABASE_URL"] == ""
-        assert environment["SUPABASE_KEY"] == ""
+        # The container variable stays SUPABASE_KEY (the matcher reads it),
+        # but it must resolve to the host's SUPABASE_SECRET_KEY — the pinned
+        # fixture secret appearing here is the proof of that sourcing.
+        assert environment["SUPABASE_URL"] == SUPABASE_FIXTURE_ENV["SUPABASE_URL"]
+        assert (
+            environment["SUPABASE_KEY"]
+            == SUPABASE_FIXTURE_ENV["SUPABASE_SECRET_KEY"]
+        )
         assert environment["REDIS_URL"] == "redis://redis:6379/0"
         assert environment["CATALOGUE_CACHE_TTL_SECONDS"] == "10800"
 
@@ -165,6 +186,20 @@ class TestRenderedContract:
         )
         assert environment["HOST"] == "0.0.0.0"
         assert str(environment["PORT"]) == "4321"
+
+    def test_the_frontend_renders_the_secret_from_the_host_variable(
+        self, rendered: dict
+    ) -> None:
+        """The container variable is SUPABASE_SECRET_KEY, resolved from the
+        host's SUPABASE_SECRET_KEY; the retired SUPABASE_SERVICE_ROLE_KEY name
+        must not resurface in the rendered contract."""
+        environment = rendered["services"]["frontend"]["environment"]
+        assert environment["SUPABASE_URL"] == SUPABASE_FIXTURE_ENV["SUPABASE_URL"]
+        assert (
+            environment["SUPABASE_SECRET_KEY"]
+            == SUPABASE_FIXTURE_ENV["SUPABASE_SECRET_KEY"]
+        )
+        assert "SUPABASE_SERVICE_ROLE_KEY" not in environment
 
     @pytest.mark.parametrize("name", sorted(EXPECTED_SERVICES))
     def test_no_service_waits_for_the_other(

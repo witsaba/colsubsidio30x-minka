@@ -48,7 +48,7 @@ The repository root SHALL contain exactly one Compose file named `docker-compose
 
 ### Requirement: Preserved per-service deployment contracts (REQ-UCD-3)
 
-The root Compose SHALL preserve, unchanged, the contracts that each service already depends on: STT's build context `./services/stt` with its own `Dockerfile`; matcher's build context `.` (repository root) with `dockerfile: services/matcher/Dockerfile`; every existing environment-variable name and documented default already present for STT (vendor keys with empty defaults, `STT_VENDOR`, `STT_ELEVENLABS_MODEL`, `STT_LANGUAGE`, `STT_MODEL`, `STT_NUMERALS`, `STT_MIP_OPT_OUT`, `STT_CONFIDENCE_FLOOR`, `STT_MIN_SPEECH_MS`, `STT_MAX_UPLOAD_BYTES`, `STT_VENDOR_TIMEOUT_S`, `STT_RETRY_ATTEMPTS`, `STT_RETRY_BACKOFF_S`, `STT_FALLBACK_ENABLED`, `STT_FALLBACK_VENDOR`, `STT_TOTAL_DEADLINE_S`, `LOG_LEVEL`) and for the matcher (`SUPABASE_URL`, `SUPABASE_KEY`, `REDIS_URL`, `CATALOGUE_CACHE_TTL_SECONDS=10800`, `MATCH_ACCEPT_SCORE=0.50`, `MATCH_AMBIGUITY_MARGIN=0.08`, `MATCH_TSR_MARGIN=0.08`, `MATCH_MAX_CANDIDATES=5`, `MATCH_UNIT_RERANK=true`, `STARTUP_RETRIES=3`, `STARTUP_RETRY_DELAY_SECONDS=2.0`); each service's healthcheck against its `GET /health` endpoint (`http://localhost:<port>/health`); each service's `restart: unless-stopped`. The matcher SHALL declare no `./data` volume and no `CATALOGUE_DB` variable.
+The root Compose SHALL preserve, unchanged, the contracts that each service already depends on: STT's build context `./services/stt` with its own `Dockerfile`; matcher's build context `.` (repository root) with `dockerfile: services/matcher/Dockerfile`; every existing environment-variable name and documented default already present for STT (vendor keys with empty defaults, `STT_VENDOR`, `STT_ELEVENLABS_MODEL`, `STT_LANGUAGE`, `STT_MODEL`, `STT_NUMERALS`, `STT_MIP_OPT_OUT`, `STT_CONFIDENCE_FLOOR`, `STT_MIN_SPEECH_MS`, `STT_MAX_UPLOAD_BYTES`, `STT_VENDOR_TIMEOUT_S`, `STT_RETRY_ATTEMPTS`, `STT_RETRY_BACKOFF_S`, `STT_FALLBACK_ENABLED`, `STT_FALLBACK_VENDOR`, `STT_TOTAL_DEADLINE_S`, `LOG_LEVEL`) and for the matcher (`SUPABASE_URL`, `SUPABASE_KEY` — interpolated from the host's canonical `SUPABASE_SECRET_KEY` — `REDIS_URL`, `CATALOGUE_CACHE_TTL_SECONDS=10800`, `MATCH_ACCEPT_SCORE=0.50`, `MATCH_AMBIGUITY_MARGIN=0.08`, `MATCH_TSR_MARGIN=0.08`, `MATCH_MAX_CANDIDATES=5`, `MATCH_UNIT_RERANK=true`, `STARTUP_RETRIES=3`, `STARTUP_RETRY_DELAY_SECONDS=2.0`); each service's healthcheck against its `GET /health` endpoint (`http://localhost:<port>/health`); each service's `restart: unless-stopped`. The matcher SHALL declare no `./data` volume and no `CATALOGUE_DB` variable.
 
 #### Scenario: STT service preserves its build context
 
@@ -66,7 +66,7 @@ The root Compose SHALL preserve, unchanged, the contracts that each service alre
 
 - GIVEN the root Compose
 - WHEN its `environment` block is inspected for every variable
-- THEN vendor secret values and `SUPABASE_KEY` resolve to empty strings (`${VAR:-}`) or documented defaults — no committed credential string is present
+- THEN vendor secret values and `SUPABASE_KEY` (interpolated from `${SUPABASE_SECRET_KEY:-}`) resolve to empty strings (`${VAR:-}`) or documented defaults — no committed credential string is present
 
 ### Requirement: Independent services with no startup ordering (REQ-UCD-4)
 
@@ -118,7 +118,7 @@ The project SHALL ship daemon-free validation that proves the root Compose file 
 
 #### Scenario: Secret-leak guard rejects committed credentials
 
-- GIVEN a hypothetical committed file under the root Compose tree containing `SUPABASE_KEY=<real-looking-key>` (or `DEEPGRAM_API_KEY=<real-looking-key>`)
+- GIVEN a hypothetical committed file under the root Compose tree containing `SUPABASE_SECRET_KEY=<real-looking-key>` (or `DEEPGRAM_API_KEY=<real-looking-key>`)
 - WHEN the secret-leak validation runs against the working tree
 - THEN it fails with a message naming the offending variable
 
@@ -258,7 +258,7 @@ ports while appearing unrelated to `docker compose ps` at the root.
 
 ### Requirement: Redis service as a soft dependency (REQ-UCD-12)
 
-The root Compose SHALL declare a `redis` service. No service SHALL declare `depends_on` on `redis`, and `redis` SHALL declare `depends_on` on no service — the independence promise of REQ-UCD-4 extends to it, with the documented nuance that Redis is a soft cache dependency of the matcher. `SUPABASE_URL`, `SUPABASE_KEY`, `REDIS_URL`, and `CATALOGUE_CACHE_TTL_SECONDS` SHALL flow through `.env.example` → `scripts/setup-env.sh` → `docker-compose.yml` interpolation; `SUPABASE_KEY` SHALL be treated as a secret by the setup script (no echo, blank committed default).
+The root Compose SHALL declare a `redis` service. No service SHALL declare `depends_on` on `redis`, and `redis` SHALL declare `depends_on` on no service — the independence promise of REQ-UCD-4 extends to it, with the documented nuance that Redis is a soft cache dependency of the matcher. `SUPABASE_URL`, `SUPABASE_SECRET_KEY` (interpolated into the container's `SUPABASE_KEY`), `REDIS_URL`, and `CATALOGUE_CACHE_TTL_SECONDS` SHALL flow through `.env.example` → `scripts/setup-env.sh` → `docker-compose.yml` interpolation; `SUPABASE_SECRET_KEY` SHALL be treated as a secret by the setup script (no echo, blank committed default).
 
 #### Scenario: Redis service present without coupling
 
@@ -270,7 +270,7 @@ The root Compose SHALL declare a `redis` service. No service SHALL declare `depe
 
 - GIVEN `.env.example`, `scripts/setup-env.sh`, and the root Compose
 - WHEN each is inspected
-- THEN `SUPABASE_URL`, `SUPABASE_KEY`, `REDIS_URL`, and `CATALOGUE_CACHE_TTL_SECONDS` are documented in `.env.example`, picked up by the script per REQ-UCD-10, and interpolated into the matcher's environment — with no committed credential value
+- THEN `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `REDIS_URL`, and `CATALOGUE_CACHE_TTL_SECONDS` are documented in `.env.example`, picked up by the script per REQ-UCD-10, and interpolated into the matcher's environment (the container reads the secret key as `SUPABASE_KEY`) — with no committed credential value
 
 #### Scenario: Matcher healthy with Redis stopped
 

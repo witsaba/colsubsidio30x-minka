@@ -89,10 +89,10 @@ class TestPlan:
         stt does. Without this gate the stage does not merely fail: it calls
         `docker compose up` on a service that cannot boot, recreating whatever
         container was already running."""
-        result = run_smoke("--plan", "matcher", env={"SUPABASE_KEY": ""})
+        result = run_smoke("--plan", "matcher", env={"SUPABASE_SECRET_KEY": ""})
         combined = result.stdout + result.stderr
         assert re.search(r"(?i)skip.*matcher", combined), combined
-        assert "SUPABASE_KEY" in combined
+        assert "SUPABASE_SECRET_KEY" in combined
 
     def test_it_does_not_skip_the_matcher_once_supabase_is_configured(
         self,
@@ -102,7 +102,7 @@ class TestPlan:
             "matcher",
             env={
                 "SUPABASE_URL": "https://project.supabase.co",
-                "SUPABASE_KEY": "present",
+                "SUPABASE_SECRET_KEY": "present",
             },
         )
         assert not re.search(r"(?i)skip.*matcher", result.stdout + result.stderr)
@@ -111,7 +111,9 @@ class TestPlan:
         """Both halves are required, and the reason must say which is missing
         rather than reporting a generic misconfiguration."""
         result = run_smoke(
-            "--plan", "matcher", env={"SUPABASE_URL": "", "SUPABASE_KEY": "present"}
+            "--plan",
+            "matcher",
+            env={"SUPABASE_URL": "", "SUPABASE_SECRET_KEY": "present"},
         )
         combined = result.stdout + result.stderr
         assert re.search(r"(?i)skip.*matcher", combined), combined
@@ -154,8 +156,8 @@ class TestDaemonGate:
     reason="no reachable Docker daemon; the daemon-free contracts still ran",
 )
 @pytest.mark.skipif(
-    not (os.environ.get("SUPABASE_URL") and os.environ.get("SUPABASE_KEY")),
-    reason="SUPABASE_URL/SUPABASE_KEY are not exported; the matcher cannot "
+    not (os.environ.get("SUPABASE_URL") and os.environ.get("SUPABASE_SECRET_KEY")),
+    reason="SUPABASE_URL/SUPABASE_SECRET_KEY are not exported; the matcher cannot "
     "load its catalogue, and starting it would recreate a running container "
     "into a crash loop (REQ-UCD-7: skip with a named reason)",
 )
