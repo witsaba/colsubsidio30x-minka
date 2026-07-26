@@ -56,6 +56,40 @@ export interface Db {
   from<T = DbRow>(table: string): DbQuery<T>;
 }
 
+/**
+ * Raised when the database could not answer at all — a bad key, a dropped
+ * connection, an RLS denial, an unknown column.
+ *
+ * It is an exception rather than a returned union on purpose. supabase-js does
+ * NOT throw: it resolves `{data: null, error}`, so `const { data } = await query`
+ * type-checks, runs, and turns every one of those failures into `null`, which
+ * routes then read as `?? []`. That is not a hypothetical — with a bad service
+ * key `GET /api/plans` answered `200 []`, and the operator's screen said "No
+ * tienes conteos asignados hoy." A returned union would have the same failure
+ * mode as the bug: it can be ignored at the call site. This cannot.
+ */
+export class DbUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DbUnavailableError';
+  }
+}
+
+/**
+ * Unwrap a Supabase result: return `data`, or refuse when the query FAILED.
+ *
+ * Every read in `pages/api/**` goes through this. `null` is passed through
+ * deliberately — `maybeSingle()` uses it to mean "no such row", which several
+ * routes turn into a real answer (a 404, a `null` theoretical stock that must
+ * stay null rather than become 0, a plan whose warehouse has no code). Absence
+ * of a row and inability to ask are two different facts, and this helper's whole
+ * job is to stop them being flattened into one.
+ */
+export function dataOrThrow<T>(result: DbResult<T>): T | null {
+  if (result.error) throw new DbUnavailableError(result.error.message);
+  return result.data;
+}
+
 /** Minimal shape of the supabase-js client this adapter needs. */
 interface SupabaseLike {
   from(table: string): unknown;

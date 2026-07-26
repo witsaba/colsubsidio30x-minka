@@ -10,13 +10,17 @@
  * operator with no assignments must get `[]`. Listing every plan and filtering
  * afterwards would be one forgotten `filter()` away from disclosing the whole
  * audit programme.
+ *
+ * That `[]` is a CLAIM, so every read goes through `dataOrThrow`: an unanswerable
+ * query becomes a 502, never the same empty list an unassigned operator gets.
+ * `PlansScreen` distinguishes the two; this route now does too.
  */
 import type { APIRoute } from 'astro';
 
 import { supabase } from './_supabase';
-import { supabaseDb } from '../../lib/server/db';
+import { dataOrThrow, supabaseDb } from '../../lib/server/db';
 import type { Db } from '../../lib/server/db';
-import { badRequest, json } from '../../lib/server/http';
+import { badRequest, json, respondingToDbFailure } from '../../lib/server/http';
 
 export const prerender = false;
 
@@ -33,47 +37,52 @@ export async function handlePlans(db: Db, request: Request): Promise<Response> {
   const operatorId = new URL(request.url).searchParams.get('operator');
   if (!operatorId) return badRequest('Falta el parámetro operator.');
 
-  const { data: assignments } = await db
-    .from('plan_operators')
-    .select('plan_id')
-    .eq('profile_id', operatorId);
+  return respondingToDbFailure(async () => {
+    const assignments = dataOrThrow(
+      await db.from('plan_operators').select('plan_id').eq('profile_id', operatorId),
+    );
 
-  const planIds = (assignments ?? []).map((row) => row.plan_id);
-  // No assignment, no query: the operator sees nothing, and the database is
-  // never asked a question whose answer could be a full listing.
-  if (planIds.length === 0) return json([]);
+    const planIds = (assignments ?? []).map((row) => row.plan_id);
+    // No assignment, no query: the operator sees nothing, and the database is
+    // never asked a question whose answer could be a full listing. This `[]` now
+    // means only what it says — a failed lookup never reaches here.
+    if (planIds.length === 0) return json([]);
 
-  const { data: plans } = await db
-    .from('audit_plans')
-    .select('id, name, status, warehouse_id')
-    .in('id', planIds)
-    .eq('status', ACTIVE);
+    const plans = dataOrThrow(
+      await db
+        .from('audit_plans')
+        .select('id, name, status, warehouse_id')
+        .in('id', planIds)
+        .eq('status', ACTIVE),
+    );
 
-  const rows = plans ?? [];
+    const rows = plans ?? [];
 
-  // `audit_plans` has no `catalogue_id` column; the catalogue vocabulary IS
-  // `warehouses.code` (change `redis-catalogue-cache`). One batched lookup
-  // over the distinct warehouses, not one query per plan.
-  const warehouseIds = [...new Set(rows.map((plan) => String(plan.warehouse_id)))];
-  const { data: warehouses } =
-    warehouseIds.length > 0
-      ? await db.from('warehouses').select('id, code').in('id', warehouseIds)
-      : { data: [] as Array<{ id: unknown; code: unknown }> };
-  const codeByWarehouseId = new Map(
-    (warehouses ?? []).map((warehouse) => [String(warehouse.id), warehouse.code]),
-  );
+    // `audit_plans` has no `catalogue_id` column; the catalogue vocabulary IS
+    // `warehouses.code` (change `redis-catalogue-cache`). One batched lookup
+    // over the distinct warehouses, not one query per plan.
+    const warehouseIds = [...new Set(rows.map((plan) => String(plan.warehouse_id)))];
+    const warehouses = warehouseIds.length
+      ? dataOrThrow(await db.from('warehouses').select('id, code').in('id', warehouseIds))
+      : [];
+    const codeByWarehouseId = new Map(
+      (warehouses ?? []).map((warehouse) => [String(warehouse.id), warehouse.code]),
+    );
 
-  const summaries: PlanSummary[] = rows.map((plan) => {
-    const code = codeByWarehouseId.get(String(plan.warehouse_id));
-    return {
-      id: String(plan.id),
-      name: String(plan.name ?? ''),
-      warehouseId: String(plan.warehouse_id),
-      catalogueId: typeof code === 'string' ? code : null,
-    };
+    const summaries: PlanSummary[] = rows.map((plan) => {
+      // A warehouse with no row is a real absence — the plan still ships with a
+      // null catalogue. Only an ERRORING lookup is a failure.
+      const code = codeByWarehouseId.get(String(plan.warehouse_id));
+      return {
+        id: String(plan.id),
+        name: String(plan.name ?? ''),
+        warehouseId: String(plan.warehouse_id),
+        catalogueId: typeof code === 'string' ? code : null,
+      };
+    });
+
+    return json(summaries);
   });
-
-  return json(summaries);
 }
 
 export const GET: APIRoute = ({ request }) => handlePlans(supabaseDb(supabase()), request);

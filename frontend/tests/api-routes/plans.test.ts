@@ -21,8 +21,9 @@ function request(query: string): Request {
   return new Request(`http://localhost:4321/api/plans${query}`);
 }
 
-function db() {
+function db(options: { errors?: Record<string, string> } = {}) {
   return createStubDb({
+    errors: options.errors,
     tables: {
       audit_plans: [
         { id: 'plan-1', status: 'active', name: 'Bodega A y B', warehouse_id: 'wh-1' },
@@ -120,5 +121,57 @@ describe('GET /api/plans', () => {
 
     const assignment = stub.calls.find((call) => call.table === 'plan_operators');
     expect(assignment?.filters).toContainEqual({ column: 'profile_id', value: 'op-1' });
+  });
+});
+
+/**
+ * "No tienes conteos asignados hoy." vs "we could not ask" — `PlansScreen` keeps
+ * loading, error and ready as three distinct states precisely because those are
+ * three distinct facts. supabase-js does NOT throw on a failed request; it
+ * resolves `{data: null, error}`, so a route that reads only `data` turns a bad
+ * key, a dropped connection or an RLS denial into a 200 with `[]` — the screen
+ * then asserts, in the operator's own words, that they have no work today.
+ *
+ * Every one of these three lookups must therefore be able to fail LOUDLY.
+ */
+describe('GET /api/plans — a failed query is never an empty assignment list', () => {
+  it('answers 502 when the assignment lookup fails', async () => {
+    const stub = db({ errors: { 'select:plan_operators': 'JWT expired' } });
+
+    const response = await handlePlans(stub, request('?operator=op-1'));
+
+    expect(response.status).toBe(502);
+    // Spanish, tú-form, and it says what happened — the same register as
+    // `PlansScreen`'s own "No pudimos cargar tus conteos asignados." It must
+    // never read as "you have no assignments".
+    expect(await response.json()).toEqual({
+      error: {
+        code: 'db_unavailable',
+        message: 'No pudimos consultar la base de datos. Intenta otra vez.',
+      },
+    });
+  });
+
+  it('answers 502 when the plan lookup fails', async () => {
+    const stub = db({ errors: { 'select:audit_plans': 'connection reset' } });
+
+    const response = await handlePlans(stub, request('?operator=op-1'));
+
+    expect(response.status).toBe(502);
+  });
+
+  it('answers 502 when the warehouse lookup fails, rather than a null catalogue', async () => {
+    const stub = db({ errors: { 'select:warehouses': 'permission denied' } });
+
+    const response = await handlePlans(stub, request('?operator=op-1'));
+
+    expect(response.status).toBe(502);
+  });
+
+  it('still answers 200 with [] for an operator who genuinely has no assignment', async () => {
+    const response = await handlePlans(db(), request('?operator=nobody'));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([]);
   });
 });

@@ -13,7 +13,7 @@
 import type { APIRoute } from 'astro';
 
 import { supabase } from '../_supabase';
-import { supabaseDb } from '../../../lib/server/db';
+import { dataOrThrow, supabaseDb } from '../../../lib/server/db';
 import type { Db } from '../../../lib/server/db';
 import {
   badRequest,
@@ -22,6 +22,7 @@ import {
   optionalString,
   readJsonBody,
   requireString,
+  respondingToDbFailure,
   serverError,
 } from '../../../lib/server/http';
 
@@ -90,74 +91,81 @@ export async function handleAuditorAction(db: Db, request: Request): Promise<Res
   if (!auditorId || !recordId || !action) return badRequest('Faltan auditorId, recordId o action.');
   if (!isAction(action)) return badRequest(`Acción no reconocida: ${action}.`);
 
-  const { data: record } = await db
-    .from('count_records')
-    // `plan_id`/`product_id` are read here, not asked of the client: they are
-    // NOT NULL on `recount_requests` and the stored row is the only trustworthy
-    // source for them.
-    .select('id, plan_id, product_id, quantity, unit_code')
-    .eq('id', recordId)
-    .maybeSingle();
-  if (!record) return failure(404, 'not_found', 'El registro no existe.');
+  return respondingToDbFailure(async () => {
+    // A failed lookup read as "no such row" answered 404 — telling the auditor
+    // their record vanished — when the truth is that the trail could not be
+    // written at all. `null` still means the record genuinely does not exist.
+    const record = dataOrThrow(
+      await db
+        .from('count_records')
+        // `plan_id`/`product_id` are read here, not asked of the client: they are
+        // NOT NULL on `recount_requests` and the stored row is the only trustworthy
+        // source for them.
+        .select('id, plan_id, product_id, quantity, unit_code')
+        .eq('id', recordId)
+        .maybeSingle(),
+    );
+    if (!record) return failure(404, 'not_found', 'El registro no existe.');
 
-  // The "previous" side is read from the STORED row, never from the request:
-  // the trail must record what was actually there, not what the client believed.
-  const previousQuantity = Number(record.quantity);
-  const previousUnitCode = record.unit_code ?? null;
-  const newQuantity = typeof body.newQuantity === 'number' ? body.newQuantity : previousQuantity;
-  const newUnitCode = optionalString(body, 'newUnitCode') ?? previousUnitCode;
-  const note = optionalString(body, 'note');
+    // The "previous" side is read from the STORED row, never from the request:
+    // the trail must record what was actually there, not what the client believed.
+    const previousQuantity = Number(record.quantity);
+    const previousUnitCode = record.unit_code ?? null;
+    const newQuantity = typeof body.newQuantity === 'number' ? body.newQuantity : previousQuantity;
+    const newUnitCode = optionalString(body, 'newUnitCode') ?? previousUnitCode;
+    const note = optionalString(body, 'note');
 
-  const { data: created, error } = await db
-    .from('auditor_actions')
-    // Column names are the LIVE ones (`actor_id`, `reason`), which deliberately
-    // differ from this route's request-body names (`auditorId`, `note`). The
-    // wire contract belongs to the client; these belong to Postgres.
-    .insert({
-      record_id: recordId,
-      actor_id: auditorId,
-      action,
-      previous_quantity: previousQuantity,
-      new_quantity: newQuantity,
-      previous_unit_code: previousUnitCode,
-      new_unit_code: newUnitCode,
-      reason: note,
-    })
-    .select()
-    .single();
-
-  if (error || !created) {
-    return serverError(`No se pudo registrar la acción: ${error?.message ?? 'sin datos'}`);
-  }
-
-  if (action === 'request_recount') {
-    const { error: recountError } = await db
-      .from('recount_requests')
+    const { data: created, error } = await db
+      .from('auditor_actions')
+      // Column names are the LIVE ones (`actor_id`, `reason`), which deliberately
+      // differ from this route's request-body names (`auditorId`, `note`). The
+      // wire contract belongs to the client; these belong to Postgres.
       .insert({
         record_id: recordId,
-        plan_id: record.plan_id,
-        product_id: record.product_id,
-        requested_by: auditorId,
-        // `recount_status` is requested|in_progress|done|cancelled. It is NOT
-        // the `record_anomalies` vocabulary, and the free text column here is
-        // `note`, not `reason` — the opposite of `auditor_actions` above.
-        status: 'requested',
-        note,
+        actor_id: auditorId,
+        action,
+        previous_quantity: previousQuantity,
+        new_quantity: newQuantity,
+        previous_unit_code: previousUnitCode,
+        new_unit_code: newUnitCode,
+        reason: note,
       })
-      .select();
-    if (recountError) {
-      return serverError(`No se pudo crear la solicitud de reconteo: ${recountError.message}`);
-    }
-  }
+      .select()
+      .single();
 
-  if (SETTLING_ACTIONS.has(action)) {
-    const settleError = await settleRecord(db, recordId, auditorId, note);
-    if (settleError) {
-      return serverError(`No se pudo cerrar el registro: ${settleError}`);
+    if (error || !created) {
+      return serverError(`No se pudo registrar la acción: ${error?.message ?? 'sin datos'}`);
     }
-  }
 
-  return json({ id: created.id, action }, 201);
+    if (action === 'request_recount') {
+      const { error: recountError } = await db
+        .from('recount_requests')
+        .insert({
+          record_id: recordId,
+          plan_id: record.plan_id,
+          product_id: record.product_id,
+          requested_by: auditorId,
+          // `recount_status` is requested|in_progress|done|cancelled. It is NOT
+          // the `record_anomalies` vocabulary, and the free text column here is
+          // `note`, not `reason` — the opposite of `auditor_actions` above.
+          status: 'requested',
+          note,
+        })
+        .select();
+      if (recountError) {
+        return serverError(`No se pudo crear la solicitud de reconteo: ${recountError.message}`);
+      }
+    }
+
+    if (SETTLING_ACTIONS.has(action)) {
+      const settleError = await settleRecord(db, recordId, auditorId, note);
+      if (settleError) {
+        return serverError(`No se pudo cerrar el registro: ${settleError}`);
+      }
+    }
+
+    return json({ id: created.id, action }, 201);
+  });
 }
 
 export const POST: APIRoute = ({ request }) => handleAuditorAction(supabaseDb(supabase()), request);

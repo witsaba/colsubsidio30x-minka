@@ -302,3 +302,63 @@ describe('POST /api/export — item and counter fall back exactly like the view'
     expect(line.counter).toBeNull();
   });
 });
+
+/**
+ * REQ-OE-2 says the file must be reconcilable. A read that failed silently is
+ * the one way to produce an UNRECONCILABLE file that still looks valid: an
+ * erroring `count_records` query became `[]`, `buildExportLines` had nothing to
+ * exclude, and the auditor downloaded a well-formed CSV with zero lines plus a
+ * persisted batch claiming `record_count: 0`. Oracle then reconciles a plan
+ * against nothing at all.
+ *
+ * These reads must refuse BEFORE any batch row exists.
+ */
+describe('POST /api/export — a failed read never produces a reconcilable-looking file', () => {
+  async function attempt(errors: Record<string, string>) {
+    const db = exportDb({ errors });
+    const response = await handleExport(db, request());
+    return { db, response };
+  }
+
+  it('answers 502 when the plan lookup fails, not 400 "el plan no existe"', async () => {
+    const { db, response } = await attempt({ 'select:audit_plans': 'JWT expired' });
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({ error: { code: 'db_unavailable' } });
+    expect(db.rows('export_batches')).toEqual([]);
+  });
+
+  it('answers 502 when the count_records read fails, never an empty CSV', async () => {
+    const { db, response } = await attempt({ 'select:count_records': 'connection reset' });
+
+    expect(response.status).toBe(502);
+    expect(response.headers.get('content-type')).toContain('application/json');
+    expect(db.rows('export_batches')).toEqual([]);
+    expect(db.rows('export_lines')).toEqual([]);
+  });
+
+  it('answers 502 when the open-anomaly read fails, never an export that skips the check', async () => {
+    const { db, response } = await attempt({ 'select:record_anomalies': 'permission denied' });
+
+    expect(response.status).toBe(502);
+    expect(db.rows('export_lines')).toEqual([]);
+  });
+
+  it('answers 502 when the warehouse lookup fails, rather than a blank subinventory', async () => {
+    const { response } = await attempt({ 'select:warehouses': 'connection reset' });
+
+    expect(response.status).toBe(502);
+  });
+
+  it('answers 502 when the product lookup fails, rather than blank item codes', async () => {
+    const { response } = await attempt({ 'select:products': 'connection reset' });
+
+    expect(response.status).toBe(502);
+  });
+
+  it('answers 502 when the counter lookup fails, rather than a null counter', async () => {
+    const { response } = await attempt({ 'select:profiles': 'connection reset' });
+
+    expect(response.status).toBe(502);
+  });
+});

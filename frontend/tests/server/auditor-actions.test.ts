@@ -154,6 +154,25 @@ describe('POST /api/auditor/actions', () => {
     expect(response.status).toBeGreaterThanOrEqual(500);
     expect(stub.rows('auditor_actions')).toEqual([]);
   });
+
+  /**
+   * The route reads the PREVIOUS quantity and unit from the stored row precisely
+   * so the trail records what was there. A failed lookup read as "no such row"
+   * answered 404 — telling the auditor their record vanished — when the truth is
+   * that the trail could not be written at all.
+   */
+  it('answers 502, not 404, when the record lookup itself fails', async () => {
+    const stub = createStubDb({
+      errors: { 'select:count_records': 'JWT expired' },
+      tables: { count_records: [{ id: 'rec-1', plan_id: 'plan-1', quantity: 90, unit_code: 'KG' }] },
+    });
+
+    const response = await handleAuditorAction(stub, request({ action: 'approve' }));
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({ error: { code: 'db_unavailable' } });
+    expect(stub.rows('auditor_actions')).toEqual([]);
+  });
 });
 
 /**

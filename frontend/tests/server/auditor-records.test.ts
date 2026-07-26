@@ -14,8 +14,9 @@ import { describe, expect, it } from 'vitest';
 import { handleAuditorRecords, prerender } from '../../src/pages/api/auditor/records';
 import { createStubDb } from './stub-db';
 
-function db() {
+function db(options: { errors?: Record<string, string> } = {}) {
   return createStubDb({
+    errors: options.errors,
     tables: {
       count_records: [
         {
@@ -188,5 +189,68 @@ describe('GET /api/auditor/records', () => {
 
     expect(response.status).toBe(400);
     expect(stub.calls).toEqual([]);
+  });
+});
+
+/**
+ * `AuditorReview`'s LOAD_ERROR_NOTE ("No pudimos cargar los registros de este
+ * plan.") exists as a state of its own. An erroring query that resolves
+ * `{data: null, error}` used to become `[]` and reach the dashboard as an empty
+ * feed — "nothing was counted", which is not the same claim at all.
+ *
+ * Every one of the six lookups is covered: the joins are what make a record
+ * legible, and a silently missing join produced a record with no article name,
+ * no anomaly badge and no trail while looking perfectly ordinary.
+ */
+describe('GET /api/auditor/records — a failed query is never an empty feed', () => {
+  async function statusFor(errors: Record<string, string>) {
+    const response = await handleAuditorRecords(
+      db({ errors }),
+      new Request('http://localhost:4321/api/auditor/records?plan=plan-1'),
+    );
+    return response.status;
+  }
+
+  it('answers 502 when the count_records read fails', async () => {
+    expect(await statusFor({ 'select:count_records': 'JWT expired' })).toBe(502);
+  });
+
+  it('answers 502 when the anomaly read fails, rather than dropping every badge', async () => {
+    expect(await statusFor({ 'select:record_anomalies': 'connection reset' })).toBe(502);
+  });
+
+  it('answers 502 when the product read fails, rather than blank article names', async () => {
+    expect(await statusFor({ 'select:products': 'connection reset' })).toBe(502);
+  });
+
+  it('answers 502 when the stock-balance read fails, rather than a null systemQty', async () => {
+    expect(await statusFor({ 'select:warehouse_stock_balances': 'permission denied' })).toBe(502);
+  });
+
+  it('answers 502 when the auditor_actions read fails, rather than an empty trail', async () => {
+    expect(await statusFor({ 'select:auditor_actions': 'connection reset' })).toBe(502);
+  });
+
+  it('answers 502 when the signing-profile read fails, rather than an anonymous trail', async () => {
+    expect(await statusFor({ 'select:profiles': 'permission denied' })).toBe(502);
+  });
+
+  it('names the failure with the shared db_unavailable code', async () => {
+    const response = await handleAuditorRecords(
+      db({ errors: { 'select:count_records': 'JWT expired' } }),
+      new Request('http://localhost:4321/api/auditor/records?plan=plan-1'),
+    );
+
+    expect(await response.json()).toMatchObject({ error: { code: 'db_unavailable' } });
+  });
+
+  it('still answers 200 with [] for a plan nobody has counted yet', async () => {
+    const response = await handleAuditorRecords(
+      db(),
+      new Request('http://localhost:4321/api/auditor/records?plan=plan-vacio'),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([]);
   });
 });

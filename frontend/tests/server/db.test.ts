@@ -12,7 +12,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { supabaseDb } from '../../src/lib/server/db';
+import { DbUnavailableError, dataOrThrow, supabaseDb } from '../../src/lib/server/db';
 import { createStubDb } from './stub-db';
 
 describe('stub Db satisfies the query surface routes use', () => {
@@ -86,6 +86,52 @@ describe('stub Db satisfies the query surface routes use', () => {
     expect(strict.error?.message).toMatch(/no rows/i);
     expect(lenient.data).toBeNull();
     expect(lenient.error).toBeNull();
+  });
+});
+
+/**
+ * `dataOrThrow` — the unwrapper the routes read every result through.
+ *
+ * It exists because supabase-js signals failure in the RESOLVED value, so
+ * `const { data } = await query` is valid TypeScript that compiles, runs, and
+ * silently converts a 401, a dropped connection or an RLS denial into `null`.
+ * Reading `data` through a function that cannot return on error removes the
+ * option of forgetting: there is no `error` field left at the call site to skip.
+ *
+ * The `null` passthrough is deliberate and load-bearing. `maybeSingle()` uses
+ * `null` to mean "no such row", which several routes translate into a real
+ * answer (a 404, a `null` stock figure, an empty catalogue code). Collapsing
+ * absence into a failure would break those as surely as the bug it replaces.
+ */
+describe('dataOrThrow', () => {
+  it('returns the rows of a successful result', () => {
+    expect(dataOrThrow({ data: [{ id: 'rec-1' }], error: null })).toEqual([{ id: 'rec-1' }]);
+  });
+
+  it('returns an empty list unchanged — a real empty result is an answer', () => {
+    expect(dataOrThrow({ data: [], error: null })).toEqual([]);
+  });
+
+  it('passes a null through untouched, so "no such row" keeps its meaning', () => {
+    expect(dataOrThrow({ data: null, error: null })).toBeNull();
+  });
+
+  it('throws DbUnavailableError when the result carries an error', () => {
+    expect(() => dataOrThrow({ data: null, error: { message: 'JWT expired' } })).toThrow(
+      DbUnavailableError,
+    );
+  });
+
+  it('keeps the vendor message on the error for the server log', () => {
+    expect(() => dataOrThrow({ data: null, error: { message: 'JWT expired' } })).toThrow(
+      /JWT expired/,
+    );
+  });
+
+  it('prefers the error over data, so a partial result is never mistaken for success', () => {
+    expect(() => dataOrThrow({ data: [{ id: 'rec-1' }], error: { message: 'timeout' } })).toThrow(
+      DbUnavailableError,
+    );
   });
 });
 

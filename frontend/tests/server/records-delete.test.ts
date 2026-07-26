@@ -19,9 +19,10 @@ function request(body: unknown = { operatorId: 'op-1', reason: 'conteo equivocad
   });
 }
 
-function db(options: { assigned?: boolean } = {}) {
+function db(options: { assigned?: boolean; errors?: Record<string, string> } = {}) {
   const { assigned = true } = options;
   return createStubDb({
+    errors: options.errors,
     tables: {
       audit_plans: [{ id: 'plan-1', status: 'active', warehouse_id: 'wh-1' }],
       warehouses: [{ id: 'wh-1', code: 'STOCK_RESTAURANTE_FUENTES_AYB' }],
@@ -105,5 +106,20 @@ describe('DELETE /api/records/[id]', () => {
 
     expect(response.status).toBe(400);
     expect(stub.calls).toEqual([]);
+  });
+
+  /**
+   * 404 is a claim about the row: "it is not there". A failed lookup cannot
+   * support that claim, and the operator would read it as their correction
+   * having already been applied.
+   */
+  it('answers 502, not 404, when the record lookup itself fails', async () => {
+    const stub = db({ errors: { 'select:count_records': 'JWT expired' } });
+
+    const response = await handleDeleteRecord(stub, 'rec-1', request());
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({ error: { code: 'db_unavailable' } });
+    expect(stub.callsOf('update')).toEqual([]);
   });
 });

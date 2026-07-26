@@ -5,6 +5,8 @@
  * emit (`{error:{code,message}}`), so `lib/api/client.ts`'s existing taxonomy
  * decodes these routes without a second mechanism (REQ-PRX-2).
  */
+import { DbUnavailableError } from './db';
+
 
 export function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -33,6 +35,43 @@ export function forbidden(message: string): Response {
 /** 500 — the database refused the write. Never swallowed into a 2xx. */
 export function serverError(message: string): Response {
   return failure(500, 'vendor_error', message);
+}
+
+/**
+ * 502 — the database could not be ASKED (`DbUnavailableError`).
+ *
+ * Distinct from 500 (`serverError`: a write we attempted and lost) and, far more
+ * importantly, distinct from `200 []`. An empty list is a claim about the
+ * warehouse; this is a statement about the server. `PlansScreen` and
+ * `AuditorReview` both keep an error state precisely so those two never share a
+ * rendering, and `lib/api/operational.ts` raises a `UiError` on any non-2xx, so
+ * a 502 reaches that state end to end.
+ *
+ * The vendor message stays in the server log; the operator gets one sentence in
+ * the register the screens already use ("No pudimos …", tú-form, an action).
+ */
+const DB_UNAVAILABLE_MESSAGE = 'No pudimos consultar la base de datos. Intenta otra vez.';
+
+export function databaseUnavailable(): Response {
+  return failure(502, 'db_unavailable', DB_UNAVAILABLE_MESSAGE);
+}
+
+/**
+ * Run a route body, converting a `DbUnavailableError` into its 502.
+ *
+ * The catch lives in ONE place rather than at each of the ~30 read sites: the
+ * defect being fixed here was a check that every site was free to omit, and a
+ * per-site check is the same shape of promise. Any other exception is re-thrown
+ * untouched — this converts a known failure, it does not swallow surprises.
+ */
+export async function respondingToDbFailure(run: () => Promise<Response>): Promise<Response> {
+  try {
+    return await run();
+  } catch (error) {
+    if (!(error instanceof DbUnavailableError)) throw error;
+    console.error('database unavailable', { message: error.message });
+    return databaseUnavailable();
+  }
 }
 
 /** Parse a JSON body, returning `null` rather than throwing on garbage. */
