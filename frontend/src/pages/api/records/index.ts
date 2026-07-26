@@ -61,6 +61,8 @@ interface RecordInput {
   /** Null when the caller identified the article by `nrArticulo` instead. */
   productId: string | null;
   nrArticulo: string | null;
+  /** The matcher's catalogue name — the `products.name_normalized` fallback. */
+  articulo: string | null;
   quantity: number;
   unitCode: string | null;
   spokenName: string;
@@ -72,11 +74,14 @@ function readInput(body: Record<string, unknown>): RecordInput | null {
   const operatorId = requireString(body, 'operatorId');
   const productId = optionalString(body, 'productId');
   const nrArticulo = optionalString(body, 'nrArticulo');
+  const articulo = optionalString(body, 'articulo');
+  const spokenName = optionalString(body, 'spokenName') ?? '';
   const quantity = requireNumber(body, 'quantity');
   if (!clientRecordId || !planId || !operatorId || quantity === null) return null;
-  // One of the two article identities must be present; which one depends on
-  // whether the caller already knows the Supabase uuid.
-  if (!productId && !nrArticulo) return null;
+  // SOME article identity must be present. `sku` is null for ~18.4% of the
+  // catalogue (task 6.10), so the catalogue name is a first-class identity here
+  // and not merely descriptive text.
+  if (!productId && !nrArticulo && !articulo && !spokenName) return null;
 
   return {
     clientRecordId,
@@ -84,9 +89,10 @@ function readInput(body: Record<string, unknown>): RecordInput | null {
     operatorId,
     productId,
     nrArticulo,
+    articulo,
     quantity,
     unitCode: optionalString(body, 'unitCode'),
-    spokenName: optionalString(body, 'spokenName') ?? '',
+    spokenName,
   };
 }
 

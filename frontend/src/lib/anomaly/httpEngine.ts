@@ -80,10 +80,12 @@ export function createHttpAnomalyEngine(
     async check(item: ConfirmableItem): Promise<Anomaly | null> {
       const productId = context.productIdOf(item);
       const nrArticulo = item.picked.nr_articulo;
+      const articulo = item.picked.articulo;
       // No catalogue identity at all, nothing to validate against: stay silent
       // rather than invent an anomaly the auditor cannot trace to a product.
-      // An `nr_articulo` alone is enough — the route resolves it to a uuid.
-      if (!productId && !nrArticulo) return null;
+      // An `nr_articulo` OR the catalogue name is enough — the route resolves
+      // either to a uuid, and ~18.4% of the catalogue has no sku at all (6.10).
+      if (!productId && !nrArticulo && !articulo) return null;
 
       try {
         const response = await fetchFn(ANOMALY_CHECK_URL, {
@@ -94,6 +96,7 @@ export function createHttpAnomalyEngine(
             warehouseId: context.warehouseId,
             productId,
             nrArticulo,
+            articulo,
             quantity: item.extracted.quantity,
             // The CANONICAL catalogue unit, not the Spanish one the operator
             // dictated: `POST /api/records` re-runs this same validation and

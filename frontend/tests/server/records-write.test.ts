@@ -242,7 +242,7 @@ describe('POST /api/records — resolves nrArticulo to a product uuid', () => {
 
     const response = await handleCreateRecord(
       stub,
-      request({ productId: undefined, nrArticulo: 'SKU-UNKNOWN' }),
+      request({ productId: undefined, nrArticulo: 'SKU-UNKNOWN', articulo: 'NO EXISTE' }),
     );
 
     expect(response.status).toBe(400);
@@ -269,5 +269,36 @@ describe('POST /api/records — resolves nrArticulo to a product uuid', () => {
 
     expect(response.status).toBe(403);
     expect(stub.calls.filter((call) => call.table === 'products')).toEqual([]);
+  });
+
+  /**
+   * Task 6.10. `products.sku` is NULL for ~18.4% of the real catalogue, so a
+   * sku-only route makes roughly one article in five impossible to count. The
+   * route must forward the matcher's catalogue name so the resolver can fall
+   * back to `name_normalized`.
+   */
+  it('counts a sku-less article by forwarding the catalogue name to the resolver', async () => {
+    const stub = catalogueDb();
+    stub.rows('products').push({ id: 'prod-3', sku: null, name_normalized: 'AGUA WAIRA' });
+
+    const response = await handleCreateRecord(
+      stub,
+      request({ productId: undefined, nrArticulo: null, articulo: 'Agua Waira' }),
+    );
+
+    expect(response.status).toBe(201);
+    expect(stub.rows('count_records')[0]!.product_id).toBe('prod-3');
+  });
+
+  it('still 400s when neither the code nor the name is in the catalogue', async () => {
+    const stub = catalogueDb();
+
+    const response = await handleCreateRecord(
+      stub,
+      request({ productId: undefined, nrArticulo: 'SKU-UNKNOWN', articulo: 'NO EXISTE' }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(stub.rows('count_records')).toEqual([]);
   });
 });

@@ -78,6 +78,12 @@ export interface CreateRecordInput {
    */
   productId?: string | null;
   nrArticulo?: string | null;
+  /**
+   * The catalogue name the matcher picked. A SECOND identity, not decoration:
+   * `products.sku` is null for ~18.4% of the catalogue, so the route resolves
+   * this against `products.name_normalized` when the code does not match.
+   */
+  articulo?: string | null;
   quantity: number;
   unitCode: string | null;
   spokenName: string;

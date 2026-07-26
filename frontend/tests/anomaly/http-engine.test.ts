@@ -71,6 +71,10 @@ describe('createHttpAnomalyEngine', () => {
       // The article code travels too, so the route can resolve a product uuid
       // the browser has no way of knowing (`lib/server/products.ts`).
       nrArticulo: 'SKU-1',
+      // And so does the catalogue NAME: `sku` is null for ~18.4% of the
+      // catalogue, so `nr_articulo` alone cannot identify one article in five
+      // (task 6.10). The route falls back to `products.name_normalized`.
+      articulo: 'ACEITE GIRASOL 900',
       quantity: 20,
       // CHANGED: the CANONICAL catalogue unit, not the Spanish `extracted.unit`
       // the operator dictated. `POST /api/records` re-runs the very same
@@ -170,11 +174,13 @@ describe('createHttpAnomalyEngine', () => {
   it('never calls the service when the item has no catalogue identity at all', async () => {
     const fetcher = stubFetch(verdictResponse({ verdict: 'ok', anomaly: null }));
     const engine = createHttpAnomalyEngine({ ...context, productIdOf: () => null }, fetcher.fn);
-    // Neither a product uuid nor an article code: there is nothing the route
-    // could validate against, so staying silent beats inventing an anomaly the
-    // auditor cannot trace to a product.
+    // Neither a product uuid, nor an article code, nor a catalogue name: there
+    // is nothing the route could validate against, so staying silent beats
+    // inventing an anomaly the auditor cannot trace to a product.
     const anonymous = item();
-    (anonymous.picked as { nr_articulo: string | null }).nr_articulo = null;
+    const picked = anonymous.picked as { nr_articulo: string | null; articulo: string };
+    picked.nr_articulo = null;
+    picked.articulo = '';
 
     await expect(engine.check(anonymous)).resolves.toBeNull();
     expect(fetcher.calls).toEqual([]);

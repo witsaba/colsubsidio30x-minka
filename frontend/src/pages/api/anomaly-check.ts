@@ -32,6 +32,8 @@ export const prerender = false;
 type PendingFacts = Omit<CountFacts, 'productId'> & {
   productId: string | null;
   nrArticulo: string | null;
+  /** The matcher's catalogue name — the `products.name_normalized` fallback. */
+  articulo: string | null;
 };
 
 /** Decode the request body into validation facts, or `null` when malformed. */
@@ -40,15 +42,19 @@ export function readCountFacts(body: Record<string, unknown>): PendingFacts | nu
   const warehouseId = requireString(body, 'warehouseId');
   const productId = optionalString(body, 'productId');
   const nrArticulo = optionalString(body, 'nrArticulo');
+  const articulo = optionalString(body, 'articulo');
   const quantity = requireNumber(body, 'quantity');
   if (!planId || !warehouseId || quantity === null) return null;
-  if (!productId && !nrArticulo) return null;
+  // The catalogue name is a real identity, not decoration: `sku` is null for
+  // ~18.4% of the catalogue and `name_normalized` is the fallback key (6.10).
+  if (!productId && !nrArticulo && !articulo) return null;
 
   return {
     planId,
     warehouseId,
     productId,
     nrArticulo,
+    articulo,
     quantity,
     unitCode: optionalString(body, 'unitCode'),
   };

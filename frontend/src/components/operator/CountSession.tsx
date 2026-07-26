@@ -220,6 +220,9 @@ export function CountSession({
             planId,
             operatorId,
             nrArticulo: record.nrArticulo,
+            // The catalogue name is the fallback identity for the ~18.4% of
+            // products with no sku (task 6.10); without it they cannot be counted.
+            articulo: record.articulo,
             quantity: record.quantity,
             unitCode: record.unitCode,
             spokenName: record.spokenName,
