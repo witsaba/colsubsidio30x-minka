@@ -61,10 +61,10 @@ En la operación de hoteles, restaurantes y centros de convenciones de Colsubsid
 | Rol | Integrantes | Enfoque Principal |
 |---|---|---|
 | **Implementación Técnica y Arquitectura** | **Braejan David Arias Heregua**<br>**Daniel Rosas** | Microservicios FastAPI, motores de IA Vertex/Gemini, STT Deepgram, matcher vectorial SQLite, persistencia Supabase, frontend Astro/Preact y suite de benchmarks. |
-| **Documentación, Casos de Uso y QA** | **Adriana Durand** *(Invitado)*<br>**Edith Lavado** | Definición del PRD, diseño de casos de uso de negocio, dataset de pruebas de voz real y aseguramiento de calidad. |
+| **Documentación, Casos de Uso y QA** | **Adriana Durand**<br>**Edith Lavado** | Definición del PRD, diseño de casos de uso de negocio, dataset de pruebas de voz real y aseguramiento de calidad. |
 | **Sponsor / Host del Desafío** | **30X · Colsubsidio** | Definición del reto de hospitalidad y validación de reglas de negocio. |
 
-*Para consultar la especificación detallada de requerimientos, revisa el [PRD v1.0](file:///c:/Users/drosa/Documents/Workspace/2026_07_25_repo_oficial/colsubsidio30x-minka/docs/prd.md).*
+*Para consultar la especificación detallada de requerimientos, revisa el [PRD v1.0](docs/prd.md).*
 
 ---
 
@@ -179,19 +179,6 @@ Para resolver el desafío técnico de **rendimiento en tiempo real (< 5 ms)** si
 | - Montada como volumen de solo lectura (`mode=ro`)                                                |
 +---------------------------------------------------------------------------------------------------+
 ```
-
-### Esquema de Persistencia Principal en Supabase (11 Tablas Relacionales)
-1. `profiles`: Usuarios y roles del sistema (`auditor`, `operator`, `supervisor`).
-2. `warehouses`: Catálogo maestro de bodegas y puntos de venta.
-3. `products`: Catálogo global de 1,405 SKUs (maneja adecuadamente el ~18% de ítems sin código SKU original mediante identificadores unívocos UUID).
-4. `warehouse_stock`: Relación N:M de stock teórico por bodega (oculto al operador).
-5. `audit_plans`: Ordenes de conteo creadas por los auditores.
-6. `audit_plan_operators`: Asignación exclusiva de operadores autorizados a cada plan.
-7. `count_sessions`: Registro transaccional de dictados por voz (transcripción + JSON de consenso IA).
-8. `inventory_records`: Ítems individuales contados físicamente.
-9. `anomalies`: Alertas disparadas por reglas de negocio o desvíos atípicos.
-10. `audit_reconciliations`: Consolidado final aprobado al cerrar la auditoría.
-11. `oracle_exports`: Logs de generación de archivos de carga ERP.
 
 ---
 
@@ -336,8 +323,8 @@ Debido a que los modelos de lenguaje son estocásticos, el benchmark ejecutó **
 
 ### 3. Visualización del Dashboard
 El repositorio incluye un tablero estático HTML interactivo para inspeccionar los resultados:
-- **Ruta local**: [`benchmarks/dashboard/index.html`](file:///c:/Users/drosa/Documents/Workspace/2026_07_25_repo_oficial/colsubsidio30x-minka/benchmarks/dashboard/index.html) (Abrir directamente en el navegador).
-- **Reporte CSV para Excel**: [`benchmarks/reports/reporte_completo_para_excel.csv`](file:///c:/Users/drosa/Documents/Workspace/2026_07_25_repo_oficial/colsubsidio30x-minka/benchmarks/reports/reporte_completo_para_excel.csv).
+- **Ruta local**: [`benchmarks/dashboard/index.html`](benchmarks/dashboard/index.html) (Abrir directamente en el navegador).
+- **Reporte CSV para Excel**: [`benchmarks/reports/reporte_completo_para_excel.csv`](benchmarks/reports/reporte_completo_para_excel.csv).
 
 ---
 
@@ -430,18 +417,18 @@ cd frontend && npx astro check
 
 Para profundizar en los detalles arquitectónicos y decisiones de diseño del proyecto, consulta la documentación interna:
 
-- 📄 [Documento de Requerimientos de Producto (PRD v1.0)](file:///c:/Users/drosa/Documents/Workspace/2026_07_25_repo_oficial/colsubsidio30x-minka/docs/prd.md)
-- 📝 [Extracción Trazable de la Sesión de Descubrimiento](file:///c:/Users/drosa/Documents/Workspace/2026_07_25_repo_oficial/colsubsidio30x-minka/docs/prd-seed.md)
-- 📊 [Metodología de Benchmarking y Dataset Tecnológico](file:///c:/Users/drosa/Documents/Workspace/2026_07_25_repo_oficial/colsubsidio30x-minka/benchmarks/docs/metodologia_y_dataset.md)
-- 🗄️ [Arquitectura de Base de Datos (Supabase + SQLite)](file:///c:/Users/drosa/Documents/Workspace/2026_07_25_repo_oficial/colsubsidio30x-minka/docs/database/DATABASE_ARCHITECTURE.md)
-- 🚀 [Checklist de Despliegue de Entorno Único](file:///c:/Users/drosa/Documents/Workspace/2026_07_25_repo_oficial/colsubsidio30x-minka/docs/deployment.md)
+- 📄 [Documento de Requerimientos de Producto (PRD v1.0)](docs/prd.md)
+- 📝 [Extracción Trazable de la Sesión de Descubrimiento](docs/prd-seed.md)
+- 📊 [Metodología de Benchmarking y Dataset Tecnológico](benchmarks/docs/metodologia_y_dataset.md)
+- 🗄️ [Arquitectura de Base de Datos (Supabase + SQLite)](docs/database/DATABASE_ARCHITECTURE.md)
+- 🚀 [Checklist de Despliegue de Entorno Único](docs/deployment.md)
 
 ---
 
 ## 📜 Licencia y Estado
 
 - **Estado del Proyecto**: MVP de Hackathon — Listo para Evaluación de Jurados.
-- **Licencia**: Propiedad exclusiva del equipo desarrollador y organizaciones aliadas del desafío (**Colsubsidio x 30X**). Prohibida la reproducción no autorizada fuera del marco del evento. Consulta el archivo [`LICENSE`](file:///c:/Users/drosa/Documents/Workspace/2026_07_25_repo_oficial/colsubsidio30x-minka/LICENSE) para más detalles.
+- **Licencia**: Propiedad exclusiva del equipo desarrollador y organizaciones aliadas del desafío (**Colsubsidio x 30X**). Prohibida la reproducción no autorizada fuera del marco del evento. Consulta el archivo [`LICENSE`](LICENSE) para más detalles.
 
 ---
 
