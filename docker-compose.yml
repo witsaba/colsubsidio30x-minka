@@ -145,6 +145,17 @@ services:
       # container, and the upstreams answer to their Compose service names.
       STT_BASE_URL: http://stt:8001
       MATCHER_BASE_URL: http://matcher:8002
+      # Server-only Supabase credentials for the operational routes
+      # (consent, plans, count records, auditor actions, Oracle export).
+      # NOT `PUBLIC_`-prefixed on purpose: Astro inlines every PUBLIC_ variable
+      # into the browser bundle, and this is the service-role key.
+      #
+      # MERGE NOTE: the parallel `redis-catalogue-cache` change may introduce
+      # its own Supabase variables for the matcher. These two names are the
+      # canonical ones — reconcile at merge time rather than letting two
+      # semantically identical names diverge.
+      SUPABASE_URL: ${SUPABASE_URL:?set SUPABASE_URL in .env}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?set SUPABASE_SERVICE_ROLE_KEY in .env}
       # The Node adapter binds 127.0.0.1 unless told otherwise, which no
       # published port can reach.
       HOST: 0.0.0.0
