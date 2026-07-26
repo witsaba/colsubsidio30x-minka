@@ -120,6 +120,18 @@ export interface AuditorRecordDto {
   status: string;
   countedBy: string | null;
   anomalies: Array<{ type: string; severity: string; title: string; status: string }>;
+  /** Theoretical stock (task 6.6). Auditor-only; `/conteo` never receives it. */
+  systemQty: number | null;
+  systemUnitCode: string | null;
+  /** Persisted `auditor_actions`, oldest first (task 6.7, RF-32). */
+  actions: AuditorActionEntryDto[];
+}
+
+export interface AuditorActionEntryDto {
+  action: string;
+  note: string | null;
+  auditor: string | null;
+  createdAt: string;
 }
 
 export function fetchAuditorRecords(

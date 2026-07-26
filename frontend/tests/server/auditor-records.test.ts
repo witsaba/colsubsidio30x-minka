@@ -21,6 +21,7 @@ function db() {
         {
           id: 'rec-1',
           plan_id: 'plan-1',
+          warehouse_id: 'wh-1',
           product_id: 'prod-1',
           quantity: 90,
           unit_code: 'KG',
@@ -32,6 +33,7 @@ function db() {
         {
           id: 'rec-2',
           plan_id: 'plan-1',
+          warehouse_id: 'wh-1',
           product_id: 'prod-2',
           quantity: 5,
           unit_code: 'KG',
@@ -43,6 +45,7 @@ function db() {
         {
           id: 'rec-3',
           plan_id: 'plan-1',
+          warehouse_id: 'wh-1',
           product_id: 'prod-3',
           quantity: 12,
           unit_code: 'UND',
@@ -66,13 +69,50 @@ function db() {
         { id: 'prod-1', sku: 'SKU-1', name: 'ACEITE GIRASOL 900' },
         { id: 'prod-3', sku: 'SKU-3', name: 'GASEOSA 350ML' },
       ],
+      // Task 6.6: the theoretical stock the auditor compares against. `prod-3`
+      // deliberately has NO row — a real absence, which must read as null.
+      warehouse_stock_balances: [
+        { id: 'bal-1', warehouse_id: 'wh-1', product_id: 'prod-1', unit_code: 'KG', theoretical_qty: 120 },
+        // Same product in ANOTHER warehouse: must never be used for `rec-1`.
+        { id: 'bal-2', warehouse_id: 'wh-9', product_id: 'prod-1', unit_code: 'UND', theoretical_qty: 7 },
+      ],
+      // Task 6.7: the persisted trail, seeded OUT of chronological order so the
+      // ordering assertion cannot pass by accident.
+      auditor_actions: [
+        {
+          id: 'act-2',
+          record_id: 'rec-1',
+          auditor_id: 'aud-1',
+          action: 'approve',
+          note: null,
+          created_at: '2026-07-25T15:40:00Z',
+        },
+        {
+          id: 'act-1',
+          record_id: 'rec-1',
+          auditor_id: 'aud-1',
+          action: 'correct',
+          note: 'La báscula marcaba 89.',
+          created_at: '2026-07-25T14:05:00Z',
+        },
+      ],
+      profiles: [{ id: 'aud-1', full_name: 'Ana Auditora' }],
     },
   });
 }
 
+interface RecordPayload {
+  id: string;
+  quantity: number;
+  anomalies: unknown[];
+  systemQty: number | null;
+  systemUnitCode: string | null;
+  actions: Array<{ action: string; note: string | null; auditor: string | null; createdAt: string }>;
+}
+
 async function records(query = '?plan=plan-1') {
   const response = await handleAuditorRecords(db(), new Request(`http://localhost:4321/api/auditor/records${query}`));
-  return (await response.json()) as Array<{ id: string; anomalies: unknown[]; quantity: number }>;
+  return (await response.json()) as RecordPayload[];
 }
 
 describe('GET /api/auditor/records', () => {
@@ -101,6 +141,44 @@ describe('GET /api/auditor/records', () => {
     const rows = await records();
 
     expect(rows[1]).toMatchObject({ id: 'rec-3', anomalies: [] });
+  });
+
+  it('joins the theoretical stock of the record own warehouse (REQ-AUD-2, task 6.6)', async () => {
+    const rows = await records();
+
+    // 120 is the `wh-1` balance; 7 is the same product in `wh-9` and must lose.
+    expect(rows[0]).toMatchObject({ id: 'rec-1', systemQty: 120, systemUnitCode: 'KG' });
+  });
+
+  it('reports a missing balance row as null rather than as a zero stock', async () => {
+    const rows = await records();
+
+    expect(rows[1]).toMatchObject({ id: 'rec-3', systemQty: null, systemUnitCode: null });
+  });
+
+  it('reads back the persisted auditor_actions, oldest first, with the signing name (RF-32, task 6.7)', async () => {
+    const rows = await records();
+
+    expect(rows[0]!.actions).toEqual([
+      {
+        action: 'correct',
+        note: 'La báscula marcaba 89.',
+        auditor: 'Ana Auditora',
+        createdAt: '2026-07-25T14:05:00Z',
+      },
+      {
+        action: 'approve',
+        note: null,
+        auditor: 'Ana Auditora',
+        createdAt: '2026-07-25T15:40:00Z',
+      },
+    ]);
+  });
+
+  it('gives an untouched record an empty action list rather than omitting the field', async () => {
+    const rows = await records();
+
+    expect(rows[1]).toMatchObject({ id: 'rec-3', actions: [] });
   });
 
   it('rejects a request with no plan as 400 without reading records', async () => {

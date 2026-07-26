@@ -35,10 +35,11 @@ export interface Measure {
 /**
  * Stands in for a value the system genuinely does not have.
  *
- * `GET /api/auditor/records` reports what was COUNTED; the theoretical balance
- * behind an anomaly lives in `anomaly_evidence`, which no route joins. Rendering
- * `0` or an empty cell there would both be lies of a different kind — one
- * invents a stock, the other hides that a stock exists.
+ * `GET /api/auditor/records` now joins `warehouse_stock_balances` (task 6.6), so
+ * a theoretical stock reaches the pane whenever one exists. This marker is what
+ * a record with NO balance row gets. Rendering `0` or an empty cell there would
+ * both be lies of a different kind — one invents a stock, the other hides that a
+ * stock exists.
  */
 export const SYSTEM_UNKNOWN = '—';
 

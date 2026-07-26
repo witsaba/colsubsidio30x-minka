@@ -23,6 +23,9 @@ const dto = (over: Partial<AuditorRecordDto> = {}): AuditorRecordDto => ({
   status: 'recorded',
   countedBy: 'OP.001',
   anomalies: [],
+  systemQty: null,
+  systemUnitCode: null,
+  actions: [],
   ...over,
 });
 
@@ -57,6 +60,77 @@ describe('toAuditorRecords', () => {
     expect(record!.system.quantity).toBe(SYSTEM_UNKNOWN);
     // And the detail pane says so, instead of claiming a difference of NaN.
     expect(diffOf(record!)).toEqual({ label: 'Sistema sin dato', tone: 'neutral' });
+  });
+
+  it('renders the theoretical stock the route now sends, and diffs against it (task 6.6)', () => {
+    const [record] = toAuditorRecords(
+      [dto({ quantity: 3, unitCode: 'und', systemQty: 6.5, systemUnitCode: 'und' })],
+      'p',
+    );
+
+    expect(record!.system).toEqual({ quantity: '6,5', unit: 'und' });
+    expect(diffOf(record!)).toEqual({ label: 'Diferencia', tone: 'warn' });
+  });
+
+  it('says "Sin diferencia" when the count matches the system figure', () => {
+    const [record] = toAuditorRecords(
+      [dto({ quantity: 6.5, unitCode: 'und', systemQty: 6.5, systemUnitCode: 'und' })],
+      'p',
+    );
+
+    expect(diffOf(record!)).toEqual({ label: 'Sin diferencia', tone: 'ok' });
+  });
+
+  it('seeds the trace from the persisted actions, newest first (RF-32, task 6.7)', () => {
+    const [record] = toAuditorRecords(
+      [
+        dto({
+          actions: [
+            {
+              action: 'correct',
+              note: 'La báscula marcaba 89.',
+              auditor: 'Ana Auditora',
+              createdAt: '2026-07-25T14:05:00Z',
+            },
+            {
+              action: 'approve',
+              note: null,
+              auditor: 'Ana Auditora',
+              createdAt: '2026-07-25T15:40:00Z',
+            },
+          ],
+        }),
+      ],
+      'p',
+    );
+
+    expect(record!.trace.map((entry) => entry.action)).toEqual([
+      'Aprobó el registro',
+      'Corrigió la cantidad',
+    ]);
+    expect(record!.trace[1]).toMatchObject({
+      user: 'Ana Auditora',
+      reason: 'La báscula marcaba 89.',
+    });
+    // 14:05 UTC is 9:05 in Bogotá — the trail is read in the operation's zone.
+    expect(record!.trace[1]!.time).toContain('9:05');
+    // Approving needs no justification, so it carries no reason at all.
+    expect(record!.trace[0]!.reason).toBeUndefined();
+  });
+
+  it('falls back to the unknown marker when an action has no signing name', () => {
+    const [record] = toAuditorRecords(
+      [
+        dto({
+          actions: [
+            { action: 'request_recount', note: null, auditor: null, createdAt: '2026-07-25T14:05:00Z' },
+          ],
+        }),
+      ],
+      'p',
+    );
+
+    expect(record!.trace[0]).toMatchObject({ action: 'Pidió reconteo', user: SYSTEM_UNKNOWN });
   });
 
   it('turns each open anomaly type into its badge kind', () => {

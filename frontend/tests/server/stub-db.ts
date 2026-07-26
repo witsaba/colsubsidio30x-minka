@@ -72,6 +72,7 @@ export function createStubDb(options: StubDbOptions = {}): StubDb {
     let pendingInsert: DbRow[] | null = null;
     let pendingUpdate: DbRow | null = null;
     let limit: number | null = null;
+    let sort: { column: string; ascending: boolean } | null = null;
 
     function settle(): DbResult<DbRow[]> {
       const failure = errors[`${call.op}:${table}`];
@@ -97,6 +98,17 @@ export function createStubDb(options: StubDbOptions = {}): StubDb {
       }
 
       const found = tableRows(table).filter((row) => matches(row, call.filters));
+      if (sort) {
+        // Real ordering, not a recorded intention: a route that forgets to ask
+        // for it must be able to FAIL an ordering assertion.
+        const { column, ascending } = sort;
+        found.sort((a, b) => {
+          const left = a[column];
+          const right = b[column];
+          if (left === right) return 0;
+          return (left < right ? -1 : 1) * (ascending ? 1 : -1);
+        });
+      }
       return { data: limit === null ? found : found.slice(0, limit), error: null };
     }
 
@@ -136,7 +148,8 @@ export function createStubDb(options: StubDbOptions = {}): StubDb {
         call.filters.push({ column, value: [...values] });
         return query;
       },
-      order() {
+      order(column, options) {
+        sort = { column, ascending: options?.ascending ?? true };
         return query;
       },
       limit(n) {
