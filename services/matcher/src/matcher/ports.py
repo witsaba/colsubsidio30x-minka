@@ -74,8 +74,16 @@ class SnapshotCache(Protocol):
         """Store the snapshot. Best effort -- never raises (REQ-RCC-1)."""
         ...
 
-    def try_acquire_refresh_lock(self, ttl_seconds: int) -> bool:
-        """Claim the right to refresh from the source (REQ-RCC-4)."""
+    def try_acquire_refresh_lock(self, ttl_seconds: float | None = None) -> bool:
+        """Claim the right to refresh from the source (REQ-RCC-4).
+
+        `ttl_seconds` is optional because the only production call site passes
+        nothing: the expiry belongs to the adapter, configured once from
+        `CATALOGUE_REFRESH_LOCK_TTL_SECONDS`, and the caller has no business
+        re-deciding it per cycle. An explicit value overrides it, which is what
+        the lock-expiry test uses. It is a `float` because it is a duration in
+        seconds, not a count of them.
+        """
         ...
 
     def release_refresh_lock(self) -> None:

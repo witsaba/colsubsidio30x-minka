@@ -26,6 +26,7 @@ zero-call assertions can be proven. **No test here touches the network.**
 """
 from __future__ import annotations
 
+import inspect
 import logging
 import threading
 import time
@@ -38,7 +39,7 @@ from conftest import FakeCatalogueSource, make_rows
 from matcher.cache import REFRESH_LOCK_KEY, RedisSnapshotCache, encode_snapshot
 from matcher.config import Settings
 from matcher.main import _next_delay
-from matcher.ports import Row, Snapshot
+from matcher.ports import Row, Snapshot, SnapshotCache
 from matcher.service import MatcherService
 
 TTL_SECONDS = 10_800
@@ -139,6 +140,81 @@ class LockRefusingCache:
 
     def release_refresh_lock(self) -> None:
         raise RuntimeError("redis is unreachable")
+
+
+def build_port_literal_cache() -> object:
+    """A cache whose lock method carries EXACTLY the signature `ports.py` documents.
+
+    The lock method is *generated* from `SnapshotCache.try_acquire_refresh_lock`
+    rather than hand-copied, so this double can never drift away from the
+    Protocol the way a comment would. It is what a second adapter author would
+    produce by reading `ports.py` and nothing else -- and because the Protocol
+    is `runtime_checkable`, such an adapter passes `isinstance` and is then
+    accepted by the service unconditionally.
+    """
+    documented = inspect.signature(SnapshotCache.try_acquire_refresh_lock)
+    params = ", ".join(str(parameter) for parameter in documented.parameters.values())
+    namespace: dict[str, object] = {}
+    exec(  # noqa: S102 - generating the signature is the whole point of the double
+        "def try_acquire_refresh_lock({params}):\n"
+        "    self.acquire_calls.append(ttl_seconds)\n"
+        "    return True\n".format(params=params),
+        namespace,
+    )
+
+    class PortLiteralCache:
+        def __init__(self) -> None:
+            self.acquire_calls: list[object] = []
+            self.releases = 0
+
+        def get(self) -> Snapshot | None:
+            return None
+
+        def put(self, snapshot: Snapshot) -> None:
+            return None
+
+        def release_refresh_lock(self) -> None:
+            self.releases += 1
+
+    PortLiteralCache.try_acquire_refresh_lock = namespace[  # type: ignore[attr-defined]
+        "try_acquire_refresh_lock"
+    ]
+    return PortLiteralCache()
+
+
+class TestThePortMatchesTheRealContract:
+    """`ports.SnapshotCache` must describe the call the service actually makes."""
+
+    def test_a_cache_built_from_the_documented_port_wins_the_refresh_lock(
+        self, settings: Settings
+    ) -> None:
+        """A second adapter written to `ports.py` alone must drive `refresh()`.
+
+        Fails loudly if the Protocol ever again requires an argument the only
+        production call site (`MatcherService._try_acquire_lock`) does not pass:
+        the resulting `TypeError` is swallowed by `_guarded`, the lock is
+        silently never taken, and every replica stampedes Supabase.
+        """
+        cache = build_port_literal_cache()
+        assert isinstance(cache, SnapshotCache), "the double must satisfy the port"
+        service = MatcherService(settings, FakeCatalogueSource(), cache)
+        cache.acquire_calls.clear()
+        cache.releases = 0
+        service._source = FakeCatalogueSource(generation_rows(GEN_B))
+
+        assert service.refresh() is True
+
+        assert cache.acquire_calls == [None], (
+            "the service must be able to call the port exactly as documented"
+        )
+        assert cache.releases == 1
+        assert service._source.calls == 1
+
+    def test_the_documented_signature_is_the_adapters_signature(self) -> None:
+        """Port and adapter drift is a defect, not a style difference."""
+        assert inspect.signature(
+            SnapshotCache.try_acquire_refresh_lock
+        ) == inspect.signature(RedisSnapshotCache.try_acquire_refresh_lock)
 
 
 class TestAtomicSwap:

@@ -107,7 +107,7 @@ class TestPortProtocols:
             def put(self, snapshot: Snapshot) -> None:
                 return None
 
-            def try_acquire_refresh_lock(self, ttl_seconds: int) -> bool:
+            def try_acquire_refresh_lock(self, ttl_seconds: float | None = None) -> bool:
                 return True
 
             def release_refresh_lock(self) -> None:

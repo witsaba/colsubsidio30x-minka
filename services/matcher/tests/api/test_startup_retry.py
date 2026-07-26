@@ -25,6 +25,15 @@ from conftest import FakeCatalogueSource, make_cache, make_rows
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
+SENTINEL_SUPABASE_KEY = "sb-secret-DO-NOT-LEAK-8f3a1c7e94b2"
+"""A deliberately unmistakable stand-in for the live `service_role` key.
+
+REQ-API-8 is only testable with a value that cannot appear in output by
+coincidence. A placeholder like `unused` is a substring of ordinary English and
+would make the absence assertion below prove nothing; this one appears in the
+process output if and only if the credential itself escaped.
+"""
+
 
 @pytest.fixture
 def sleeps(monkeypatch: pytest.MonkeyPatch) -> list[float]:
@@ -292,7 +301,7 @@ class TestTheProcessActuallyExitsThree:
         env = dict(
             os.environ,
             SUPABASE_URL="http://127.0.0.1:9/",
-            SUPABASE_KEY="unused",
+            SUPABASE_KEY=SENTINEL_SUPABASE_KEY,
             REDIS_URL="redis://127.0.0.1:9/0",
             STARTUP_RETRIES="1",
             STARTUP_RETRY_DELAY_SECONDS="0",
@@ -315,3 +324,17 @@ class TestTheProcessActuallyExitsThree:
 
         assert completed.returncode == 3, completed.stderr
         assert "startup aborted after 2 attempts" in completed.stderr
+
+        # REQ-API-8, verified where it actually matters. This is the only test
+        # that runs the real, unmocked failure path in a real process, so it is
+        # the only place Python renders the full chained traceback -- every
+        # `raise ... from exc` frame, every adapter repr, every argument the
+        # exception carried. If the credential can escape at all, it escapes
+        # here. A hit means an operator's logs, a crash reporter, or a support
+        # paste now carries the live `service_role` key.
+        for stream, contents in (("stderr", completed.stderr), ("stdout", completed.stdout)):
+            assert SENTINEL_SUPABASE_KEY not in contents, (
+                f"SUPABASE_KEY leaked into {stream} of a crashing matcher: the "
+                f"service_role credential bypasses RLS, so anything that reads "
+                f"this process's output now has full database access"
+            )
