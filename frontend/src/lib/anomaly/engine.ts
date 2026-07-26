@@ -18,7 +18,16 @@ export interface Anomaly {
 }
 
 export interface AnomalyEngine {
-  /** `null` means "nothing suspicious" — the common case, and the only result
-   *  the three script-1 items may produce (no false positives). */
-  check(item: ConfirmableItem): Anomaly | null;
+  /**
+   * `null` means "nothing suspicious" — the common case, and the only result
+   * the three script-1 items may produce (no false positives).
+   *
+   * WIDENED (design D4) so `HttpAnomalyEngine` can answer from the server-side
+   * validation route. The result is AWAITABLE rather than strictly a `Promise`:
+   * `FixtureAnomalyEngine` is a synchronous pure function and stays one, and
+   * `runPipeline` awaits either shape. Forcing the fixture engine to return a
+   * promise would buy nothing and would break its (still valuable) synchronous
+   * rule tests.
+   */
+  check(item: ConfirmableItem): Anomaly | null | Promise<Anomaly | null>;
 }

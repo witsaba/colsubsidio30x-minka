@@ -137,30 +137,34 @@ export async function runPipeline(
     items.map((item) => deps.match(toMatchRequest(item, catalogueId))),
   );
 
+  // Classify. `anomalies.check` is AWAITED (design D4): the real engine asks
+  // the server-side validation route, so the checks fan out in parallel for the
+  // same reason the match calls do — a three-item utterance must not cost three
+  // sequential round trips. `Promise.all` preserves extraction order.
+  const classified = await Promise.all(
+    items.map(async (extracted, i): Promise<QueueEntry> => {
+      const match = matches[i]!;
+      const picked = match.candidates[0];
+
+      // `ambiguous` AND `no_match` both go to the search sheet (D8): a confident
+      // wrong match is worse than asking. A `matched` with no candidate at all is
+      // not a contract the matcher promises, but if it ever happens the operator
+      // gets the search sheet instead of a crash.
+      if (match.status !== 'matched' || picked === undefined) {
+        return { kind: 'needs_search', item: extracted, candidates: match.candidates };
+      }
+
+      const item: ConfirmableItem = { extracted, match, picked };
+      const anomaly = await deps.anomalies.check(item);
+      return anomaly ? { kind: 'anomaly', item, anomaly } : { kind: 'confirmable', item };
+    }),
+  );
+
   // Recombine. Three buckets rather than one array + sort, so the ordering rule
   // is structural and extraction order survives inside each bucket.
-  const anomalies: QueueEntry[] = [];
-  const searches: QueueEntry[] = [];
-  const confirmables: QueueEntry[] = [];
-
-  items.forEach((extracted, i) => {
-    const match = matches[i]!;
-    const picked = match.candidates[0];
-
-    // `ambiguous` AND `no_match` both go to the search sheet (D8): a confident
-    // wrong match is worse than asking. A `matched` with no candidate at all is
-    // not a contract the matcher promises, but if it ever happens the operator
-    // gets the search sheet instead of a crash.
-    if (match.status !== 'matched' || picked === undefined) {
-      searches.push({ kind: 'needs_search', item: extracted, candidates: match.candidates });
-      return;
-    }
-
-    const item: ConfirmableItem = { extracted, match, picked };
-    const anomaly = deps.anomalies.check(item);
-    if (anomaly) anomalies.push({ kind: 'anomaly', item, anomaly });
-    else confirmables.push({ kind: 'confirmable', item });
-  });
+  const anomalies = classified.filter((entry) => entry.kind === 'anomaly');
+  const searches = classified.filter((entry) => entry.kind === 'needs_search');
+  const confirmables = classified.filter((entry) => entry.kind === 'confirmable');
 
   // Anomalies -> searches -> confirmables (design §7). The reducer relies on
   // this exact order: once the head is a confirmable, every remaining entry is
