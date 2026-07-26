@@ -423,3 +423,52 @@ again, and asserts the line `BOD-01,SKU-1,90,KG,CNT-01` is now present. Before
 dump, not from an executor-side query (no Supabase MCP access in this context)
 and not from a live write. They are the same evidence class as the 6.13/6.15
 column names, which is the best available until 6.4 unblocks.
+
+## Batch 7 — tasks 6.16 / 6.17 (live-schema column bugs, both CRITICAL)
+
+- [x] 6.16 `assertPlanAssignment` no longer selects `audit_plans.catalogue_id`
+  (that column does not exist live; PostgREST errored the whole select, the
+  error was discarded, and EVERY plan was refused with "El plan no existe.").
+  The select is now `id, status, warehouse_id`, and `catalogueId` is resolved by
+  a second sequential lookup `warehouses.select('code').eq('id',
+  plan.warehouse_id).maybeSingle()` — the catalogue vocabulary IS
+  `warehouses.code` since the merged `redis-catalogue-cache` change. A missing
+  warehouse row degrades to `catalogueId: null`, it does not refuse the plan.
+- [x] 6.17 `readRange` selects `expected_min, expected_max, unit_code` and reads
+  `data.unit_code`. The live `product_count_ranges` has `unit_code`, never
+  `expected_unit_code`; the wrong name made `readRange` return `null` on the
+  real database, silently disabling `atypical_quantity` and `unit_mismatch`.
+  The module's stale "UNVERIFIED against the running project" comment is gone —
+  these names are now orchestrator-verified against the live schema.
+
+Test-support change: `tests/server/stub-db.ts` now records the `.select(...)`
+column list on each `StubCall` (`columns: string[]`). Without it the stub
+silently accepts any column name, which is exactly why both bugs survived three
+verify rounds — the fixtures invented columns the live tables never had.
+
+### TDD Cycle Evidence
+
+| Task | Test File | Layer | Safety Net | RED | GREEN | TRIANGULATE | REFACTOR |
+|------|-----------|-------|------------|-----|-------|-------------|----------|
+| 6.16 | `tests/server/authz.test.ts` | Unit (stub Db) | 19/19 (authz + validation) | 3 failing: catalogue from `warehouses.code`, `warehouses` filtered by id, and `audit_plans.columns` must not contain `catalogue_id` | 10/10 passing | 3 cases: warehouse present → real code; warehouse absent → `catalogueId: null` still granted; select-shape guard | Comment records WHY the second lookup replaces an embedded join |
+| 6.17 | `tests/server/validation.test.ts` | Unit (stub Db) | 19/19 | 3 failing: existing unit-mismatch case (fixture moved to live `unit_code`), select-shape guard, and a UND-vs-KG mismatch case | 14/14 passing | 3 cases: KG match → clean, UND vs KG → `unit_mismatch` error with `expectedUnitCode: 'UND'`, select-shape guard | Replaced the stale UNVERIFIED header comment with the verified one |
+
+### Work Unit Evidence
+
+| Evidence | Value |
+|---|---|
+| Focused test commands and results | `npx vitest run tests/server/authz.test.ts` → **10 passed**; `npx vitest run tests/server/validation.test.ts` → **14 passed**; both together → 24 passed |
+| Full suite | `cd frontend && npm test` → 50 files, **919 passed**, 0 failed, exit 0 (914 → 919, +5 net new tests) |
+| Type gate | `cd frontend && npm run check` → **0 errors, 0 warnings**, 2 hints, exit 0 |
+| Runtime harness | `cd frontend && npm run build` → exit 0, "Complete!". A live HTTP round-trip is still task 6.4 and still credential-blocked. |
+| Rollback boundary | `frontend/src/lib/server/authz.ts`, `frontend/src/lib/server/validation.ts`, `tests/server/stub-db.ts`, and the five fixture/test files. Two commits (`ee752cc`, `642386d`), revertable independently. |
+
+### Residual risk (carried to verify)
+
+`frontend/src/pages/api/plans.ts:48` still selects `catalogue_id` from
+`audit_plans` — the SAME nonexistent column as 6.16, so `GET /api/plans`
+returns an error/empty list against the live database and the operator can
+never pick a plan at all. It is outside the assigned 6.16/6.17 scope (no task
+covers it, and `tests/api-routes/plans.test.ts` still asserts the invented
+column), so it was NOT changed. It needs its own task, same fix shape: drop the
+column and resolve the catalogue from `warehouses.code`.
