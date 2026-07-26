@@ -138,9 +138,38 @@ class TestCompose:
     def test_publishes_port_8002(self, compose: str) -> None:
         assert '"8002:8002"' in compose
 
-    def test_mounts_the_catalogue_read_only(self, compose: str) -> None:
-        assert "./data:/data:ro" in compose
-        assert "CATALOGUE_DB: /data/bodegas-y-stock.sqlite" in compose
+    def test_declares_no_catalogue_mount(self, compose: str) -> None:
+        """The catalogue is read from Supabase and cached in Redis; there is no
+        longer a database file to mount, and `Settings` no longer has a field
+        that could point at one."""
+        assert "./data:/data" not in compose
+        assert "volumes:" not in compose
+        assert "CATALOGUE_DB" not in compose
+
+    def test_receives_the_supabase_and_redis_variables(self, compose: str) -> None:
+        assert "SUPABASE_URL: ${SUPABASE_URL:-}" in compose
+        assert "SUPABASE_KEY: ${SUPABASE_KEY:-}" in compose
+        assert "REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}" in compose
+        assert (
+            "CATALOGUE_CACHE_TTL_SECONDS: ${CATALOGUE_CACHE_TTL_SECONDS:-10800}"
+            in compose
+        )
+
+    def test_the_cache_ttl_default_matches_the_settings_default(
+        self, compose: str
+    ) -> None:
+        """A drifting compose default would silently change how long a stale
+        snapshot is served in production."""
+        from matcher.config import Settings
+
+        defaults = Settings(
+            supabase_url="http://supabase.invalid", supabase_key="test"
+        )
+        assert (
+            "CATALOGUE_CACHE_TTL_SECONDS: "
+            f"${{CATALOGUE_CACHE_TTL_SECONDS:-{defaults.catalogue_cache_ttl_seconds}}}"
+            in compose
+        )
 
     @pytest.mark.parametrize(
         "key, value",

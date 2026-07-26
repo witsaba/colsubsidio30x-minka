@@ -31,9 +31,12 @@ Documentación interactiva Swagger: `http://localhost:8003/docs`
 
 ## 🐳 Docker & Docker Compose
 
+El `docker-compose.yml` de la raíz es la única superficie de despliegue del
+repositorio; este servicio no tiene un archivo Compose propio.
+
 ```bash
-# Iniciar con Docker Compose
-docker compose -f services/product_identification/docker-compose.yml up --build
+# Iniciar solo este servicio, desde la raíz del repositorio
+docker compose up --build product_identification
 ```
 
 ---

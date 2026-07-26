@@ -78,7 +78,12 @@ def published(port: dict) -> str:
 
 class TestRenderedContract:
     def test_it_validates(self, rendered: dict) -> None:
-        assert set(rendered["services"]) == {"stt", "matcher"}
+        assert set(rendered["services"]) == {
+            "stt",
+            "matcher",
+            "product_identification",
+            "redis",
+        }
 
     @pytest.mark.parametrize("name, port", [("stt", "8001"), ("matcher", "8002")])
     def test_each_service_publishes_its_documented_port(
@@ -102,15 +107,23 @@ class TestRenderedContract:
     ) -> None:
         assert rendered["services"][name]["restart"] == "unless-stopped"
 
-    def test_the_catalogue_is_mounted_read_only_from_the_repository(
+    def test_the_matcher_renders_no_catalogue_mount(self, rendered: dict) -> None:
+        """REQ-UCD-6. Compose, not our regexes, is the authority on what a
+        `docker compose up` would actually mount."""
+        matcher = rendered["services"]["matcher"]
+        assert not matcher.get("volumes")
+        assert "CATALOGUE_DB" not in matcher["environment"]
+
+    def test_the_matcher_renders_the_supabase_and_redis_variables(
         self, rendered: dict
     ) -> None:
-        volumes = rendered["services"]["matcher"]["volumes"]
-        assert len(volumes) == 1, volumes
-        mount = volumes[0]
-        assert Path(mount["source"]) == REPO_ROOT / "data"
-        assert mount["target"] == "/data"
-        assert mount["read_only"] is True
+        environment = rendered["services"]["matcher"]["environment"]
+        # Rendered against an empty env file, so the secret resolves to blank
+        # and the two cache knobs to their reviewed defaults.
+        assert environment["SUPABASE_URL"] == ""
+        assert environment["SUPABASE_KEY"] == ""
+        assert environment["REDIS_URL"] == "redis://redis:6379/0"
+        assert environment["CATALOGUE_CACHE_TTL_SECONDS"] == "10800"
 
     def test_the_matcher_builds_from_the_repository_root(
         self, rendered: dict
@@ -123,11 +136,22 @@ class TestRenderedContract:
         build = rendered["services"]["stt"]["build"]
         assert Path(build["context"]) == REPO_ROOT / "services" / "stt"
 
-    @pytest.mark.parametrize("name", ["stt", "matcher"])
+    @pytest.mark.parametrize(
+        "name", ["stt", "matcher", "product_identification", "redis"]
+    )
     def test_no_service_waits_for_the_other(
         self, rendered: dict, name: str
     ) -> None:
         assert not rendered["services"][name].get("depends_on")
+
+    def test_the_redis_cache_renders_pinned_and_unpublished(
+        self, rendered: dict
+    ) -> None:
+        redis = rendered["services"]["redis"]
+        assert redis["image"] == "redis:7.4-alpine"
+        assert not redis.get("ports")
+        assert not redis.get("build")
+        assert redis["healthcheck"]["test"] == ["CMD", "redis-cli", "ping"]
 
     def test_the_stt_receives_every_vendor_key_slot(self, rendered: dict) -> None:
         """Empty is the point: only the ACTIVE vendor's key is required, and

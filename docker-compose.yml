@@ -77,13 +77,22 @@ services:
       dockerfile: services/matcher/Dockerfile
     ports:
       - "8002:8002"
-    volumes:
-      # The catalogue is read-only, always.
-      - ./data:/data:ro
     environment:
-      # Container-internal path, fixed by the mount above rather than by the
-      # operator.
-      CATALOGUE_DB: /data/bodegas-y-stock.sqlite
+      # PostgREST base URL of the Supabase project holding the catalogue. No
+      # default can be correct, and a blank one aborts boot rather than failing
+      # later as an unroutable request.
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      # The service_role key. Full database access, so it ships blank and is
+      # never written into a committed file; see .env.example and
+      # docs/deployment.md for why a least-privilege key is not available.
+      SUPABASE_KEY: ${SUPABASE_KEY:-}
+      # The sibling cache on the Compose network. Deliberately not the
+      # `redis://localhost:6379/0` that Settings defaults to: that default is
+      # for running the app directly on a developer machine.
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      # How long a cached catalogue snapshot stays fresh, and the base of the
+      # jittered background refresh period. 3 hours.
+      CATALOGUE_CACHE_TTL_SECONDS: ${CATALOGUE_CACHE_TTL_SECONDS:-10800}
       MATCH_ACCEPT_SCORE: ${MATCH_ACCEPT_SCORE:-0.50}
       MATCH_AMBIGUITY_MARGIN: ${MATCH_AMBIGUITY_MARGIN:-0.08}
       MATCH_TSR_MARGIN: ${MATCH_TSR_MARGIN:-0.08}
@@ -97,8 +106,8 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
-      # Loading the catalogue (plus any startup retry) takes time; probes
-      # during that window are not failures.
+      # Reading the catalogue from Supabase (plus any startup retry) takes
+      # time; probes during that window are not failures.
       start_period: 10s
     restart: unless-stopped
 
@@ -125,5 +134,28 @@ services:
       timeout: 3s
       retries: 3
       start_period: 10s
+    restart: unless-stopped
+
+  # Snapshot cache for the matcher's catalogue. A pure cache and a *soft*
+  # dependency: the matcher boots without it by reading Supabase directly, and
+  # keeps serving from its in-process index if Redis dies later. That is why
+  # nothing orders itself against it in either direction, and the independence
+  # promise at the top of this file still holds.
+  redis:
+    # Pinned, never `latest`: an upstream retag would otherwise change what
+    # this commit deploys.
+    image: redis:7.4-alpine
+    # No persistence. A cold start rebuilds the snapshot from Supabase, so an
+    # on-disk copy would only add a stale-data failure mode.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    # No ports: reachable on the Compose network only. Debug it with
+    # `docker compose exec redis redis-cli`.
+    healthcheck:
+      # It serves no HTTP, so its own CLI is the liveness probe.
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
     restart: unless-stopped
 

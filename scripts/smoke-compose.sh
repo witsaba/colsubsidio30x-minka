@@ -125,6 +125,20 @@ preflight_stt() {
   return 0
 }
 
+preflight_matcher() {
+  # The catalogue is read from Supabase at boot, not from a committed file, so
+  # the matcher cannot become healthy without these two. Starting it anyway
+  # would recreate a healthy container into a crash loop.
+  local missing=()
+  [[ -n "$(setting SUPABASE_URL)" ]] || missing+=(SUPABASE_URL)
+  [[ -n "$(setting SUPABASE_KEY)" ]] || missing+=(SUPABASE_KEY)
+  if ((${#missing[@]})); then
+    printf '%s is empty and the catalogue is read from Supabase' "${missing[*]}"
+    return 1
+  fi
+  return 0
+}
+
 runnable=()
 declare -A skip_reason=()
 for name in "${targets[@]}"; do
