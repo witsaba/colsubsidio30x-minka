@@ -51,7 +51,7 @@ function db(options: { assigned?: boolean } = {}) {
           client_record_id: 'rec-1000-0',
           quantity: 20,
           unit_code: 'KG',
-          status: 'confirmed',
+          status: 'recorded',
           dictated_text: 'veinte kilos de aceite',
           created_at: '2026-07-25T13:00:00Z',
           is_deleted: false,
@@ -185,7 +185,7 @@ describe('GET /api/records — restores the operator session', () => {
       client_record_id: 'rec-1000-2',
       quantity: 99,
       unit_code: 'KG',
-      status: 'confirmed',
+      status: 'recorded',
       created_at: '2026-07-25T13:10:00Z',
       is_deleted: true,
     });
@@ -206,7 +206,7 @@ describe('GET /api/records — restores the operator session', () => {
       client_record_id: 'rec-2000-0',
       quantity: 5,
       unit_code: 'KG',
-      status: 'confirmed',
+      status: 'recorded',
       created_at: '2026-07-25T13:20:00Z',
       is_deleted: false,
     });

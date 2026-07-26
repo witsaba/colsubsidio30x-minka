@@ -43,14 +43,17 @@ import {
 export const prerender = false;
 
 /**
- * `count_records.status` values.
+ * `count_records.status` values (`record_status` enum).
  *
- * NOTE (task 1.1): the live enum could not be re-verified in this apply session
- * (the Supabase MCP tools were unavailable to the executor). Centralised here
- * so reconciling with the real check constraint is a one-line change.
+ * Verified against the live schema (orchestrator, MCP `list_tables(verbose)`,
+ * project blvdxsoaopcvtzawvgbt): `pending_sync | recorded | flagged | verified
+ * | discarded`. `'confirmed'` — this constant's original value — is NOT a
+ * member; every non-anomaly write would have hit the check constraint and
+ * 500'd in production. `recorded` is the column's own default, matching the
+ * "voice inserts only" success state (RF-20).
  */
 export const COUNT_STATUS = {
-  ok: 'confirmed',
+  ok: 'recorded',
   anomaly: 'flagged',
 } as const;
 
