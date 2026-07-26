@@ -43,8 +43,8 @@ Phases 1 → 4 are strictly ordered by dependency.
 
 ## Phase 3: HTTP adapter (REQ-EXT-6)
 
-- [ ] 3.1 RED — create `frontend/tests/extraction/http-adapter.test.ts` (`vi.stubGlobal('fetch', ...)` per `tests/api/client.test.ts`): POSTs `{transcription}` to `/api/extract`; all 4 `unidad` enums lowercase-resolve (`KILOGRAMO` → `'kilogramo'`); unknown `unidad` → `unit: null`, item kept; decimal `cantidad` kept verbatim (never rounded); items with `cantidad` 0/-1/NaN or blank `producto` dropped; missing/non-array `validated_inventory` → `[]`; 502 from the proxy rejects with `UiError` code `'vendor_error'` (client-side decode of the envelope; `proxy_unreachable` is envelope-only). Fails: module not found.
-- [ ] 3.2 GREEN — create `frontend/src/lib/extraction/http.ts`: `HttpExtractionAdapter` via `request<ExtractionResponse>()` from `lib/api/client.ts`, `EXTRACT_TIMEOUT_MS = 60_000`, `resolveSpokenUnit` mapping, singleton export. Never throws on a 2xx body.
+- [x] 3.1 RED — create `frontend/tests/extraction/http-adapter.test.ts` (`vi.stubGlobal('fetch', ...)` per `tests/api/client.test.ts`): POSTs `{transcription}` to `/api/extract`; all 4 `unidad` enums lowercase-resolve (`KILOGRAMO` → `'kilogramo'`); unknown `unidad` → `unit: null`, item kept; decimal `cantidad` kept verbatim (never rounded); items with `cantidad` 0/-1/NaN or blank `producto` dropped; missing/non-array `validated_inventory` → `[]`; 502 from the proxy rejects with `UiError` code `'vendor_error'` (client-side decode of the envelope; `proxy_unreachable` is envelope-only). Fails: module not found.
+- [x] 3.2 GREEN — create `frontend/src/lib/extraction/http.ts`: `HttpExtractionAdapter` via `request<ExtractionResponse>()` from `lib/api/client.ts`, `EXTRACT_TIMEOUT_MS = 60_000`, `resolveSpokenUnit` mapping, singleton export. Never throws on a 2xx body.
 
 ## Phase 4: Fallback and wiring (REQ-EXT-5, REQ-EXT-7)
 
