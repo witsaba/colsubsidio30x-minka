@@ -1,8 +1,23 @@
 # Apply Progress — supabase-operational-integration
 
-**Status**: partial — **49 of 50 tasks complete** (49 original + 5.11 added by the
-orchestrator). The single remaining task is **6.4**, and it is BLOCKED on
-credentials this executor does not have (see below).
+**Status**: partial — **51 of 52 tasks complete** (49 original + 5.11, 6.6, 6.7
+added by the orchestrator). The single remaining task is **6.4**, and it is
+BLOCKED on credentials this executor does not have (see below).
+
+> **Update 2026-07-25, batch "auditor gaps" (tasks 6.6 + 6.7)** — the two gaps
+> named as deviations 8 and 9 below are now CLOSED. `GET /api/auditor/records`
+> joins `warehouse_stock_balances` on the `(warehouse_id, product_id)` pair and
+> returns `systemQty`/`systemUnitCode`, and it reads `auditor_actions` back
+> (ordered by `created_at`, signed with `profiles.full_name`) so the RF-32 trace
+> survives a reload. `AuditorReview.tsx` needed no change: it already rendered
+> `record.trace`, and the `[]` lived in the mapper. `stub-db.ts`'s `order()` was
+> a no-op and now really sorts, so the ordering assertion can fail.
+> RF-18 is untouched: the operator allowlist serializer was not modified, and the
+> auditor route is explicitly exempt (design contract C6).
+> Suite is now **46 files, 847 tests, all passing**; `npm run build` green.
+> Deviations 8 and 9 are kept below verbatim as the historical record of what was
+> broken and why. `time` and `consensus` are STILL `SYSTEM_UNKNOWN` — those two
+> genuinely have no column.
 **Mode**: Strict TDD (RED → GREEN verified by execution for every pair).
 **Branch / worktree**: `feat/supabase-operational-integration` in
 `colsubsidio30x-minka-worktrees/supabase-operational-integration`, from `main` @ 932ba2c.
@@ -189,6 +204,43 @@ Both original open questions were resolved by the orchestrator (design.md).
 Remaining, and all deferred by design rather than discovered late: the operator
 identity is client-supplied (named technical debt, D2); the `nr_articulo` →
 `products.id` resolution of deviation 2; and deviations 8 and 9 above.
+
+## TDD Cycle Evidence — batch "auditor gaps" (6.6, 6.7)
+
+| Task | Test File | Layer | Safety Net | RED | GREEN | TRIANGULATE | REFACTOR |
+|------|-----------|-------|------------|-----|-------|-------------|----------|
+| 6.6 | `tests/server/auditor-records.test.ts` | Integration (route + stub Db) | ✅ 5/5 before | ✅ Written | ✅ Passed | ✅ 2 cases (balance present in the record's own bodega vs. absent) | ✅ `balanceKey` extracted |
+| 6.6 | `tests/auditor/records.test.ts` | Unit (pure mapper) | ✅ 8/8 before | ✅ Written | ✅ Passed | ✅ 2 cases ("Diferencia" vs "Sin diferencia") | ✅ `systemMeasure` extracted |
+| 6.7 | `tests/server/auditor-records.test.ts` | Integration (route + stub Db) | ✅ 5/5 before | ✅ Written | ✅ Passed | ✅ 2 cases (two out-of-order actions vs. an untouched record) | ✅ `order()` made real in the stub |
+| 6.7 | `tests/auditor/records.test.ts` | Unit (pure mapper) | ✅ 8/8 before | ✅ Written | ✅ Passed | ✅ 2 cases (named signer + reason vs. unnamed signer, no reason) | ✅ `toTraceEntry`/`displayTime` extracted |
+
+RED was observed by execution: **8 failing** before any production change
+(`expected undefined to be 120`, `expected [] to equal [correct, approve]`, …),
+0 failing after. Pure functions added: `balanceKey`, `numberOrNull`,
+`systemMeasure`, `toTraceEntry`, `displayTime`. Zero mocks in either file.
+
+### Work Unit Evidence — batch "auditor gaps"
+
+| Evidence | Value |
+|---|---|
+| Focused test command and result | `npx vitest run tests/server/auditor-records.test.ts tests/auditor/records.test.ts` → 21/21 passing (8 of them new). Full `npm test` → 46 files, 847 tests, all passing (was 839). |
+| Runtime harness | **N/A for this batch, deferred to 6.4.** Both changes are DB-shaped reads and the runtime proof is exactly the live end-to-end run that 6.4 blocks on (no `SUPABASE_SERVICE_ROLE_KEY`). `npm run build` succeeds, so the route compiles and `/auditor` still prerenders. |
+| Rollback boundary | Revert commit `ec7adbf`. It touches only `src/pages/api/auditor/records.ts`, `src/lib/auditor/{records,types}.ts`, the `AuditorRecordDto` block in `src/lib/api/operational.ts`, and the two test files plus `tests/server/stub-db.ts`. No operator path, no schema, no migration, nothing under `services/`. |
+
+### Deviation from the task text (6.6)
+
+The task names the response fields `system_qty` / `system_unit_code`. They are
+serialized as **`systemQty` / `systemUnitCode`**, matching the route's existing
+`unitCode` / `nrArticulo` / `countedBy` convention. Renaming just these two to
+snake_case would have made the payload speak two languages at once.
+
+### One thing 6.7 chose, and why
+
+The trail is served by **extending `GET /api/auditor/records`**, not by a new
+`GET /api/auditor/actions`. The dashboard already makes exactly one call per
+plan, the trail is strictly per record, and a second endpoint would have meant
+either N+1 calls or a second fan-out join for identical data. The task left the
+shape to the executor's judgement.
 
 ## Files changed (this batch)
 
