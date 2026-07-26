@@ -106,7 +106,9 @@ function extractSegment(tokens: string[]): ExtractedItem | null {
 }
 
 export class MockExtractionAdapter implements ExtractionAdapter {
-  extract(rawTranscript: string): ExtractedItem[] {
+  // `async` only to satisfy the shared interface: the body is pure, offline and
+  // synchronous, which is exactly what keeps the fallback deterministic.
+  async extract(rawTranscript: string): Promise<ExtractedItem[]> {
     return splitSegments(tokenize(rawTranscript))
       .map(extractSegment)
       .filter((item): item is ExtractedItem => item !== null);

@@ -60,7 +60,7 @@ function matchResponse(): MatchResponse {
 }
 
 const extraction: ExtractionAdapter = {
-  extract: (raw: string): ExtractedItem[] => [
+  extract: async (raw: string): Promise<ExtractedItem[]> => [
     { quantity: 3, unit: 'kilos', spokenName: raw },
   ],
 };
@@ -93,7 +93,7 @@ describe('runPipeline — onTranscript progressive reveal', () => {
       order.push('onTranscript');
     });
     const tracingExtraction: ExtractionAdapter = {
-      extract: (raw: string) => {
+      extract: async (raw: string) => {
         order.push('extract');
         return extraction.extract(raw);
       },
@@ -140,7 +140,7 @@ describe('runPipeline — onTranscript progressive reveal', () => {
     // The operator dictated something real; the adapter simply found no
     // quantity. They should still see what was heard before the error copy.
     const onTranscript = vi.fn<(raw: string) => void>();
-    const empty: ExtractionAdapter = { extract: () => [] };
+    const empty: ExtractionAdapter = { extract: async () => [] };
 
     await expect(
       runPipeline(audio, CATALOGUE, deps({ onTranscript, extraction: empty })),

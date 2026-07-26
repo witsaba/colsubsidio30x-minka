@@ -77,7 +77,7 @@ const anomaly: Anomaly = {
 };
 
 function staticExtraction(items: ExtractedItem[]): ExtractionAdapter {
-  return { extract: () => items };
+  return { extract: async () => items };
 }
 
 const noAnomalies: AnomalyEngine = { check: async () => null };
@@ -98,7 +98,7 @@ function deps(over: Partial<PipelineDeps> = {}): PipelineDeps {
 
 describe('runPipeline — transcription hop', () => {
   test('the verbatim STT transcript reaches the outcome and the extractor', async () => {
-    const extract = vi.fn(() => [extracted()]);
+    const extract = vi.fn(async () => [extracted()]);
     const outcome = await runPipeline(audio(), CATALOGUE, deps({
       transcribe: async () => transcribeResponse({ raw_transcript: 'tres kilos de lechuga batavia' }),
       extraction: { extract },
@@ -142,7 +142,7 @@ describe('runPipeline — transcription hop', () => {
   });
 
   test('is_garbage on a 200 response surfaces as UiError("garbage") carrying the request id', async () => {
-    const extract = vi.fn(() => [extracted()]);
+    const extract = vi.fn(async () => [extracted()]);
     const match = vi.fn(async () => matchResponse());
 
     await expect(

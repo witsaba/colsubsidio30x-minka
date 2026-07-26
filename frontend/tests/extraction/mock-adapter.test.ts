@@ -5,18 +5,33 @@
  * The four demo scripts are live fixtures: their expected extractions are the
  * acceptance criteria for tonight's demo, not illustrations.
  */
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
-import type { ExtractionAdapter } from '../../src/lib/extraction/adapter';
-import { MockExtractionAdapter } from '../../src/lib/extraction/mock';
+import type { ExtractedItem, ExtractionAdapter } from '../../src/lib/extraction/adapter';
+import { MockExtractionAdapter, mockExtractionAdapter } from '../../src/lib/extraction/mock';
 import { DICTATION_SCRIPTS } from '../../src/fixtures/scripts';
 
 const adapter: ExtractionAdapter = new MockExtractionAdapter();
 
+describe('REQ-EXT-1 — the interface is asynchronous', () => {
+  it('returns a Promise, so one signature serves the mock and the HTTP adapter', () => {
+    expect(mockExtractionAdapter.extract('dos cajas de tomate chonto')).toBeInstanceOf(Promise);
+  });
+
+  it('resolves that Promise to the item array', async () => {
+    await expect(mockExtractionAdapter.extract('dos cajas de tomate chonto')).resolves.toEqual([
+      { quantity: 2, unit: 'cajas', spokenName: 'tomate chonto' },
+    ]);
+  });
+});
+
 describe('REQ-EXT-3 — demo script 1 splits into exactly three items', () => {
-  const items = adapter.extract(
-    'tres kilos de lechuga batavia, doce botellas de aceite vegetal y dos cajas de tomate chonto',
-  );
+  let items: ExtractedItem[];
+  beforeAll(async () => {
+    items = await adapter.extract(
+      'tres kilos de lechuga batavia, doce botellas de aceite vegetal y dos cajas de tomate chonto',
+    );
+  });
 
   it('yields exactly 3 items', () => {
     expect(items).toHaveLength(3);
@@ -40,7 +55,10 @@ describe('REQ-EXT-3 — demo script 1 splits into exactly three items', () => {
 });
 
 describe('REQ-EXT-2 — demo script 2 is the 900 anomaly trigger', () => {
-  const items = adapter.extract('novecientos gramos de aceite de oliva extra virgen');
+  let items: ExtractedItem[];
+  beforeAll(async () => {
+    items = await adapter.extract('novecientos gramos de aceite de oliva extra virgen');
+  });
 
   it('yields exactly 1 item', () => {
     expect(items).toHaveLength(1);
@@ -54,14 +72,17 @@ describe('REQ-EXT-2 — demo script 2 is the 900 anomaly trigger', () => {
     });
   });
 
-  it('keeps "noventa" at 90 — the distinction the demo depends on', () => {
-    const ninety = adapter.extract('noventa gramos de aceite de oliva extra virgen');
+  it('keeps "noventa" at 90 — the distinction the demo depends on', async () => {
+    const ninety = await adapter.extract('noventa gramos de aceite de oliva extra virgen');
     expect(ninety[0]?.quantity).toBe(90);
   });
 });
 
 describe('REQ-EXT-4 — demo script 3 has no unit, only a container noun', () => {
-  const items = adapter.extract('cinco tablas para picar blancas');
+  let items: ExtractedItem[];
+  beforeAll(async () => {
+    items = await adapter.extract('cinco tablas para picar blancas');
+  });
 
   it('yields exactly 1 item', () => {
     expect(items).toHaveLength(1);
@@ -81,7 +102,10 @@ describe('REQ-EXT-4 — demo script 3 has no unit, only a container noun', () =>
 });
 
 describe('demo script 4 — feminine hundreds', () => {
-  const items = adapter.extract('trescientas cinco unidades de gaseosa personal');
+  let items: ExtractedItem[];
+  beforeAll(async () => {
+    items = await adapter.extract('trescientas cinco unidades de gaseosa personal');
+  });
 
   it('yields exactly 1 item', () => {
     expect(items).toHaveLength(1);
@@ -97,9 +121,11 @@ describe('demo script 4 — feminine hundreds', () => {
 });
 
 describe('REQ-EXT-1 — item shape', () => {
-  it('every item has a numeric quantity, string-or-null unit, non-empty spokenName', () => {
+  it('every item has a numeric quantity, string-or-null unit, non-empty spokenName', async () => {
     for (const script of DICTATION_SCRIPTS) {
-      for (const item of adapter.extract(script.transcript)) {
+      const extracted = await adapter.extract(script.transcript);
+      expect(extracted.length).toBeGreaterThan(0);
+      for (const item of extracted) {
         expect(typeof item.quantity).toBe('number');
         expect(Number.isFinite(item.quantity)).toBe(true);
         expect(item.unit === null || typeof item.unit === 'string').toBe(true);
@@ -116,55 +142,55 @@ describe('fixtures/scripts.ts is the shared source of truth', () => {
 
   it.each(DICTATION_SCRIPTS.map((s, i) => [i + 1, s] as const))(
     'script %i extracts exactly what the fixture declares',
-    (_n, script) => {
-      expect(adapter.extract(script.transcript)).toEqual(script.expected);
+    async (_n, script) => {
+      await expect(adapter.extract(script.transcript)).resolves.toEqual(script.expected);
     },
   );
 });
 
 describe('REQ-EXT-5 — deterministic, offline mock', () => {
-  it('returns deeply equal results for the same transcript', () => {
+  it('returns deeply equal results for the same transcript', async () => {
     const transcript = 'tres kilos de lechuga batavia, doce botellas de aceite vegetal';
-    expect(adapter.extract(transcript)).toEqual(adapter.extract(transcript));
+    expect(await adapter.extract(transcript)).toEqual(await adapter.extract(transcript));
   });
 
-  it('is stateless across instances', () => {
+  it('is stateless across instances', async () => {
     const other = new MockExtractionAdapter();
-    expect(other.extract('dos cajas de tomate chonto')).toEqual(
-      adapter.extract('dos cajas de tomate chonto'),
+    expect(await other.extract('dos cajas de tomate chonto')).toEqual(
+      await adapter.extract('dos cajas de tomate chonto'),
     );
   });
 });
 
 describe('robustness', () => {
-  it('does not split "treinta y dos" — the "y" there joins a number', () => {
-    const items = adapter.extract('treinta y dos unidades de gaseosa personal');
+  it('does not split "treinta y dos" — the "y" there joins a number', async () => {
+    const items = await adapter.extract('treinta y dos unidades de gaseosa personal');
     expect(items).toHaveLength(1);
     expect(items[0]?.quantity).toBe(32);
   });
 
-  it('yields an unresolvable unit as null rather than inventing one', () => {
-    const items = adapter.extract('cuatro manojos de cilantro');
+  it('yields an unresolvable unit as null rather than inventing one', async () => {
+    const items = await adapter.extract('cuatro manojos de cilantro');
     expect(items).toHaveLength(1);
     expect(items[0]?.unit).toBeNull();
     expect(items[0]?.spokenName).toBe('manojos de cilantro');
   });
 
-  it('ignores accents, case and extra whitespace', () => {
-    expect(adapter.extract('  DOS  CAJAS de Tomate Chonto ')).toEqual([
+  it('ignores accents, case and extra whitespace', async () => {
+    await expect(adapter.extract('  DOS  CAJAS de Tomate Chonto ')).resolves.toEqual([
       { quantity: 2, unit: 'cajas', spokenName: 'tomate chonto' },
     ]);
   });
 
-  it('returns an empty array for a segment with no quantity', () => {
-    expect(adapter.extract('hola buenos dias')).toEqual([]);
+  it('returns an empty array for a segment with no quantity', async () => {
+    await expect(adapter.extract('hola buenos dias')).resolves.toEqual([]);
   });
 
-  it('returns an empty array for an empty transcript', () => {
-    expect(adapter.extract('   ')).toEqual([]);
+  it('returns an empty array for an empty transcript', async () => {
+    await expect(adapter.extract('   ')).resolves.toEqual([]);
   });
 
-  it('drops a quantity with no article name', () => {
-    expect(adapter.extract('tres kilos')).toEqual([]);
+  it('drops a quantity with no article name', async () => {
+    await expect(adapter.extract('tres kilos')).resolves.toEqual([]);
   });
 });

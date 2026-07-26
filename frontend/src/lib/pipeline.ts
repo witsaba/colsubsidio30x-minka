@@ -128,7 +128,7 @@ export async function runPipeline(
   // sheet fills in while the rest of the chain is still running.
   deps.onTranscript?.(transcript);
 
-  const items = deps.extraction.extract(transcript);
+  const items = await deps.extraction.extract(transcript);
   if (items.length === 0) throw new UiError('nothing_extracted', stt.request_id);
 
   // Fan out: N items, N concurrent requests, one await. A `for await` loop here
