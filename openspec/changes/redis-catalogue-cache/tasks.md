@@ -471,11 +471,36 @@ WU-6 proved the eval movement (`no_code` 0.98824 → 0.92941) was caused purely 
 row order (`rowid` → `warehouse_products.id` UUID) deciding rank 1 among **exactly equal**
 scores. Ranking must not depend on the order the source happens to return rows in.
 
-- [ ] 11.1 **RED — order independence** — `services/matcher/tests/unit/test_scoring.py::TestDeterministicTieBreak::test_the_same_catalogue_in_two_row_orders_ranks_identically`: build one catalogue twice, second time with the row list reversed/shuffled, over rows whose trigram scores tie; assert `rank()` returns the same `uid` sequence. **Expected RED:** the two orders disagree.
-- [ ] 11.2 **RED — the tie-break touches only ties** — `test_rows_with_different_scores_keep_their_score_order`: assert a strictly-descending score set is returned in score order regardless of `uid`, so the stable key can never outrank a better score.
-- [ ] 11.3 **GREEN** — sort `TrigramSimilarityMatcher.rank` by `(-score, uid)`. The scoring function itself is untouched; REQ-ENG-2 still holds (stock is never a matching prior and `sd` no longer exists).
-- [ ] 11.4 **Re-measure and re-pin** — run `uv run pytest services/matcher/tests/eval -s`, re-pin `TOP1_FLOOR`, `HAS_CODE_TOP1_BASELINE`, `NO_CODE_TOP1_BASELINE`, `RECALL3_FLOOR`, `FALSE_CONFIDENCE_CEILING` to the newly measured values with a dated provenance note that replaces WU-6's order-dependence explanation. **Report the numbers honestly against both prior sets.** A tie-break picks a *stable* winner, not necessarily the *correct* one — an unchanged or slightly worse cohort figure is a legitimate outcome and must be reported, never tuned away.
-- [ ] 11.5 **Verify** — `uv run pytest` → still exactly **1 failed, 1 skipped**.
+- [x] 11.1 **RED — order independence** — `services/matcher/tests/unit/test_scoring.py::TestDeterministicTieBreak::test_the_same_catalogue_in_two_row_orders_ranks_identically`: build one catalogue twice, second time with the row list reversed/shuffled, over rows whose trigram scores tie; assert `rank()` returns the same `uid` sequence. **Expected RED:** the two orders disagree.
+- [x] 11.2 **RED — the tie-break touches only ties** — `test_rows_with_different_scores_keep_their_score_order`: assert a strictly-descending score set is returned in score order regardless of `uid`, so the stable key can never outrank a better score.
+- [x] 11.3 **GREEN** — sort `TrigramSimilarityMatcher.rank` by `(-score, uid)`. The scoring function itself is untouched; REQ-ENG-2 still holds (stock is never a matching prior and `sd` no longer exists).
+- [x] 11.4 **Re-measure and re-pin** — run `uv run pytest services/matcher/tests/eval -s`, re-pin `TOP1_FLOOR`, `HAS_CODE_TOP1_BASELINE`, `NO_CODE_TOP1_BASELINE`, `RECALL3_FLOOR`, `FALSE_CONFIDENCE_CEILING` to the newly measured values with a dated provenance note that replaces WU-6's order-dependence explanation. **Report the numbers honestly against both prior sets.** A tie-break picks a *stable* winner, not necessarily the *correct* one — an unchanged or slightly worse cohort figure is a legitimate outcome and must be reported, never tuned away.
+- [x] 11.5 **Verify** — `uv run pytest` → still exactly **1 failed, 1 skipped**. **Measured: 1 failed, 526 passed, 1 skipped.**
+
+### WU-11 deviations, recorded at apply time
+
+33. **The tie-break did NOT recover the `no_code` cohort, and nothing was tuned to
+    pretend otherwise.** Post-tie-break figures are byte-identical to WU-6's
+    post-remap set: overall 423/430 = 0.98372, `has_code` 344/345 = 0.99710,
+    `no_code` 79/85 = 0.92941, recall@3 1.0000, false-confidence 1/184 = 0.00543.
+    The reason is mechanical: the snapshot already arrives sorted by
+    `warehouse_products.id`, so an ascending-`uid` tie-break re-elects exactly the
+    winners the UUID order already elected. **No baseline constant changed value** —
+    only the provenance note was rewritten. A tie-break buys determinism, not
+    correctness; picking the *right* member of a tie cluster (names differing only
+    in a gram weight the trigram metric cannot see) is a scoring problem and is out
+    of scope here.
+34. **The win is real even though the numbers did not move, and it is measured.**
+    `TestMeasurementIsOrderIndependent::test_a_shuffled_catalogue_reports_the_same_accuracy`
+    replays the full 624-case set over a shuffled catalogue. Verified by mutation:
+    reverting `rank()` to the plain score sort makes that shuffle report
+    **428/430 = 0.99535** instead of 0.98372 — i.e. before this commit, row order
+    alone was worth about a full accuracy point in either direction. That is the
+    defect being closed, not the accuracy figure.
+35. **`RowLike` in `scoring.py` gained `uid`.** The protocol previously declared only
+    `articulo`; the tie-break reads a stable identity, so the structural type now
+    says so. `matcher.ports.Row` already carries it (REQ-CSS-2) and the decision
+    layer's own `RowLike` is unchanged — it still reads no identity at all.
 
 ## Requirement traceability
 

@@ -76,42 +76,57 @@ exactly the same 1,405 rows the retired SQLite file did (the 8 extra SQLite
 `rowid`s are spreadsheet header rows the loader always discarded, never gold).
 """
 
-# --- Cohort baselines re-pinned at the Supabase cutover -------------------
-# Provenance: measured 2026-07-25 on this branch by running this very suite
-# against `data/catalogue_snapshot.json` (1,405 rows across 8 warehouse codes,
-# exported from Supabase) through `MatcherService.match()` with default
-# settings. `has_code` = the gold catalogue row carries a `nr_articulo`;
-# `no_code` = it is NULL. REQ-ENG-6 requires both cohorts to be REPORTED; these
-# floors additionally turn a silent cohort-specific regression into a failure.
-# They are observed baselines, not independently derived targets -- re-pin them
+# --- Cohort baselines, re-measured after the deterministic tie-break -------
+# Provenance: measured 2026-07-25 on this branch, AFTER `rank()` gained its
+# `(-score, uid)` tie-break (WU-11), by running this very suite against
+# `data/catalogue_snapshot.json` (1,405 rows across 8 warehouse codes, exported
+# from Supabase) through `MatcherService.match()` with default settings.
+# `has_code` = the gold catalogue row carries a `nr_articulo`; `no_code` = it is
+# NULL. REQ-ENG-6 requires both cohorts to be REPORTED; these floors
+# additionally turn a silent cohort-specific regression into a failure. They are
+# observed baselines, not independently derived targets -- re-pin them
 # deliberately (with a new dated note) if the catalogue or engine changes.
 #
-#                    2026-07-24 (SQLite)          2026-07-25 (Supabase)
-#   overall   n=430  424/430 = 0.98605            423/430 = 0.98372
-#   has_code  n=345  340/345 = 0.98551            344/345 = 0.99710
-#   no_code   n= 85   84/ 85 = 0.98824             79/ 85 = 0.92941
-#   recall@3         1.0000 in every cohort       1.0000 in every cohort
-#   garbage   n=184  1/184 = 0.00543              1/184 = 0.00543
+#                    2026-07-24        2026-07-25        2026-07-25
+#                    SQLite            Supabase, no      Supabase +
+#                                      tie-break         tie-break (NOW)
+#   overall   n=430  424/430 0.98605   423/430 0.98372   423/430 0.98372
+#   has_code  n=345  340/345 0.98551   344/345 0.99710   344/345 0.99710
+#   no_code   n= 85   84/ 85 0.98824    79/ 85 0.92941    79/ 85 0.92941
+#   recall@3         1.0000 everywhere 1.0000 everywhere 1.0000 everywhere
+#   garbage   n=184  1/184   0.00543   1/184   0.00543   1/184   0.00543
 #
-# WHY THE COHORTS MOVED -- read this before touching a number below. The two
-# catalogues are the SAME 1,405 rows; replaying this suite against rows read
-# straight out of the retired SQLite file reproduces 424/430 = 0.98605 exactly.
-# The only thing that changed is ROW ORDER: SQLite served rows in `rowid` order,
-# the snapshot serves them ordered by `warehouse_products.id` (a UUID). Six of
-# the seven top-1 misses are candidates whose trigram scores are EXACTLY EQUAL,
-# so which one lands at rank 1 is decided by catalogue order and nothing else:
+# READ THIS BEFORE TOUCHING A NUMBER BELOW.
 #
-#   before: the 5 "vaso poliboard paq*" variants tie 7 OZ against 12 OZ (has_code)
-#   after:  the 5 "porcion filete pechuga" variants tie X 100 GRS against
-#           X 230 GRS (no_code), and "kyocera toner tk 538ic" ties four toner
-#           colours (has_code)
+# The two catalogues are the SAME 1,405 rows, and the engine never changed:
+# replaying this suite against rows read straight out of the retired SQLite file
+# reproduces 424/430 = 0.98605 exactly. What moved between column 1 and column 2
+# was ROW ORDER (`rowid` -> `warehouse_products.id`, a UUID). Six of the seven
+# top-1 misses are candidates whose trigram scores are EXACTLY EQUAL, so rank 1
+# was decided by catalogue order and nothing else: the losing tie-cluster moved
+# out of `has_code` (the 5 "vaso poliboard paq*" 7 OZ / 12 OZ variants) and into
+# `no_code` (the 5 "porcion filete pechuga" X 100 GRS / X 230 GRS variants, plus
+# a four-way "kyocera toner tk 538ic" colour tie).
 #
-# One losing tie-cluster moved out of `has_code` (+4) and another moved into
-# `no_code` (-5), which is the whole cohort swing. In every one of those cases
-# the gold row is still rank 2, which is why recall@3 stays at a flat 1.0000 --
-# the metric that actually expresses "the engine found it". `cola cola` ->
-# `COLA Y POLA` is the one genuine, score-driven miss, and it misses identically
-# on both catalogues. No engine, ranking or decision behaviour regressed here.
+# WU-11 removed that order dependence: `rank()` now sorts by `(-score, uid)`, so
+# a tie is settled by a stable row identity instead of by whatever order the
+# source happened to return. `test_the_measurement_is_independent_of_row_order`
+# below proves it against a shuffled catalogue.
+#
+# It did NOT recover the `no_code` cohort, and that is reported rather than
+# tuned away. Column 3 is byte-identical to column 2 because the snapshot
+# already arrives sorted by `warehouse_products.id`, so an ascending-`uid`
+# tie-break re-elects exactly the same winners the UUID order elected. A
+# tie-break buys DETERMINISM, not correctness: it picks a stable winner among
+# equals, never a better one. Choosing the *right* member of a tie cluster is a
+# scoring problem (these names differ only in a gram weight the trigram metric
+# cannot see) and is out of scope here.
+#
+# In every one of those misses the gold row is still rank 2, which is why
+# recall@3 stays at a flat 1.0000 -- the metric that actually expresses "the
+# engine found it". `cola cola` -> `COLA Y POLA` is the one genuine,
+# score-driven miss, and it misses identically on all three columns. No engine,
+# ranking or decision behaviour regressed in any of them.
 HAS_CODE_TOP1_BASELINE = 344 / 345
 NO_CODE_TOP1_BASELINE = 79 / 85
 COHORT_RECALL3_BASELINE = 1.00
@@ -278,6 +293,50 @@ class TestOverallAccuracy:
 
     def test_garbage_false_confidence_stays_bounded(self, metrics: dict) -> None:
         assert metrics["false_confidence"] <= FALSE_CONFIDENCE_CEILING
+
+
+class TestMeasurementIsOrderIndependent:
+    """WU-11: the whole eval verdict must be a property of the DATA.
+
+    Before the `(-score, uid)` tie-break, replaying this same set over the same
+    rows in a different order produced a different top-1 figure, because rank 1
+    inside a tie cluster was decided by catalogue order. That is exactly how the
+    cohort swing at the Supabase cutover happened, and it is what this pins shut.
+    """
+
+    def _metrics_over(self, rows: list) -> dict:
+        from conftest import (
+            REDIS_URL,
+            SUPABASE_KEY,
+            SUPABASE_URL,
+            FakeCatalogueSource,
+            make_cache,
+        )
+
+        from matcher.config import Settings
+        from matcher.service import MatcherService
+
+        settings = Settings(
+            supabase_url=SUPABASE_URL, supabase_key=SUPABASE_KEY, redis_url=REDIS_URL
+        )
+        service = MatcherService(settings, FakeCatalogueSource(rows), make_cache())
+        return evaluate(service, load_cases())
+
+    def test_a_shuffled_catalogue_reports_the_same_accuracy(
+        self, metrics: dict
+    ) -> None:
+        import random
+
+        rows = [row for group in fixture_catalogue().values() for row in group]
+        random.Random(20260725).shuffle(rows)
+
+        shuffled = self._metrics_over(rows)
+
+        assert shuffled["overall"]["top1"] == metrics["overall"]["top1"]
+        assert shuffled["has_code"]["top1"] == metrics["has_code"]["top1"]
+        assert shuffled["no_code"]["top1"] == metrics["no_code"]["top1"]
+        assert shuffled["false_confidence"] == metrics["false_confidence"]
+        assert shuffled["overall"]["top1"] == pytest.approx(423 / 430)
 
 
 class TestCohortSplit:

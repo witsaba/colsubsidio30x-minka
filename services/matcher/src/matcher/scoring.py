@@ -23,6 +23,7 @@ class RowLike(Protocol):
     """Structural type of everything `rank()` reads from a catalogue row."""
 
     articulo: str
+    uid: str
 
 
 def _rf_processor(s: str) -> str:
@@ -54,5 +55,16 @@ class TrigramSimilarityMatcher:
         for r in rows:
             s = trgm_similarity(query, r.articulo)
             scored.append((r, s))
-        scored.sort(key=lambda t: t[1], reverse=True)
+        # Descending score, then ascending `uid` as a deterministic tie-break.
+        # The scoring function is untouched: `uid` is consulted ONLY between
+        # rows whose scores are exactly equal, so it can never outrank a better
+        # score and it is not a matching prior (REQ-ENG-2 still holds).
+        #
+        # Without it, rank 1 inside a tie cluster is decided by the order the
+        # catalogue source happened to return rows in -- measured, that alone
+        # moved top-1 accuracy when the source changed from SQLite `rowid` order
+        # to `warehouse_products.id` order, with identical rows and an identical
+        # engine. A stable key makes ranking a property of the data, not of the
+        # transport. It picks a *stable* winner among equals, not a *better* one.
+        scored.sort(key=lambda t: (-t[1], t[0].uid))
         return scored[:top_k]
