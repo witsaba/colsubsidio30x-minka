@@ -1,8 +1,47 @@
 # Apply Progress — supabase-operational-integration
 
-**Status**: partial — **51 of 52 tasks complete** (49 original + 5.11, 6.6, 6.7
-added by the orchestrator). The single remaining task is **6.4**, and it is
-BLOCKED on credentials this executor does not have (see below).
+**Status**: partial — **55 of 56 tasks complete** (49 original + 5.11, 6.6, 6.7,
+6.8, 6.9, 6.10, 6.11 added by the orchestrator). The single remaining task is
+**6.4**, and it is BLOCKED on credentials this executor does not have (see below).
+
+> **Update 2026-07-25, batch "verify remediation" (tasks 6.8 – 6.11)** — the four
+> findings `sdd-verify` raised (obs #180, `verify-report.md`) are CLOSED, and the
+> exit criterion this batch was given is met **on all three gates, each re-run by
+> this executor rather than taken from a prior report**:
+>
+> | Gate | Command | Result |
+> |---|---|---|
+> | Tests | `cd frontend && npm test` | **50 files, 906 passed, 0 failed** |
+> | Types | `cd frontend && npm run check` | **0 errors, 0 warnings** (was 11 errors) |
+> | Build | `cd frontend && npm run build` | **exit 0**, 4 static routes prerendered |
+>
+> Plus the RF-18/D1 containment re-check: `grep -rli supabase frontend/dist/client/`
+> returns **nothing** — the client bundle still has zero Supabase references after
+> the new route and the new `sessionStorage` code.
+>
+> - **6.8** the literal NUL in `auditor/records.ts` is gone; the route now renders
+>   as 191 text insertions in `git diff main..HEAD` instead of `Bin 0 -> 7200`.
+> - **6.9** **the prior batch's claim that the 11 type errors were "all
+>   pre-existing" was WRONG, and the correction is recorded here rather than
+>   quietly dropped.** `verify` proved it via `git stash`: `CountRecord.unitCode`
+>   was added as REQUIRED by this change, and the D4 widening broke the
+>   fixture-engine test. Fixed at the DESIGN level, not by patching tests:
+>   `AnomalyEngine.check` is now uniformly `Promise<Anomaly | null>` (the union
+>   was itself the defect). The narrowing surfaced 4 further errors the union had
+>   hidden in the pipeline test doubles.
+> - **6.10 (CRITICAL)** `resolveProductId` no longer depends on `products.sku`
+>   alone, so the ~18.4% of the catalogue with no SKU can be counted. Wired end to
+>   end — the resolver fix alone would have been dead code without `articulo`
+>   travelling from `CountSession` through both routes.
+> - **6.11 (CRITICAL)** REQ-OCF-13 is implemented: `GET /api/records`, a pure
+>   resume module, `SESSION_RESUMED`, and a mount-time restore. See the deviation
+>   note in `tasks.md` 6.11 — the task said "call it on mount", but the plan scope
+>   itself does not survive a reload, so `sessionStorage` had to carry four ids.
+>
+> **Remaining named debt is unchanged and still real**: 6.4's live walkthrough, and
+> the `COUNT_STATUS` enum question (WARNING-3(b)) — no stub can prove the live
+> `status` check constraint accepts `'confirmed'`/`'flagged'`. Both belong in the
+> pre-deploy checklist with a named owner.
 
 > **Update 2026-07-25, batch "auditor gaps" (tasks 6.6 + 6.7)** — the two gaps
 > named as deviations 8 and 9 below are now CLOSED. `GET /api/auditor/records`
@@ -14,19 +53,24 @@ BLOCKED on credentials this executor does not have (see below).
 > a no-op and now really sorts, so the ordering assertion can fail.
 > RF-18 is untouched: the operator allowlist serializer was not modified, and the
 > auditor route is explicitly exempt (design contract C6).
-> Suite is now **46 files, 847 tests, all passing**; `npm run build` green.
 > Deviations 8 and 9 are kept below verbatim as the historical record of what was
 > broken and why. `time` and `consensus` are STILL `SYSTEM_UNKNOWN` — those two
 > genuinely have no column.
+
 **Mode**: Strict TDD (RED → GREEN verified by execution for every pair).
 **Branch / worktree**: `feat/supabase-operational-integration` in
 `colsubsidio30x-minka-worktrees/supabase-operational-integration`, from `main` @ 932ba2c.
 **Delivery**: single PR, `size:exception` pre-accepted by the maintainer.
-**Test suite**: `cd frontend && npm test` → **46 files, 839 tests, all passing**.
+**Test suite**: `cd frontend && npm test` → **50 files, 906 tests, all passing**.
 `npm run build` succeeds (all Astro routes + 4 prerendered pages).
-`npm run check` reports **11 type errors, all pre-existing** — verified by
-stashing this batch and re-running: the count is 11 before and 11 after, so this
-batch adds zero.
+`npm run check` → **0 errors**.
+
+> ~~`npm run check` reports 11 type errors, all pre-existing — verified by
+> stashing this batch and re-running.~~ **RETRACTED.** This statement was false;
+> `sdd-verify` disproved it with `git stash` (see the 6.8–6.11 update above). All
+> 11 were introduced by this change and are now fixed under task 6.9. It is left
+> struck through rather than deleted because a reviewer who read the earlier
+> version deserves to see the correction, not a silent edit.
 
 ## EXACT NEXT TASK: 6.4 — and it needs the orchestrator, not another executor
 
@@ -276,3 +320,36 @@ Modified: `frontend/package.json` + lockfile (`@supabase/supabase-js` 2.110.8),
 `frontend/src/components/operator/{CountSession,ConsentScreen,PlansScreen}.tsx`,
 `frontend/tests/session/{reducer,no-soft-lock}.test.ts`,
 `frontend/.env.example`, `docker-compose.yml`.
+
+## TDD Cycle Evidence — batch "verify remediation" (6.8 – 6.11)
+
+| Task | Test File | Layer | Safety Net | RED | GREEN | TRIANGULATE | REFACTOR |
+|------|-----------|-------|------------|-----|-------|-------------|----------|
+| 6.8 | `tests/server/auditor-records.test.ts` (existing) | Unit | 9/9 before | N/A — byte fix, no behaviour | 9/9 after | N/A | N/A |
+| 6.9 | `tests/anomaly/fixture-engine.test.ts` (approval) | Unit | 76/76 session + 88 anomaly before | `npm run check` = 11 errors | 0 errors, 861/861 | Existing 15 cases preserved verbatim | Union collapsed to a single promise type |
+| 6.10 | `tests/server/products.test.ts` (new) | Unit | N/A (new file) | 6 failed / 6 passed | 12/12 | 12 cases: sku hit, name hit, accent fold, spoken fallback, precedence, no match, blank, no identity | `findByColumn` extracted; `normalizeProductName` exported pure |
+| 6.10 | `tests/server/records-write.test.ts` | Unit | 18/18 before | 1 failed | 21/21 | sku-less 201 + unresolvable 400 | — |
+| 6.11 | `tests/server/records-read.test.ts` (new) | Unit | N/A (new file) | 13 failed (`handleListRecords` undefined) | 14/14 | 14 cases incl. RF-07 403, RF-21 exclusion, cross-operator isolation, RF-18 leak scan | Blindness moved into the `select` projection |
+| 6.11 | `tests/session/resume.test.ts` (new) | Unit | N/A (new file) | suite unresolvable | 12/12 | 12 cases incl. corrupt / partial / cleared storage | Pure module, zero mocks |
+| 6.11 | `tests/session/reducer.test.ts` | Unit | 76/76 before | 6 failed | 88/88 with `no-soft-lock` | 8 cases incl. late-resume no-op and empty restore | — |
+| 6.11 | `tests/components/session/count-session-resume.test.tsx` (new) | Integration | N/A (new file) | 7 failed / 3 passed | 11/11 | 11 cases incl. 3 refusal paths (no storage, fetch fails, mic denied) | — |
+
+### Test Summary
+- **Total tests written this batch**: 59 (906 total, up from 847)
+- **Total tests passing**: 906/906
+- **Layers used**: Unit (48), Integration (11), E2E (0 — not installed)
+- **Approval tests** (refactoring): 15 (the fixture-engine rule cases, preserved
+  through the D4 async narrowing — their assertions are byte-identical, only the
+  `await` moved)
+- **Pure functions created**: 4 (`normalizeProductName`, `readResumeContext`,
+  `writeResumeContext`, `toCountRecord`)
+- **`vi.mock()` calls**: 0 — every double is still a prop or parameter seam
+
+### Work Unit Evidence — batch "verify remediation"
+
+| Evidence | Value |
+|---|---|
+| Focused test command and result | `cd frontend && npm test` → 50 files, **906 passed**, 0 failed, exit 0 |
+| Type gate | `cd frontend && npm run check` → **0 errors, 0 warnings**, exit 0 |
+| Runtime harness | `cd frontend && npm run build` → exit 0, 4 static routes prerendered; plus `grep -rli supabase frontend/dist/client/` → **empty** (service-role containment re-proved against the built bundle). A live HTTP walkthrough remains task 6.4 and is still credential-blocked. |
+| Rollback boundary | 4 commits, one per task, each independently revertable: `auditor/records.ts` byte (6.8); the anomaly-seam type narrowing + `unitCode` literals (6.9); `lib/server/products.ts` + the `articulo` wiring (6.10); `handleListRecords` + `lib/session/resume.ts` + `SESSION_RESUMED` + the two `CountSession` effects (6.11). Reverting 6.11 alone restores the previous no-resume behaviour without touching 6.8–6.10. |
