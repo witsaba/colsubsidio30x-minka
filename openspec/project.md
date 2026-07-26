@@ -20,33 +20,37 @@ and Module 3 — product matching — under `services/matcher/`. The services sh
 deploy unit; all three are started from the single root `docker-compose.yml`.
 
 Documentation under `docs/database/` (`DATABASE_ARCHITECTURE.md`, `SUPABASE_SCHEMA_COMPARISON.md`) specifies a
-Supabase/Postgres schema and an in-memory Supabase test double, but no Supabase client, migration, or runtime
-dependency exists in code yet — it is design documentation, not an implemented datastore.
+Supabase/Postgres schema. As of the `redis-catalogue-cache` change the matcher reads that schema for real:
+it loads its catalogue from Supabase over PostgREST (`httpx`, no SDK) and caches a versioned snapshot in
+Redis. The rest of the schema (audits, stock balances) is still design documentation with no code behind it.
 
-**Not present in this worktree/branch** (this worktree tracks `origin/main`): there is no Astro/TS frontend
-and no Redis (or any other cache) anywhere in the code or `docker-compose.yml`. A frontend exists only on the
-separate, unmerged `feat/voice-counter-frontend` branch (30 commits ahead of `main` as of this detection);
-it is not part of this project's current tree. A prior grep "hit" for `redis` in
-`docs/sources/prd-draft-es.md` is a false positive (`rediseño`, Spanish for "redesign").
+**Not present in this worktree/branch**: there is no Astro/TS frontend. It exists only on the separate,
+unmerged `feat/voice-counter-frontend` branch; it is not part of this project's current tree. A grep "hit"
+for `redis` in `docs/sources/prd-draft-es.md` is a false positive (`rediseño`, Spanish for "redesign") —
+the real Redis is the `redis` service in the root `docker-compose.yml`.
 
 ## Detected Stack and Architecture
 
 - Runtime/language: Python 3.11+ (`requires-python = ">=3.11"` for root/matcher/stt; product_identification
   allows `>=3.10`), managed by **uv** (`uv 0.11.31` observed)
 - Framework: **FastAPI** + **uvicorn** on all three services (STT :8001, matcher :8002, product_identification :8003)
-- Configuration: **pydantic-settings** (matcher: `CATALOGUE_DB`, `MATCH_*` thresholds, `STARTUP_*` retry knobs;
+- Configuration: **pydantic-settings** (matcher: `SUPABASE_URL`/`SUPABASE_KEY`, `REDIS_URL`,
+  `CATALOGUE_CACHE_TTL_SECONDS`, `MATCH_*` thresholds, `STARTUP_*` retry knobs;
   STT: `STT_VENDOR` and vendor credentials); product_identification uses plain `python-dotenv` + `.env` (Vertex
   AI / Gemini credentials, `USE_VERTEX_AI`, `GOOGLE_CLOUD_*`)
 - Matching primitives: **rapidfuzz** plus first-party trigram scoring; accent folding uses stdlib `unicodedata`
 - STT vendors: **httpx** only (no vendor SDKs) against Deepgram (primary), ElevenLabs, and Groq REST APIs
 - Product identification: **google-genai** dual-model consensus (Gemini 2.5 Flash/Pro via Vertex AI) over voice
   transcripts, `pypdf`/`pandas` for supporting extraction, `rich` for CLI/table output
-- Persistence implementation: **SQLite** (`data/bodegas-y-stock.sqlite`), opened read-only (`mode=ro` URI) and
-  loaded into memory at startup; built from the workbook with **pandas** + **openpyxl**. Audio is never
-  persisted (RNF-04). A Supabase/Postgres schema is documented under `docs/database/` but not yet implemented
-  in code (no client library, migration, or runtime dependency in any `pyproject.toml`).
-- Cache layer: **none exists yet** — no Redis (or other cache) client, dependency, or compose service anywhere
-  in the repository as of this detection.
+- Persistence implementation: the matcher's catalogue is **Supabase/Postgres** read over PostgREST with
+  `httpx` (no SDK) and held in memory; it is rebuilt at startup and refreshed in the background. The
+  spreadsheet-to-SQLite build (`scripts/`, `Makefile`, `data/bodegas-y-stock.sqlite`, **pandas** +
+  **openpyxl**) still exists as a data-pipeline artefact but is **no longer read by any service at runtime**;
+  its deletion is a separate follow-up change. Audio is never persisted (RNF-04).
+- Cache layer: **Redis** (`redis:7.4-alpine`, `redis` service in the root `docker-compose.yml`, no host port,
+  persists nothing). It holds one versioned catalogue snapshot on a 3 h TTL so a warm matcher start performs
+  zero Supabase reads. It is a **soft** dependency: no `depends_on`, and the matcher boots and keeps serving
+  without it.
 - Architecture: root **uv workspace** — root project (data build) plus the installable `matcher` and
   `product_identification` workspace members (both `src`/package layout, served as `matcher.main:app` and
   `services/product_identification/server.py` respectively). `services/stt` is a **standalone uv project**
@@ -100,8 +104,8 @@ first, and promoted spike code is covered by characterization tests written befo
 - Matcher local: `uv run uvicorn matcher.main:app --port 8002`
 - Product identification local: `uv run python services/product_identification/server.py --port 8003`
 - Whole stack: `./scripts/setup-env.sh` once, then `docker compose up -d` from the repository root
-- Matcher container: `docker compose up -d matcher` (build context is the repo root; the catalogue is
-  mounted `./data:/data:ro`)
+- Matcher container: `docker compose up -d matcher` (build context is the repo root; no catalogue mount —
+  the catalogue is read from Supabase and cached in `redis`, so `SUPABASE_URL`/`SUPABASE_KEY` must be set)
 - STT container: `docker compose up -d stt` (port 8001; vendor keys come from the root `.env`)
 - Product identification container: `docker compose up -d product_identification` (port 8003; Vertex AI /
   Gemini credentials come from the root `.env`)

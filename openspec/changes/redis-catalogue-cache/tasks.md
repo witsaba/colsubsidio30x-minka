@@ -424,10 +424,42 @@ human, through a one-shot script whose output is checked in.
 
 ## WU-9: Docs, PR body, manual security evidence
 
-- [ ] 9.1 **NON-TDD** — `docs/deployment.md`: document the `redis` service, the four Supabase/Redis env vars, the `docker compose exec redis redis-cli` debug path, and the one documented nuance to the independence promise (Redis is a *soft* dependency — the matcher boots without it via Supabase and keeps serving if it dies). Remove the `data/bodegas-y-stock.sqlite` prerequisite from the matcher quick path. *Non-TDD: prose; the contract it describes is already covered by `tests/deployment/*`.*
-- [ ] 9.2 **NON-TDD** — PR body must state, in this order: (a) `size:exception accepted by user` (Engram #144) with the ~1,300-1,600-line forecast; (b) **BREAKING**: `catalogue_id` changes from 8 SQLite table names to 56 `warehouses.code` values on `POST /match` and `GET /catalogues` — coordinate with `feat/voice-counter-frontend` before it merges; (c) `uv.lock` carries ~+777 lines of unrelated `product_identification` transitive deps that PR #12 never locked; (d) pre-existing deployment failures #1-#3 are fixed here; (e) pre-existing failure #4 (`GOOGLE_CLOUD_PROJECT` credential-shaped default) is **deliberately untouched** and reported as a separate security follow-up, so the suite intentionally ends at 1 failed; (f) the eval baselines were re-measured and re-pinned with a dated provenance note.
-- [ ] 9.3 **NON-TDD, blocked-without-credentials, MANUAL EVIDENCE** — REQ-CSS-4's second scenario ("the matcher's credential cannot read `warehouse_stock_balances`") cannot be verified offline: it is a live authorization property, and no CI test may reach the network. **CI treatment**: the offline guarantee is `test_supabase_source.py::TestQueryShape::test_it_never_queries_warehouse_stock_balances` (the client provably never *constructs* such a query) plus `test_snapshot_codec.py::TestSnapshotContentSafety` (no stock bytes can enter Redis). **Manual evidence**: with the least-privilege key, `curl -H "apikey: $SUPABASE_KEY" "$SUPABASE_URL/rest/v1/warehouse_stock_balances?select=theoretical_qty&limit=1"` must return 401/403 (or an empty RLS-filtered result). Paste the status code into the PR body. Record it as an open item if the least-privilege key is not yet provisioned — the design's Open Questions note the anon-key fallback is acceptable only if RLS denies that read.
-- [ ] 9.4 **FINAL VERIFICATION** — `uv run pytest` from the repository root. **PASS = exactly `1 failed`, and the failure is `tests/deployment/test_root_compose.py::TestSecretSafeEnvWorkflow::test_no_committed_file_carries_a_credential_shaped_default`.** Any other count, or any other failing test id, is a regression. Zero `skip`/`xfail` markers may remain in `services/matcher/tests/eval/`.
+- [x] 9.1 **NON-TDD** — `docs/deployment.md`: document the `redis` service, the four Supabase/Redis env vars, the `docker compose exec redis redis-cli` debug path, and the one documented nuance to the independence promise (Redis is a *soft* dependency — the matcher boots without it via Supabase and keeps serving if it dies). Remove the `data/bodegas-y-stock.sqlite` prerequisite from the matcher quick path. *Non-TDD: prose; the contract it describes is already covered by `tests/deployment/*`.*
+- [x] 9.2 **NON-TDD** — written to `openspec/changes/redis-catalogue-cache/pr-body.md` (the PR is NOT opened by apply). PR body must state, in this order: (a) `size:exception accepted by user` (Engram #144) with the ~1,300-1,600-line forecast; (b) **BREAKING**: `catalogue_id` changes from 8 SQLite table names to 56 `warehouses.code` values on `POST /match` and `GET /catalogues` — coordinate with `feat/voice-counter-frontend` before it merges; (c) `uv.lock` carries ~+777 lines of unrelated `product_identification` transitive deps that PR #12 never locked; (d) pre-existing deployment failures #1-#3 are fixed here; (e) pre-existing failure #4 (`GOOGLE_CLOUD_PROJECT` credential-shaped default) is **deliberately untouched** and reported as a separate security follow-up, so the suite intentionally ends at 1 failed; (f) the eval baselines were re-measured and re-pinned with a dated provenance note.
+- [x] 9.3 **NON-TDD, blocked-without-credentials, MANUAL EVIDENCE** — REQ-CSS-4's second scenario ("the matcher's credential cannot read `warehouse_stock_balances`") cannot be verified offline: it is a live authorization property, and no CI test may reach the network. **CI treatment**: the offline guarantee is `test_supabase_source.py::TestQueryShape::test_it_never_queries_warehouse_stock_balances` (the client provably never *constructs* such a query) plus `test_snapshot_codec.py::TestSnapshotContentSafety` (no stock bytes can enter Redis). **Manual evidence**: with the least-privilege key, `curl -H "apikey: $SUPABASE_KEY" "$SUPABASE_URL/rest/v1/warehouse_stock_balances?select=theoretical_qty&limit=1"` must return 401/403 (or an empty RLS-filtered result). Paste the status code into the PR body. Record it as an open item if the least-privilege key is not yet provisioned — the design's Open Questions note the anon-key fallback is acceptable only if RLS denies that read.
+- [x] 9.4 **FINAL VERIFICATION** — `uv run pytest` from the repository root. **PASS = exactly `1 failed`, and the failure is `tests/deployment/test_root_compose.py::TestSecretSafeEnvWorkflow::test_no_committed_file_carries_a_credential_shaped_default`.** Any other count, or any other failing test id, is a regression. Zero `skip`/`xfail` markers may remain in `services/matcher/tests/eval/`. **Measured: `1 failed, 526 passed, 1 skipped`** — the failure is exactly that test id, the skip is WU-8's credential-gated `TestAgainstARunningDaemon`. `docker compose config -q` exits 0.
+
+### WU-9 deviations, recorded at apply time
+
+36. **Task 9.1 was already satisfied by WU-8's commit.** `docs/deployment.md` already carried the
+    `redis` service, the soft-dependency nuance, the `redis-cli` debug block, the `service_role`
+    rationale, and no SQLite prerequisite. The only real gap was that `REDIS_URL` and
+    `CATALOGUE_CACHE_TTL_SECONDS` were never named, so a "matcher's catalogue variables" table was
+    added covering all four variables and stating plainly that `CATALOGUE_DB` and the
+    `./data:/data:ro` mount no longer exist.
+37. **The stale-reference sweep went beyond `docs/`.** Live SQLite claims about the matcher runtime
+    also lived in `openspec/project.md` (`CATALOGUE_DB` config, "Persistence implementation:
+    SQLite", "Cache layer: none exists yet", "no Redis anywhere", the `./data:/data:ro` runtime
+    line) and `openspec/config.yaml` (`stdlib sqlite3 (read-only) catalogue`, "no cache exists
+    yet", the architecture paragraph, a stale 372-test count). All corrected.
+    `docs/test-plan.md`'s reliability row still quoted `98.60% / 8 tables / 6 misses`; re-pinned to
+    the shipped `98.37% / 8 warehouse codes / 7 misses`.
+    **Deliberately NOT rewritten**: `openspec/changes/add-matching-service/**` and
+    `openspec/changes/archive/**` are historical records of what was true when they were written,
+    and `docs/sources/README.md` / `data/README.md` / `pyproject.toml` describe the xlsx→SQLite
+    pipeline, which still exists and whose deletion is a separate follow-up (proposal, Out of
+    Scope).
+38. **Task 9.2's list predates WU-10 and WU-11 and was extended** (as deviation 35 anticipated).
+    The PR body adds: a **second** BREAKING item (`unidad_display` non-null again), the corrected
+    "8 warehouse codes, not 56" cardinality, the withdrawn least-privilege claim, the resolved
+    1,405-vs-1,461 gap, the unit-vocabulary bug and why the eval baseline could not catch it, the
+    honest three-way accuracy table with the mutation evidence, the measured `uv.lock` figure
+    (+826 lines / 27 packages, only 3 ours), and a commit-by-commit reading order.
+39. **Task 9.3's live credential check is moot, not merely deferred.** It was written for a
+    least-privilege key; the user chose `service_role`, which bypasses RLS by definition, so the
+    intended `curl` → `401/403` evidence would fail by design rather than pass. The PR body states
+    that plainly and lists what IS enforced offline in CI instead of leaving an "open item" that
+    implies the check is still pending.
 
 ## WU-10: Unit vocabulary regression — restore REQ-ENG-5 against the code vocabulary
 

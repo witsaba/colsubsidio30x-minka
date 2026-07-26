@@ -67,6 +67,22 @@ Redis buys is a warm start: with a fresh snapshot cached, a restart loads the
 catalogue with zero Supabase reads. Losing it costs one Supabase read per boot
 and nothing else.
 
+### The matcher's catalogue variables
+
+Four variables drive the catalogue path. All four are documented in
+`.env.example`, so `setup-env.sh` asks about each one.
+
+| Variable | Compose default | What it does |
+|---|---|---|
+| `SUPABASE_URL` | blank | PostgREST base URL of the catalogue project. Blank aborts boot with a named error rather than silently starting against the wrong project. |
+| `SUPABASE_KEY` | blank | The `service_role` key. See below. |
+| `REDIS_URL` | `redis://redis:6379/0` | The snapshot cache. Reached by Compose service name, so it differs from the local-dev default (`redis://localhost:6379/0`) on purpose. |
+| `CATALOGUE_CACHE_TTL_SECONDS` | `10800` | Snapshot freshness window (3 h). The background refresh fires on this interval with ±10% jitter; the Redis key itself is set to twice this, so a stale snapshot survives to be served if Supabase is down. |
+
+There is no `CATALOGUE_DB` and no `./data:/data:ro` mount any more. The matcher
+reads no SQLite file at runtime; the catalogue comes from Supabase and lives in
+memory behind the Redis snapshot.
+
 ### The matcher's Supabase credential
 
 `SUPABASE_KEY` must be the project's **`service_role`** key.
